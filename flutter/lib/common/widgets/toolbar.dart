@@ -760,10 +760,10 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
   if (isAndroid) {
     final option = 'align_to_top_for_tablet';
     v.add(TToggleMenu(
-        value: bind.mainGetLocalBoolOptionSync(option),
+        value: bind.mainGetLocalOption(key: option) == 'Y',
         onChanged: (value) async {
           if (value == null) return;
-          bind.mainSetLocalBoolOption(option, value);
+          await bind.mainSetLocalOption(key: option, value: value ? 'Y' : 'N');
           ffi.canvasModel.updateViewStyle();
         },
         child: Text(translate('Align to top'))));

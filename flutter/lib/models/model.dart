@@ -2336,7 +2336,7 @@ class CanvasModel with ChangeNotifier {
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
     _x = (size.width - displayWidth * _scale) / 2;
-    if (isAndroid && bind.mainGetLocalBoolOptionSync('align_to_top_for_tablet')) {
+    if (isAndroid && bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y') {
       _y = 0;
     } else {
       _y = (size.height - displayHeight * _scale) / 2;
