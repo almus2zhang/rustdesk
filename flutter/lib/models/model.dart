@@ -2234,8 +2234,9 @@ class CanvasModel with ChangeNotifier {
       w = w - mediaData.padding.left - mediaData.padding.right;
       // Vertically, subtract the bottom keyboard inset (viewInsets.bottom) and any
       // bottom overlay (e.g. key-help tools) so the canvas is not covered.
+      double keyboardInset = isAndroid ? 0 : mediaData.viewInsets.bottom;
       h = h -
-          mediaData.viewInsets.bottom -
+          keyboardInset -
           (parent.target?.cursorModel.keyHelpToolsRectToAdjustCanvas?.bottom ??
               0);
       // Orientation-specific handling:
@@ -2335,7 +2336,11 @@ class CanvasModel with ChangeNotifier {
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
     _x = (size.width - displayWidth * _scale) / 2;
-    _y = (size.height - displayHeight * _scale) / 2;
+    if (isAndroid && bind.mainGetLocalBoolOptionSync('align_to_top_for_tablet')) {
+      _y = 0;
+    } else {
+      _y = (size.height - displayHeight * _scale) / 2;
+    }
     if (isMobile) {
       _moveToCenterCursor();
     }
