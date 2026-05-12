@@ -575,9 +575,18 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               right: 10,
               child: QualityMonitor(gFFI.qualityMonitorModel),
             ),
-            KeyHelpTools(
-                keyboardIsVisible: keyboardIsVisible,
-                showGestureHelp: _showGestureHelp),
+            isAndroid
+                ? Positioned(
+                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
+                    left: 0,
+                    right: 0,
+                    child: KeyHelpTools(
+                        keyboardIsVisible: keyboardIsVisible,
+                        showGestureHelp: _showGestureHelp),
+                  )
+                : KeyHelpTools(
+                    keyboardIsVisible: keyboardIsVisible,
+                    showGestureHelp: _showGestureHelp),
             SizedBox(
               width: 0,
               height: 0,
@@ -1034,7 +1043,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         key: _key,
         color: Color(0xAA000000),
         padding: EdgeInsets.only(
-            top: _keyboardVisibilityController.isVisible ? 24 : 4, bottom: 8),
+            top: (isAndroid || !_keyboardVisibilityController.isVisible) ? 4 : 24,
+            bottom: 8),
         child: Wrap(
           spacing: space,
           runSpacing: space,

@@ -2939,7 +2939,7 @@ class CursorModel with ChangeNotifier {
   bool get lastKeyboardIsVisible => _lastKeyboardIsVisible;
 
   Rect? get keyHelpToolsRectToAdjustCanvas =>
-      _lastKeyboardIsVisible ? _keyHelpToolsRect : null;
+      (_lastKeyboardIsVisible && !isAndroid) ? _keyHelpToolsRect : null;
   // The blocked rect is used to block the pointer/touch events in the remote page.
   final List<Rect> _blockedRects = [];
   // Used in shouldBlock().
