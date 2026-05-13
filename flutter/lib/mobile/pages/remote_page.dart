@@ -964,6 +964,27 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                 },
               ),
           active: _more),
+      wrap('', () {
+        inputModel.inputKey('VK_LEFT');
+      }, icon: Icons.keyboard_arrow_left),
+      wrap('', () {
+        inputModel.inputKey('VK_UP');
+      }, icon: Icons.keyboard_arrow_up),
+      wrap('', () {
+        inputModel.inputKey('VK_DOWN');
+      }, icon: Icons.keyboard_arrow_down),
+      wrap('', () {
+        inputModel.inputKey('VK_RIGHT');
+      }, icon: Icons.keyboard_arrow_right),
+      wrap(isMac ? 'Cmd+C' : 'Ctrl+C', () {
+        sendPrompt(isMac, 'VK_C');
+      }),
+      wrap(isMac ? 'Cmd+V' : 'Ctrl+V', () {
+        sendPrompt(isMac, 'VK_V');
+      }),
+      wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
+        sendPrompt(isMac, 'VK_S');
+      }),
     ];
     final fn = <Widget>[
       SizedBox(width: 9999),
@@ -1021,28 +1042,6 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         }),
       wrap('Enter', () {
         inputModel.inputKey('VK_ENTER');
-      }),
-      SizedBox(width: 9999),
-      wrap('', () {
-        inputModel.inputKey('VK_LEFT');
-      }, icon: Icons.keyboard_arrow_left),
-      wrap('', () {
-        inputModel.inputKey('VK_UP');
-      }, icon: Icons.keyboard_arrow_up),
-      wrap('', () {
-        inputModel.inputKey('VK_DOWN');
-      }, icon: Icons.keyboard_arrow_down),
-      wrap('', () {
-        inputModel.inputKey('VK_RIGHT');
-      }, icon: Icons.keyboard_arrow_right),
-      wrap(isMac ? 'Cmd+C' : 'Ctrl+C', () {
-        sendPrompt(isMac, 'VK_C');
-      }),
-      wrap(isMac ? 'Cmd+V' : 'Ctrl+V', () {
-        sendPrompt(isMac, 'VK_V');
-      }),
-      wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
-        sendPrompt(isMac, 'VK_S');
       }),
     ];
     final space = size.width > 320 ? 4.0 : 2.0;
