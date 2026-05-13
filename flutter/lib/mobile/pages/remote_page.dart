@@ -98,7 +98,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       forceRelay: widget.forceRelay,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
+      SystemChrome.setEnabledSystemUIMode(
+          isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
+          overlays: []);
       gFFI.dialogManager
           .showLoading(translate('Connecting...'), onCancel: closeConnection);
     });
@@ -178,7 +180,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void onSoftKeyboardChanged(bool visible) {
     if (!visible) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual, overlays: []);
+      SystemChrome.setEnabledSystemUIMode(
+          isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
+          overlays: []);
       // [pi.version.isNotEmpty] -> check ready or not, avoid login without soft-keyboard
       if (gFFI.chatModel.chatWindowOverlayEntry == null &&
           gFFI.ffiModel.pi.version.isNotEmpty) {
