@@ -25,9 +25,8 @@ Highly recommended for large-screen tablets (not suitable for mobile phones).
 Using Doubao IME is recommended for an outstanding voice input experience.
 
 ### Screenshots
-![image](res/rustdesk-mod.jpg)
-![image](res/rustdesk-mod2.jpg)
-![image](res/rustdesk-mod3.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
 ![image](https://user-images.githubusercontent.com/71636191/171661982-430285f0-2e12-4b1d-9957-4a58e375304d.png)
 
 RustDesk welcomes contribution from everyone. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for help getting started.
