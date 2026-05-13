@@ -208,7 +208,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _iosKeyboardWorkaroundTimer = null;
       _timer?.cancel();
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+        SystemChrome.setEnabledSystemUIMode(
+            isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
       });
@@ -339,7 +340,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       setState(() => _showEdit = true);
       _timer?.cancel();
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
+        SystemChrome.setEnabledSystemUIMode(
+            isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
             overlays: SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
       });
@@ -581,7 +583,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
             isAndroid
                 ? Positioned(
-                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
+                    bottom: (_showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10) +
+                        MediaQuery.of(context).viewInsets.bottom,
                     left: 0,
                     right: 0,
                     child: KeyHelpTools(
@@ -842,8 +845,7 @@ class KeyHelpTools extends StatefulWidget {
   final bool showGestureHelp;
 
   /// need to show by external request, etc [keyboardIsVisible] or [changeTouchMode]
-  bool get requestShow =>
-      isAndroid ? keyboardIsVisible : (keyboardIsVisible || showGestureHelp);
+  bool get requestShow => keyboardIsVisible || showGestureHelp;
 
   KeyHelpTools(
       {required this.keyboardIsVisible, required this.showGestureHelp});
