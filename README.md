@@ -19,6 +19,15 @@ Chat with us: [Discord](https://discord.gg/nDceKgxnkV) | [Twitter](https://twitt
 
 Yet another remote desktop solution, written in Rust. Works out of the box with no configuration required. You have full control of your data, with no concerns about security. You can use our rendezvous/relay server, [set up your own](https://rustdesk.com/server), or [write your own rendezvous/relay server](https://github.com/rustdesk/rustdesk-server-demo).
 
+This project is based on the official RustDesk codebase, featuring tailored UI modifications specifically optimized for Android tablets. Upon entering full screen, the remote desktop canvas is aligned to the top, reserving ample bottom space for constant controls and shortcut keys.
+Additionally, a complete borderless immersive full-screen mode has been implemented to ensure the remote canvas is never squeezed or deformed by native Android system bars or soft keyboards.
+Highly recommended for large-screen tablets (not suitable for mobile phones).
+Using Doubao IME is recommended for an outstanding voice input experience.
+
+### Screenshots
+![image](res/rustdesk-mod.jpg)
+![image](res/rustdesk-mod2.jpg)
+![image](res/rustdesk-mod3.jpg)
 ![image](https://user-images.githubusercontent.com/71636191/171661982-430285f0-2e12-4b1d-9957-4a58e375304d.png)
 
 RustDesk welcomes contribution from everyone. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for help getting started.
