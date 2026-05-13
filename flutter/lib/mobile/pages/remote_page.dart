@@ -942,6 +942,11 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
               ),
           active: _pin,
           icon: Icons.push_pin),
+      if (isAndroid)
+        wrap(
+            '',
+            () => gFFI.invokeMethod("show_input_method_picker", null),
+            icon: Icons.language),
       wrap(
           ' ... ',
           () => setState(

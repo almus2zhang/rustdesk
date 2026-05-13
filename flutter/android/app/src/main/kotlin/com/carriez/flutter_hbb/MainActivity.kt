@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.WindowManager
+import android.view.inputmethod.InputMethodManager
 import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
@@ -225,6 +226,11 @@ class MainActivity : FlutterActivity() {
                     }
                     result.success(true)
 
+                }
+                "show_input_method_picker" -> {
+                    val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showInputMethodPicker()
+                    result.success(true)
                 }
                 "try_sync_clipboard" -> {
                     rdClipboardManager?.syncClipboard(true)
