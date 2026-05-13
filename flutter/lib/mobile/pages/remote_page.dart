@@ -838,7 +838,8 @@ class KeyHelpTools extends StatefulWidget {
   final bool showGestureHelp;
 
   /// need to show by external request, etc [keyboardIsVisible] or [changeTouchMode]
-  bool get requestShow => keyboardIsVisible || showGestureHelp;
+  bool get requestShow =>
+      isAndroid ? keyboardIsVisible : (keyboardIsVisible || showGestureHelp);
 
   KeyHelpTools(
       {required this.keyboardIsVisible, required this.showGestureHelp});
