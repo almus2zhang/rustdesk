@@ -583,8 +583,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
             isAndroid
                 ? Positioned(
-                    bottom: (_showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10) +
-                        MediaQuery.of(context).viewInsets.bottom,
+                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
                     left: 0,
                     right: 0,
                     child: KeyHelpTools(
