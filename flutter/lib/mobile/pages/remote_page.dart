@@ -953,17 +953,6 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
             '',
             () => gFFI.invokeMethod("show_input_method_picker", null),
             icon: Icons.language),
-      wrap(
-          ' ... ',
-          () => setState(
-                () {
-                  _more = !_more;
-                  if (_more) {
-                    _fn = false;
-                  }
-                },
-              ),
-          active: _more),
       wrap('', () {
         inputModel.inputKey('VK_LEFT');
       }, icon: Icons.keyboard_arrow_left),
@@ -985,6 +974,17 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
         sendPrompt(isMac, 'VK_S');
       }),
+      wrap(
+          ' ... ',
+          () => setState(
+                () {
+                  _more = !_more;
+                  if (_more) {
+                    _fn = false;
+                  }
+                },
+              ),
+          active: _more),
     ];
     final fn = <Widget>[
       SizedBox(width: 9999),
