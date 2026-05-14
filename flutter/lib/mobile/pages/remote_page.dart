@@ -622,8 +622,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? Container()
                   : TextFormField(
                       textInputAction: TextInputAction.newline,
-                      autocorrect: false,
-                      enableSuggestions: false,
+                      autocorrect: true,
+                      enableSuggestions: true,
                       autofocus: true,
                       focusNode: _mobileFocusNode,
                       maxLines: null,
