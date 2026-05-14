@@ -81,7 +81,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
 
-  bool get _isHighRes => MediaQuery.of(context).size.width > 2560;
+  bool get _isHighRes {
+    final media = MediaQuery.of(context);
+    return (media.size.width * media.devicePixelRatio) >= 2560;
+  }
 
   _RemotePageState(String id) {
     initSharedStates(id);
