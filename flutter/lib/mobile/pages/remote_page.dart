@@ -192,7 +192,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _showEdit = false;
       _mobileFocusNode.unfocus();
       if (isAndroid) {
-        _physicalFocusNode.requestFocus();
+        Timer(const Duration(milliseconds: 50), () {
+          if (mounted) _physicalFocusNode.requestFocus();
+        });
       }
 
       // Workaround for iOS: physical keyboard input fails after virtual keyboard is hidden
@@ -581,7 +583,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         color: MyTheme.canvasColor,
         child: Stack(children: () {
           final paints = [
-            ImagePaint(ffiModel: gFFI.ffiModel),
+            Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) {
+                if (_showEdit) {
+                  setState(() {
+                    _showEdit = false;
+                    _mobileFocusNode.unfocus();
+                    _physicalFocusNode.requestFocus();
+                    gFFI.invokeMethod("enable_soft_keyboard", false);
+                  });
+                }
+              },
+              child: ImagePaint(ffiModel: gFFI.ffiModel),
+            ),
             Positioned(
               top: 10,
               right: 10,
@@ -607,11 +622,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   : TextFormField(
                       textInputAction: TextInputAction.newline,
                       autocorrect: false,
-                      // Flutter 3.16.9 Android.
-                      // `enableSuggestions` causes secure keyboard to be shown.
-                      // https://github.com/flutter/flutter/issues/139143
-                      // https://github.com/flutter/flutter/issues/146540
-                      // enableSuggestions: false,
+                      enableSuggestions: false,
                       autofocus: true,
                       focusNode: _mobileFocusNode,
                       maxLines: null,
