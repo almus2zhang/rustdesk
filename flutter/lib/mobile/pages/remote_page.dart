@@ -81,6 +81,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
 
+  bool get _isHighRes => MediaQuery.of(context).size.width > 2560;
+
   _RemotePageState(String id) {
     initSharedStates(id);
     gFFI.chatModel.voiceCallStatus.value = VoiceCallStatus.notStarted;
@@ -356,11 +358,39 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
-  Widget _bottomWidget() => _showGestureHelp
-      ? getGestureHelp()
-      : (_showBar && gFFI.ffiModel.pi.displays.isNotEmpty
-          ? getBottomAppBar()
-          : Offstage());
+  Widget _bottomWidget() {
+    if (_showGestureHelp) return getGestureHelp();
+    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return Offstage();
+
+    if (_isHighRes) {
+      final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (keyboardHeight > 0) SizedBox(height: keyboardHeight),
+          BottomAppBar(
+            elevation: 10,
+            color: MyTheme.accent,
+            child: Row(
+              children: [
+                Expanded(flex: 3, child: _controlBarIcons()),
+                Container(
+                    width: 1,
+                    height: 30,
+                    color: Colors.white24,
+                    margin: EdgeInsets.symmetric(horizontal: 8)),
+                Expanded(
+                    flex: 7,
+                    child: KeyHelpTools(
+                        keyboardIsVisible: true, showGestureHelp: false)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    return getBottomAppBar();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -473,116 +503,120 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget getBottomAppBar() {
+  Widget _controlBarIcons() {
     final ffiModel = Provider.of<FfiModel>(context);
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        Row(
+            children: <Widget>[
+                  IconButton(
+                    color: Colors.white,
+                    icon: Icon(Icons.clear),
+                    onPressed: () {
+                      clientClose(sessionId, gFFI);
+                    },
+                  ),
+                  IconButton(
+                    color: Colors.white,
+                    icon: Icon(Icons.tv),
+                    onPressed: () {
+                      setState(() => _showEdit = false);
+                      showOptions(context, widget.id, gFFI.dialogManager);
+                    },
+                  )
+                ] +
+                (isWebDesktop || ffiModel.viewOnly || !ffiModel.keyboard
+                    ? []
+                    : gFFI.ffiModel.isPeerAndroid
+                        ? [
+                            IconButton(
+                                color: Colors.white,
+                                icon: Icon(Icons.keyboard),
+                                onPressed: openKeyboard),
+                            if (isAndroid)
+                              IconButton(
+                                color: Colors.white,
+                                icon: Icon(Icons.language),
+                                onPressed: () => gFFI.invokeMethod(
+                                    "show_input_method_picker", null),
+                              ),
+                            IconButton(
+                              color: Colors.white,
+                              icon: const Icon(Icons.build),
+                              onPressed: () => gFFI.dialogManager
+                                  .toggleMobileActionsOverlay(ffi: gFFI),
+                            )
+                          ]
+                        : [
+                            IconButton(
+                                color: Colors.white,
+                                icon: Icon(Icons.keyboard),
+                                onPressed: openKeyboard),
+                            if (isAndroid)
+                              IconButton(
+                                color: Colors.white,
+                                icon: Icon(Icons.language),
+                                onPressed: () => gFFI.invokeMethod(
+                                    "show_input_method_picker", null),
+                              ),
+                            IconButton(
+                              color: Colors.white,
+                              icon: Icon(gFFI.ffiModel.touchMode
+                                  ? Icons.touch_app
+                                  : Icons.mouse),
+                              onPressed: () => setState(
+                                  () => _showGestureHelp = !_showGestureHelp),
+                            ),
+                          ]) +
+                (isWeb
+                    ? []
+                    : <Widget>[
+                        futureBuilder(
+                            future: gFFI.invokeMethod(
+                                "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
+                            hasData: (isSupportVoiceCall) => IconButton(
+                                  color: Colors.white,
+                                  icon: isAndroid && isSupportVoiceCall
+                                      ? SvgPicture.asset('assets/chat.svg',
+                                          colorFilter: ColorFilter.mode(
+                                              Colors.white, BlendMode.srcIn))
+                                      : Icon(Icons.message),
+                                  onPressed: () =>
+                                      isAndroid && isSupportVoiceCall
+                                          ? showChatOptions(widget.id)
+                                          : onPressedTextChat(widget.id),
+                                ))
+                      ]) +
+                [
+                  IconButton(
+                    color: Colors.white,
+                    icon: Icon(Icons.more_vert),
+                    onPressed: () {
+                      setState(() => _showEdit = false);
+                      showActions(widget.id);
+                    },
+                  ),
+                ]),
+        Obx(() => IconButton(
+              color: Colors.white,
+              icon: Icon(Icons.expand_more),
+              onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+                  ? null
+                  : () {
+                      setState(() => _showBar = !_showBar);
+                    },
+            )),
+      ],
+    );
+  }
+
+  Widget getBottomAppBar() {
     return BottomAppBar(
       elevation: 10,
       color: MyTheme.accent,
-      child: Row(
-        mainAxisSize: MainAxisSize.max,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          Row(
-              children: <Widget>[
-                    IconButton(
-                      color: Colors.white,
-                      icon: Icon(Icons.clear),
-                      onPressed: () {
-                        clientClose(sessionId, gFFI);
-                      },
-                    ),
-                    IconButton(
-                      color: Colors.white,
-                      icon: Icon(Icons.tv),
-                      onPressed: () {
-                        setState(() => _showEdit = false);
-                        showOptions(context, widget.id, gFFI.dialogManager);
-                      },
-                    )
-                  ] +
-                  (isWebDesktop || ffiModel.viewOnly || !ffiModel.keyboard
-                      ? []
-                      : gFFI.ffiModel.isPeerAndroid
-                          ? [
-                              IconButton(
-                                  color: Colors.white,
-                                  icon: Icon(Icons.keyboard),
-                                  onPressed: openKeyboard),
-                              if (isAndroid)
-                                IconButton(
-                                  color: Colors.white,
-                                  icon: Icon(Icons.language),
-                                  onPressed: () => gFFI.invokeMethod(
-                                      "show_input_method_picker", null),
-                                ),
-                              IconButton(
-                                color: Colors.white,
-                                icon: const Icon(Icons.build),
-                                onPressed: () => gFFI.dialogManager
-                                    .toggleMobileActionsOverlay(ffi: gFFI),
-                              )
-                            ]
-                          : [
-                              IconButton(
-                                  color: Colors.white,
-                                  icon: Icon(Icons.keyboard),
-                                  onPressed: openKeyboard),
-                              if (isAndroid)
-                                IconButton(
-                                  color: Colors.white,
-                                  icon: Icon(Icons.language),
-                                  onPressed: () => gFFI.invokeMethod(
-                                      "show_input_method_picker", null),
-                                ),
-                              IconButton(
-                                color: Colors.white,
-                                icon: Icon(gFFI.ffiModel.touchMode
-                                    ? Icons.touch_app
-                                    : Icons.mouse),
-                                onPressed: () => setState(
-                                    () => _showGestureHelp = !_showGestureHelp),
-                              ),
-                            ]) +
-                  (isWeb
-                      ? []
-                      : <Widget>[
-                          futureBuilder(
-                              future: gFFI.invokeMethod(
-                                  "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                              hasData: (isSupportVoiceCall) => IconButton(
-                                    color: Colors.white,
-                                    icon: isAndroid && isSupportVoiceCall
-                                        ? SvgPicture.asset('assets/chat.svg',
-                                            colorFilter: ColorFilter.mode(
-                                                Colors.white, BlendMode.srcIn))
-                                        : Icon(Icons.message),
-                                    onPressed: () =>
-                                        isAndroid && isSupportVoiceCall
-                                            ? showChatOptions(widget.id)
-                                            : onPressedTextChat(widget.id),
-                                  ))
-                        ]) +
-                  [
-                    IconButton(
-                      color: Colors.white,
-                      icon: Icon(Icons.more_vert),
-                      onPressed: () {
-                        setState(() => _showEdit = false);
-                        showActions(widget.id);
-                      },
-                    ),
-                  ]),
-          Obx(() => IconButton(
-                color: Colors.white,
-                icon: Icon(Icons.expand_more),
-                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                    ? null
-                    : () {
-                        setState(() => _showBar = !_showBar);
-                      },
-              )),
-        ],
-      ),
+      child: _controlBarIcons(),
     );
   }
 
@@ -611,18 +645,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               right: 10,
               child: QualityMonitor(gFFI.qualityMonitorModel),
             ),
-            isAndroid
+            isAndroid && !_isHighRes
                 ? Positioned(
-                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
+                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty
+                        ? 60
+                        : 10,
                     left: 0,
                     right: 0,
                     child: KeyHelpTools(
                         keyboardIsVisible: keyboardIsVisible,
                         showGestureHelp: _showGestureHelp),
                   )
-                : KeyHelpTools(
-                    keyboardIsVisible: keyboardIsVisible,
-                    showGestureHelp: _showGestureHelp),
+                : (_isHighRes
+                    ? Offstage()
+                    : KeyHelpTools(
+                        keyboardIsVisible: keyboardIsVisible,
+                        showGestureHelp: _showGestureHelp)),
             SizedBox(
               width: 0,
               height: 0,
@@ -1071,12 +1109,13 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     Future.delayed(Duration(milliseconds: 500), () {
       _updateRect();
     });
+    final isHighRes = size.width > 2560;
     return Container(
         key: _key,
-        color: Color(0xAA000000),
+        color: isHighRes ? Colors.transparent : Color(0xAA000000),
         padding: EdgeInsets.only(
-            top: (isAndroid || !_keyboardVisibilityController.isVisible) ? 4 : 24,
-            bottom: 8),
+            top: (isAndroid || !_keyboardVisibilityController.isVisible || isHighRes) ? 4 : 24,
+            bottom: isHighRes ? 4 : 8),
         child: Wrap(
           spacing: space,
           runSpacing: space,
