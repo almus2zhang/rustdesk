@@ -508,6 +508,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   color: Colors.white,
                                   icon: Icon(Icons.keyboard),
                                   onPressed: openKeyboard),
+                              if (isAndroid)
+                                IconButton(
+                                  color: Colors.white,
+                                  icon: Icon(Icons.language),
+                                  onPressed: () => gFFI.invokeMethod(
+                                      "show_input_method_picker", null),
+                                ),
                               IconButton(
                                 color: Colors.white,
                                 icon: const Icon(Icons.build),
@@ -520,6 +527,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   color: Colors.white,
                                   icon: Icon(Icons.keyboard),
                                   onPressed: openKeyboard),
+                              if (isAndroid)
+                                IconButton(
+                                  color: Colors.white,
+                                  icon: Icon(Icons.language),
+                                  onPressed: () => gFFI.invokeMethod(
+                                      "show_input_method_picker", null),
+                                ),
                               IconButton(
                                 color: Colors.white,
                                 icon: Icon(gFFI.ffiModel.touchMode
@@ -965,11 +979,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
               ),
           active: _pin,
           icon: Icons.push_pin),
-      if (isAndroid)
-        wrap(
-            '',
-            () => gFFI.invokeMethod("show_input_method_picker", null),
-            icon: Icons.language),
+
       wrap('', () {
         inputModel.inputKey('VK_LEFT');
       }, icon: Icons.keyboard_arrow_left),
