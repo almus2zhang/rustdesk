@@ -165,7 +165,23 @@ Venligst pass på att du kjører disse kommandoene fra roten av RustDesk reposit
 - **[flutter](https://github.com/rustdesk/rustdesk/tree/master/flutter)**: Flutter kode for desktop og mobil
 - **[flutter/web/js](https://github.com/rustdesk/rustdesk/tree/master/flutter/web/js)**: JavaScript for Flutter nettsted klient
 
+
+### Android Tablet Optimizations (Mod Features)
+This project is optimized for high-performance Android tablet usage:
+- **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
+- **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
+- **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
+- **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
+- **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
+*Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+
 ## Skjermbilder
+
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
+
+
 
 ![Tilkoblings Manager](https://github.com/rustdesk/rustdesk/assets/28412477/db82d4e7-c4bc-4823-8e6f-6af7eadf7651)
 

@@ -19,10 +19,15 @@ Chat with us: [Discord](https://discord.gg/nDceKgxnkV) | [Twitter](https://twitt
 
 Yet another remote desktop solution, written in Rust. Works out of the box with no configuration required. You have full control of your data, with no concerns about security. You can use our rendezvous/relay server, [set up your own](https://rustdesk.com/server), or [write your own rendezvous/relay server](https://github.com/rustdesk/rustdesk-server-demo).
 
-This project is based on the official RustDesk codebase, featuring tailored UI modifications specifically optimized for Android tablets. Upon entering full screen, the remote desktop canvas is aligned to the top, reserving ample bottom space for constant controls and shortcut keys.
-Additionally, a complete borderless immersive full-screen mode has been implemented to ensure the remote canvas is never squeezed or deformed by native Android system bars or soft keyboards.
-Highly recommended for large-screen tablets (not suitable for mobile phones).
-Using Doubao IME is recommended for an outstanding voice input experience.
+### Android Tablet Optimizations (Mod Features)
+This project is optimized for high-performance Android tablet usage:
+- **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
+- **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
+- **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
+- **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
+- **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
+*Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+
 
 ### Screenshots
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)

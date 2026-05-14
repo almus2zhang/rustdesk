@@ -11,7 +11,24 @@
 
 Επικοινωνήστε μαζί μας μέσω: [Discord](https://discord.gg/nDceKgxnkV) | [Twitter](https://twitter.com/rustdesk) | [Reddit](https://www.reddit.com/r/rustdesk) | [YouTube](https://www.youtube.com/@rustdesk)
 
-[![RustDesk Server Pro](https://img.shields.io/badge/RustDesk%20Server%20Pro-%CE%A0%CF%81%CE%BF%CE%B7%CE%B3%CE%BC%CE%AD%CE%BD%CE%B5%CF%82%20%CE%94%CF%85%CE%BD%CE%B1%CF%84%CF%8C%CF%84%CE%B7%CF%84%CE%B5%CF%82-blue)](https://rustdesk.com/pricing.html)
+[
+### Android Tablet Optimizations (Mod Features)
+This project is optimized for high-performance Android tablet usage:
+- **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
+- **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
+- **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
+- **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
+- **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
+*Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+
+### Screenshots
+
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
+
+
+![RustDesk Server Pro](https://img.shields.io/badge/RustDesk%20Server%20Pro-%CE%A0%CF%81%CE%BF%CE%B7%CE%B3%CE%BC%CE%AD%CE%BD%CE%B5%CF%82%20%CE%94%CF%85%CE%BD%CE%B1%CF%84%CF%8C%CF%84%CE%B7%CF%84%CE%B5%CF%82-blue)](https://rustdesk.com/pricing.html)
 
 Ένα λογισμικό απομακρυσμένης επιφάνειας εργασίας, γραμμένο σε γλώσσα Rust. Δεν χρειάζεται κάποια παραμετροποίηση, λειτουργεί αμέσως μετά την εγκατάσταση. Έχετε τον πλήρη έλεγχο των δεδομένων σας, χωρίς να ανησυχείτε για την ασφάλειά τους. Μπορείτε να χρησιμοποιήσετε τους προκαθορισμένους διακομιστές rendezvous/αναμετάδοσης, [να εγκαταστήσετε τον δικό σας διακομιστή](https://rustdesk.com/server), ή [να αναπτύξετε ένα δικό σας διακομιστή rendezvous/αναμετάδοσης](https://github.com/rustdesk/rustdesk-server-demo).
 

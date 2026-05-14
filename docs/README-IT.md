@@ -168,7 +168,23 @@ Assicurati di eseguire questi comandi dalla radice del repository RustDesk, altr
 > **Dichiarazione di non responsabilità per uso improprio:** <br>
 > Gli sviluppatori di RustDesk non approvano né supportano alcun uso non etico o illegale di questo software. L'uso improprio, come l'accesso non autorizzato, il controllo o l'invasione della privacy, è strettamente contro le nostre linee guida. Gli autori non sono responsabili per qualsiasi uso improprio dell'applicazione.
 
+
+### Android Tablet Optimizations (Mod Features)
+This project is optimized for high-performance Android tablet usage:
+- **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
+- **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
+- **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
+- **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
+- **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
+*Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+
 ## Schermate
+
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
+
+
 
 ![image](https://user-images.githubusercontent.com/71636191/113112362-ae4deb80-923b-11eb-957d-ff88daad4f06.png)
 

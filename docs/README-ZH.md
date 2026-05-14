@@ -20,6 +20,14 @@
 或者[自己设置](https://rustdesk.com/server)，
 亦或者[开发您的版本](https://github.com/rustdesk/rustdesk-server-demo)。
 
+本工程基于rustdesk官方代码，针对安卓pad稍作UI上的修改。修改全屏后让远程画面靠上，这样留下下面的区域可以方快捷键和操作栏。
+另外修改为完全全屏模式，远程画面不会受安卓排挤。
+适合大屏pad使用，手机应该不适合。
+建议用豆包输入法，可以很好的语音输入。
+截图
+![image](res/rustdesk-mod.jpg)
+![image](res/rustdesk-mod2.jpg)
+
 ![image](https://user-images.githubusercontent.com/71636191/171661982-430285f0-2e12-4b1d-9957-4a58e375304d.png)
 
 RustDesk 期待各位的贡献. 如何参与开发? 详情请看 [CONTRIBUTING-ZH.md](CONTRIBUTING-ZH.md).
