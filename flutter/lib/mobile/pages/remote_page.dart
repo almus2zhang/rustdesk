@@ -597,7 +597,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         color: MyTheme.canvasColor,
         child: Stack(children: () {
           final paints = [
-            ImagePaint(ffiModel: gFFI.ffiModel),
+            Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) {
+                if (_showEdit) {
+                  _mobileFocusNode.requestFocus();
+                }
+              },
+              child: ImagePaint(ffiModel: gFFI.ffiModel),
+            ),
             Positioned(
               top: 10,
               right: 10,
