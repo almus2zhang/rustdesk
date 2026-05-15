@@ -995,6 +995,9 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       wrap(isMac ? ' Cmd ' : ' Win ', () {
         setState(() => inputModel.command = !inputModel.command);
       }, active: inputModel.command),
+      wrap('Tab', () {
+        inputModel.inputKey('VK_TAB');
+      }),
     ];
     final keys = <Widget>[
       wrap(
@@ -1062,9 +1065,6 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       SizedBox(width: 9999),
       wrap('Esc', () {
         inputModel.inputKey('VK_ESCAPE');
-      }),
-      wrap('Tab', () {
-        inputModel.inputKey('VK_TAB');
       }),
       wrap('Home', () {
         inputModel.inputKey('VK_HOME');
