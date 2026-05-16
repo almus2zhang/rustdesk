@@ -28,11 +28,15 @@
 - **智能输入焦点**：深度兼容豆包等第三方输入法，支持焦点锁定与自动恢复，彻底解决关闭键盘后无法打字的顽疾。
 - **键盘避让逻辑**：软键盘弹出时会自动避让工具栏（位于工具栏上方），确保输入时快捷键依然清晰可见。
 *强烈建议在超大屏平板上使用。配合豆包输入法的语音输入功能，可获得极致的办公体验。*
+以下是 16:9 和 16:10 平板电脑的截图：
+
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod4.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod5.jpg)
 
 ### 截图示例
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
 
 RustDesk 期待各位的贡献. 如何参与开发? 详情请看 [CONTRIBUTING-ZH.md](CONTRIBUTING-ZH.md).
 
