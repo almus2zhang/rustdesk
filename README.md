@@ -25,6 +25,7 @@ This project is optimized for high-performance Android tablet usage:
 - **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
 - **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
 - **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
+- **Persistent Background Connectivity**: Implemented Android foreground service to prevent session timeouts. Connections remain active even when the app is minimized or switched to the background.
 - **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
 *Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
 below are the screenshots of set remote screen to 16:9 and 16:10 on 3:2 tablets.

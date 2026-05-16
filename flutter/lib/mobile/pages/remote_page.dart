@@ -128,6 +128,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           isKeyboardVisible: keyboardVisibilityController.isVisible);
     });
     WidgetsBinding.instance.addObserver(this);
+    if (isAndroid) {
+      gFFI.invokeMethod("start_foreground");
+    }
   }
 
   @override
@@ -143,6 +146,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _mobileFocusNode.dispose();
     _physicalFocusNode.dispose();
     await gFFI.close();
+    if (isAndroid && !gFFI.serverModel.isStart) {
+      await gFFI.invokeMethod("stop_service");
+    }
     _timer?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
     gFFI.dialogManager.dismissAll();

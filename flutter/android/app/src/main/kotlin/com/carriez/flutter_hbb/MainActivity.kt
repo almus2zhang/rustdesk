@@ -279,6 +279,16 @@ class MainActivity : FlutterActivity() {
                 "on_voice_call_closed" -> {
                     onVoiceCallClosed()
                 }
+                "start_foreground" -> {
+                    val intent = Intent(activity, MainService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        activity.startForegroundService(intent)
+                    } else {
+                        activity.startService(intent)
+                    }
+                    bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+                    result.success(true)
+                }
                 else -> {
                     result.error("-1", "No such method", null)
                 }
