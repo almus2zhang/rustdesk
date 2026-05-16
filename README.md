@@ -27,7 +27,11 @@ This project is optimized for high-performance Android tablet usage:
 - **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
 - **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
 *Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+below are the screenshots of set remote screen to 16:9 and 16:10 on 3:2 tablets.
 
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod4.jpg)
+![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod5.jpg)
 
 ### Screenshots
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
