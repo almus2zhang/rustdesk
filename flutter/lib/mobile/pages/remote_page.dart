@@ -1132,7 +1132,13 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
               modifiers +
               keys +
               (_fn ? fn : []) +
-              (_more ? more : []),
+              (_more
+                  ? more
+                  : [
+                      wrap('Enter', () {
+                        inputModel.inputKey('VK_ENTER');
+                      })
+                    ]),
         ));
   }
 }
