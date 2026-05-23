@@ -110,6 +110,14 @@ class _RawTouchGestureDetectorRegionState
   // Cache global position for onTap (which lacks position info).
   Offset? _lastTapDownGlobalPosition;
 
+  double _twoFingerScrollX = 0;
+  double _twoFingerScrollY = 0;
+
+  bool get _isHighRes {
+    final media = MediaQuery.of(context);
+    return (media.size.width * media.devicePixelRatio) >= 2560;
+  }
+
   FFI get ffi => widget.ffi;
   FfiModel get ffiModel => widget.ffiModel;
   InputModel get inputModel => widget.inputModel;
@@ -455,6 +463,8 @@ class _RawTouchGestureDetectorRegionState
       // Initialize the last focal point to calculate deltas manually.
       _lastSpecialHoldDragFocalPoint = d.focalPoint;
     }
+    _twoFingerScrollX = 0;
+    _twoFingerScrollY = 0;
   }
 
   onTwoFingerScaleUpdate(ScaleUpdateDetails d) async {
@@ -485,10 +495,41 @@ class _RawTouchGestureDetectorRegionState
       }
     } else {
       // mobile
-      ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
-      _scale = d.scale;
-      ffi.canvasModel.panX(d.focalPointDelta.dx);
-      ffi.canvasModel.panY(d.focalPointDelta.dy);
+      if (_isHighRes) {
+        _twoFingerScrollX += d.focalPointDelta.dx;
+        _twoFingerScrollY += d.focalPointDelta.dy;
+
+        const double threshold = 8.0;
+        int scrollX = 0;
+        int scrollY = 0;
+
+        if (_twoFingerScrollX.abs() >= threshold) {
+          scrollX = (_twoFingerScrollX / threshold).truncate();
+          _twoFingerScrollX -= scrollX * threshold;
+        }
+        if (_twoFingerScrollY.abs() >= threshold) {
+          scrollY = (_twoFingerScrollY / threshold).truncate();
+          _twoFingerScrollY -= scrollY * threshold;
+        }
+
+        if (scrollX != 0 || scrollY != 0) {
+          if (!widget.isCamera) {
+            await bind.sessionSendMouse(
+                sessionId: sessionId,
+                msg: json.encode(inputModel.modify({
+                  'id': inputModel.id,
+                  'type': 'wheel',
+                  'x': scrollX.toString(),
+                  'y': scrollY.toString(),
+                })));
+          }
+        }
+      } else {
+        ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
+        _scale = d.scale;
+        ffi.canvasModel.panX(d.focalPointDelta.dx);
+        ffi.canvasModel.panY(d.focalPointDelta.dy);
+      }
     }
   }
 
