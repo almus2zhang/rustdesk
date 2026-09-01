@@ -253,6 +253,22 @@ impl Client {
         if config::is_incoming_only() {
             bail!("Incoming only mode");
         }
+        if is_301_address(peer) {
+            let real_peer = fetch_301_address(peer).await?;
+            let target = check_port(&real_peer, RELAY_PORT + 1);
+            interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
+            return Ok((
+                (
+                    connect_tcp_local(&target, None, CONNECT_TIMEOUT).await?,
+                    true,
+                    None,
+                    None,
+                    "TCP",
+                ),
+                (0, "".to_owned()),
+                false,
+            ));
+        }
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
             return Ok((
@@ -1761,6 +1777,7 @@ pub struct LoginConfigHandler {
     pub enable_trusted_devices: bool,
     pub record_state: bool,
     pub record_permission: bool,
+    pub resolved_addr: Option<String>,
 }
 
 impl Deref for LoginConfigHandler {
@@ -1827,6 +1844,7 @@ impl LoginConfigHandler {
 
         self.id = id;
         self.conn_type = conn_type;
+        self.resolved_addr = None;
         let config = self.load_config();
         self.remember = !config.password.is_empty();
         self.config = config;
@@ -2650,6 +2668,8 @@ impl LoginConfigHandler {
         let (my_id, pure_id) = if let Some((id, _, _)) = self.other_server.as_ref() {
             let server = Config::get_rendezvous_server();
             (format!("{my_id}@{server}"), id.clone())
+        } else if let Some(resolved) = self.resolved_addr.as_ref() {
+            (my_id, resolved.clone())
         } else {
             (my_id, self.id.clone())
         };
@@ -4262,3 +4282,100 @@ async fn udp_nat_connect(
         })?;
     Ok((res.1, Some(res.0), typ))
 }
+
+#[inline]
+pub fn is_301_address(peer: &str) -> bool {
+    let lower = peer.to_lowercase();
+    lower.starts_with("301:") || lower.starts_with("301：") || lower.starts_with("301/")
+}
+
+fn parse_address_from_body(body: &str) -> ResultType<String> {
+    let trimmed = body.trim().trim_matches(|c| c == '"' || c == '\'');
+    if trimmed.is_empty() {
+        bail!("Response body is empty");
+    }
+    // Try to parse as JSON if it looks like JSON
+    if trimmed.starts_with('{') {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            if let Some(obj) = v.as_object() {
+                for key in ["address", "addr", "endpoint", "data", "url", "target"] {
+                    if let Some(addr_val) = obj.get(key) {
+                        if let Some(s) = addr_val.as_str() {
+                            let s = s.trim();
+                            if !s.is_empty() {
+                                return Ok(s.to_string());
+                            }
+                        }
+                    }
+                }
+                let host = obj.get("ip").or_else(|| obj.get("host")).and_then(|x| x.as_str());
+                if let Some(host) = host {
+                    let host = host.trim();
+                    if let Some(port_val) = obj.get("port") {
+                        let port = if let Some(p) = port_val.as_i64() {
+                            p.to_string()
+                        } else if let Some(p) = port_val.as_str() {
+                            p.trim().to_string()
+                        } else {
+                            "".to_string()
+                        };
+                        if !port.is_empty() {
+                            return Ok(format!("{}:{}", host, port));
+                        }
+                    }
+                    if !host.is_empty() {
+                        return Ok(host.to_string());
+                    }
+                }
+            }
+        }
+    }
+    // Handle single line or take first non-empty line
+    for line in trimmed.lines() {
+        let line = line.trim().trim_matches(|c| c == '"' || c == '\'');
+        if !line.is_empty() {
+            return Ok(line.to_string());
+        }
+    }
+    Ok(trimmed.to_string())
+}
+
+pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
+    let url_part = if let Some(stripped) = peer.strip_prefix("301:") {
+        stripped
+    } else if let Some(stripped) = peer.strip_prefix("301：") {
+        stripped
+    } else if let Some(stripped) = peer.strip_prefix("301/") {
+        stripped
+    } else if peer.len() >= 4 && (peer[..4].eq_ignore_ascii_case("301:") || peer[..4].eq_ignore_ascii_case("301/")) {
+        &peer[4..]
+    } else {
+        peer
+    };
+    let mut url = url_part.trim().to_string();
+    if url.starts_with("//") {
+        url = format!("http:{}", url);
+    } else if !url.starts_with("http://") && !url.starts_with("https://") {
+        url = format!("http://{}", url);
+    }
+    log::info!("Fetching real target address from 301 URL: {}", url);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| anyhow!("Failed to fetch 301 address from {}: {}", url, e))?;
+    if !resp.status().is_success() {
+        bail!("Failed to fetch 301 address from {}: HTTP status {}", url, resp.status());
+    }
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| anyhow!("Failed to read 301 address response from {}: {}", url, e))?;
+    let parsed = parse_address_from_body(&body)?;
+    log::info!("Successfully resolved 301 address {} to {}", peer, parsed);
+    Ok(parsed)
+}
+

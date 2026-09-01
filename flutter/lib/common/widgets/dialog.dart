@@ -877,6 +877,14 @@ _connectDialog(
   if (canRememberAccount && osUsernameController != null) {
     rememberAccount =
         await bind.sessionGetRemember(sessionId: sessionId) ?? false;
+    if (osUsernameController.text.isEmpty) {
+      final savedUsername =
+          await bind.sessionGetOption(sessionId: sessionId, arg: 'os-username') ??
+              '';
+      if (savedUsername.isNotEmpty) {
+        osUsernameController.text = savedUsername;
+      }
+    }
   }
   if (osUsernameController != null) {
     osUsernameController.addListener(() {

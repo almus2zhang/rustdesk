@@ -35,6 +35,7 @@ class IDTextInputFormatter extends TextInputFormatter {
 
 String formatID(String id) {
   String id2 = id.replaceAll(' ', '');
+  if (id2.startsWith('301:') || id2.startsWith('301：')) return id;
   String suffix = '';
   if (id2.endsWith(r'\r') || id2.endsWith(r'/r')) {
     suffix = id2.substring(id2.length - 2, id2.length);
@@ -56,5 +57,9 @@ String formatID(String id) {
 }
 
 String trimID(String id) {
-  return id.replaceAll(' ', '');
+  var s = id.replaceAll(' ', '');
+  if (s.startsWith('301：')) {
+    s = '301:${s.substring(4)}';
+  }
+  return s;
 }
