@@ -259,7 +259,7 @@ impl Client {
             interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
             return Ok((
                 (
-                    connect_tcp_local(&target, None, CONNECT_TIMEOUT).await?,
+                    connect_tcp_local(target, None, CONNECT_TIMEOUT).await?,
                     true,
                     None,
                     None,
