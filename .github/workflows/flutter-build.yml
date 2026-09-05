@@ -792,7 +792,7 @@ jobs:
       - build-for-windows-flutter
       - build-for-windows-sciter
     runs-on: ubuntu-latest
-    if: inputs.upload-artifact && env.TAG_NAME != ''
+    if: inputs.upload-artifact && inputs.upload-tag != ''
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@master
