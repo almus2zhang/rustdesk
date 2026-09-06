@@ -4390,6 +4390,163 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
     Ok(trimmed.to_string())
 }
 
+async fn send_302_request(
+    client: &reqwest::Client,
+    url: &str,
+) -> ResultType<reqwest::Response> {
+    let first_res = client.get(url).send().await;
+    match first_res {
+        Ok(resp) => {
+            let status = resp.status();
+            let is_isp_block = if status.is_redirection() {
+                resp.headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|loc| loc.to_str().ok())
+                    .map(|loc_str| loc_str.contains("0.0.0.0"))
+                    .unwrap_or(false)
+            } else if status == reqwest::StatusCode::FORBIDDEN {
+                true
+            } else {
+                false
+            };
+
+            if !is_isp_block {
+                return Ok(resp);
+            }
+            log::warn!("Detected ISP interception for {}, attempting direct IP bypass", url);
+        }
+        Err(e) => {
+            log::warn!("Direct request to {} failed ({}), attempting direct IP bypass (anti-SNI filtering)", url, e);
+        }
+    }
+
+    // Direct IP fallback:
+    // When domestic ISP firewalls (DPI) inspect the TLS SNI (Server Name Indication) extension,
+    // they drop the connection for unfiled domains.
+    // By resolving DNS first and connecting to https://<IP>:<PORT>/ with a Host header,
+    // no SNI extension is sent (per RFC 6066), completely bypassing SNI inspection.
+    if let Ok(parsed_url) = reqwest::Url::parse(url) {
+        if let Some(host_str) = parsed_url.host_str() {
+            if host_str.parse::<std::net::IpAddr>().is_err() {
+                let port = parsed_url.port_or_known_default().unwrap_or(80);
+                let lookup_target = format!("{}:{}", host_str, port);
+                if let Ok(addrs) = tokio::net::lookup_host(&lookup_target).await {
+                    let host_header_val = if let Some(p) = parsed_url.port() {
+                        format!("{}:{}", host_str, p)
+                    } else {
+                        host_str.to_string()
+                    };
+                    for addr in addrs {
+                        let ip = addr.ip();
+                        let mut ip_url = parsed_url.clone();
+                        if ip_url.set_host(Some(&ip.to_string())).is_ok() {
+                            let ip_url_str = ip_url.as_str();
+                            log::info!("Connecting via direct IP: {} (Host: {})", ip_url_str, host_header_val);
+                            if let Ok(resp) = client
+                                .get(ip_url_str)
+                                .header(reqwest::header::HOST, &host_header_val)
+                                .send()
+                                .await
+                            {
+                                let status = resp.status();
+                                let is_isp_block = if status.is_redirection() {
+                                    resp.headers()
+                                        .get(reqwest::header::LOCATION)
+                                        .and_then(|loc| loc.to_str().ok())
+                                        .map(|loc_str| loc_str.contains("0.0.0.0"))
+                                        .unwrap_or(false)
+                                } else if status == reqwest::StatusCode::FORBIDDEN {
+                                    true
+                                } else {
+                                    false
+                                };
+                                if !is_isp_block {
+                                    return Ok(resp);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Scheme fallback: if url was http://, try https://, and vice versa
+    let alt_url = if url.starts_with("http://") {
+        Some(format!("https://{}", &url["http://".len()..]))
+    } else if url.starts_with("https://") {
+        Some(format!("http://{}", &url["https://".len()..]))
+    } else {
+        None
+    };
+
+    if let Some(alt) = alt_url {
+        log::info!("Attempting scheme fallback to {}", alt);
+        if let Ok(resp) = client.get(&alt).send().await {
+            let status = resp.status();
+            let is_isp_block = if status.is_redirection() {
+                resp.headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|l| l.to_str().ok())
+                    .map(|s| s.contains("0.0.0.0"))
+                    .unwrap_or(false)
+            } else if status == reqwest::StatusCode::FORBIDDEN {
+                true
+            } else {
+                false
+            };
+            if !is_isp_block {
+                return Ok(resp);
+            }
+        }
+        if let Ok(parsed_url) = reqwest::Url::parse(&alt) {
+            if let Some(host_str) = parsed_url.host_str() {
+                if host_str.parse::<std::net::IpAddr>().is_err() {
+                    let port = parsed_url.port_or_known_default().unwrap_or(80);
+                    let lookup_target = format!("{}:{}", host_str, port);
+                    if let Ok(addrs) = tokio::net::lookup_host(&lookup_target).await {
+                        let host_header_val = if let Some(p) = parsed_url.port() {
+                            format!("{}:{}", host_str, p)
+                        } else {
+                            host_str.to_string()
+                        };
+                        for addr in addrs {
+                            let ip = addr.ip();
+                            let mut ip_url = parsed_url.clone();
+                            if ip_url.set_host(Some(&ip.to_string())).is_ok() {
+                                if let Ok(resp) = client
+                                    .get(ip_url.as_str())
+                                    .header(reqwest::header::HOST, &host_header_val)
+                                    .send()
+                                    .await
+                                {
+                                    let status = resp.status();
+                                    let is_isp_block = if status.is_redirection() {
+                                        resp.headers()
+                                            .get(reqwest::header::LOCATION)
+                                            .and_then(|l| l.to_str().ok())
+                                            .map(|s| s.contains("0.0.0.0"))
+                                            .unwrap_or(false)
+                                    } else if status == reqwest::StatusCode::FORBIDDEN {
+                                        true
+                                    } else {
+                                        false
+                                    };
+                                    if !is_isp_block {
+                                        return Ok(resp);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    client.get(url).send().await.map_err(|e| anyhow!("Failed to fetch 302 address from {}: {}", url, e))
+}
+
 pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
     let url_part = if let Some(stripped) = peer.strip_prefix("302:") {
         stripped
@@ -4428,13 +4585,14 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
         .redirect(reqwest::redirect::Policy::none())
         .danger_accept_invalid_certs(true)
         .danger_accept_invalid_hostnames(true)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .build()?;
 
     let mut current_url = url.clone();
     let mut last_redirect_target: Option<String> = None;
 
     for _ in 0..10 {
-        let resp = match client.get(&current_url).send().await {
+        let resp = match send_302_request(&client, &current_url).await {
             Ok(r) => r,
             Err(e) => {
                 if let Some(target) = last_redirect_target {
