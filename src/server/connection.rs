@@ -3484,7 +3484,10 @@ impl Connection {
                     #[cfg(not(any(target_os = "android", target_os = "ios")))]
                     allow_err!(self.handle_terminal_action(action).await);
                     #[cfg(any(target_os = "android", target_os = "ios"))]
-                    log::warn!("Terminal action received but not supported on this platform");
+                    {
+                        let _ = action;
+                        log::warn!("Terminal action received but not supported on this platform");
+                    }
                 }
                 _ => {}
             }

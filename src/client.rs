@@ -4429,40 +4429,42 @@ async fn send_302_request(
         if let Some(host_str) = parsed_url.host_str() {
             if host_str.parse::<std::net::IpAddr>().is_err() {
                 let port = parsed_url.port_or_known_default().unwrap_or(80);
-                let lookup_target = format!("{}:{}", host_str, port);
-                if let Ok(addrs) = tokio::net::lookup_host(&lookup_target).await {
-                    let host_header_val = if let Some(p) = parsed_url.port() {
-                        format!("{}:{}", host_str, p)
-                    } else {
-                        host_str.to_string()
-                    };
-                    for addr in addrs {
-                        let ip = addr.ip();
-                        let mut ip_url = parsed_url.clone();
-                        if ip_url.set_host(Some(&ip.to_string())).is_ok() {
-                            let ip_url_str = ip_url.as_str();
-                            log::info!("Connecting via direct IP: {} (Host: {})", ip_url_str, host_header_val);
-                            if let Ok(resp) = client
-                                .get(ip_url_str)
-                                .header(reqwest::header::HOST, &host_header_val)
-                                .send()
-                                .await
-                            {
-                                let status = resp.status();
-                                let is_isp_block = if status.is_redirection() {
-                                    resp.headers()
-                                        .get(reqwest::header::LOCATION)
-                                        .and_then(|loc| loc.to_str().ok())
-                                        .map(|loc_str| loc_str.contains("0.0.0.0"))
-                                        .unwrap_or(false)
-                                } else if status == reqwest::StatusCode::FORBIDDEN {
-                                    true
-                                } else {
-                                    false
-                                };
-                                if !is_isp_block {
-                                    return Ok(resp);
-                                }
+                let addrs = tokio::net::lookup_host((host_str, port))
+                    .await
+                    .ok()
+                    .map(|iter| iter.collect::<Vec<_>>())
+                    .unwrap_or_default();
+                let host_header_val = if let Some(p) = parsed_url.port() {
+                    format!("{}:{}", host_str, p)
+                } else {
+                    host_str.to_string()
+                };
+                for addr in addrs {
+                    let ip = addr.ip();
+                    let mut ip_url = parsed_url.clone();
+                    if ip_url.set_host(Some(&ip.to_string())).is_ok() {
+                        let ip_url_str = ip_url.as_str();
+                        log::info!("Connecting via direct IP: {} (Host: {})", ip_url_str, host_header_val);
+                        if let Ok(resp) = client
+                            .get(ip_url_str)
+                            .header(reqwest::header::HOST, &host_header_val)
+                            .send()
+                            .await
+                        {
+                            let status = resp.status();
+                            let is_isp_block = if status.is_redirection() {
+                                resp.headers()
+                                    .get(reqwest::header::LOCATION)
+                                    .and_then(|loc| loc.to_str().ok())
+                                    .map(|loc_str| loc_str.contains("0.0.0.0"))
+                                    .unwrap_or(false)
+                            } else if status == reqwest::StatusCode::FORBIDDEN {
+                                true
+                            } else {
+                                false
+                            };
+                            if !is_isp_block {
+                                return Ok(resp);
                             }
                         }
                     }
@@ -4503,38 +4505,40 @@ async fn send_302_request(
             if let Some(host_str) = parsed_url.host_str() {
                 if host_str.parse::<std::net::IpAddr>().is_err() {
                     let port = parsed_url.port_or_known_default().unwrap_or(80);
-                    let lookup_target = format!("{}:{}", host_str, port);
-                    if let Ok(addrs) = tokio::net::lookup_host(&lookup_target).await {
-                        let host_header_val = if let Some(p) = parsed_url.port() {
-                            format!("{}:{}", host_str, p)
-                        } else {
-                            host_str.to_string()
-                        };
-                        for addr in addrs {
-                            let ip = addr.ip();
-                            let mut ip_url = parsed_url.clone();
-                            if ip_url.set_host(Some(&ip.to_string())).is_ok() {
-                                if let Ok(resp) = client
-                                    .get(ip_url.as_str())
-                                    .header(reqwest::header::HOST, &host_header_val)
-                                    .send()
-                                    .await
-                                {
-                                    let status = resp.status();
-                                    let is_isp_block = if status.is_redirection() {
-                                        resp.headers()
-                                            .get(reqwest::header::LOCATION)
-                                            .and_then(|l| l.to_str().ok())
-                                            .map(|s| s.contains("0.0.0.0"))
-                                            .unwrap_or(false)
-                                    } else if status == reqwest::StatusCode::FORBIDDEN {
-                                        true
-                                    } else {
-                                        false
-                                    };
-                                    if !is_isp_block {
-                                        return Ok(resp);
-                                    }
+                    let addrs = tokio::net::lookup_host((host_str, port))
+                        .await
+                        .ok()
+                        .map(|iter| iter.collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    let host_header_val = if let Some(p) = parsed_url.port() {
+                        format!("{}:{}", host_str, p)
+                    } else {
+                        host_str.to_string()
+                    };
+                    for addr in addrs {
+                        let ip = addr.ip();
+                        let mut ip_url = parsed_url.clone();
+                        if ip_url.set_host(Some(&ip.to_string())).is_ok() {
+                            if let Ok(resp) = client
+                                .get(ip_url.as_str())
+                                .header(reqwest::header::HOST, &host_header_val)
+                                .send()
+                                .await
+                            {
+                                let status = resp.status();
+                                let is_isp_block = if status.is_redirection() {
+                                    resp.headers()
+                                        .get(reqwest::header::LOCATION)
+                                        .and_then(|l| l.to_str().ok())
+                                        .map(|s| s.contains("0.0.0.0"))
+                                        .unwrap_or(false)
+                                } else if status == reqwest::StatusCode::FORBIDDEN {
+                                    true
+                                } else {
+                                    false
+                                };
+                                if !is_isp_block {
+                                    return Ok(resp);
                                 }
                             }
                         }
