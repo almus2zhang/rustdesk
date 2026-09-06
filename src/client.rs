@@ -4426,6 +4426,8 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .redirect(reqwest::redirect::Policy::none())
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
         .build()?;
 
     let mut current_url = url.clone();
