@@ -2563,6 +2563,10 @@ connect(BuildContext context, String id,
     id = '302:${id.substring(4)}';
   } else if (id.startsWith('301：')) {
     id = '301:${id.substring(4)}';
+  } else if (id.toLowerCase().startsWith('http：//')) {
+    id = 'http://${id.substring(7)}';
+  } else if (id.toLowerCase().startsWith('https：//')) {
+    id = 'https://${id.substring(8)}';
   }
   final oldId = id;
   id = await bind.mainHandleRelayId(id: id);

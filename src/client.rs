@@ -4288,12 +4288,46 @@ pub fn is_302_address(peer: &str) -> bool {
     let lower = peer.to_lowercase();
     lower.starts_with("302:") || lower.starts_with("302：") || lower.starts_with("302/")
         || lower.starts_with("301:") || lower.starts_with("301：") || lower.starts_with("301/")
+        || lower.starts_with("http://") || lower.starts_with("http：//")
+        || lower.starts_with("https://") || lower.starts_with("https：//")
 }
 
 // Keep is_301_address as alias for backward compatibility
 #[inline]
 pub fn is_301_address(peer: &str) -> bool {
     is_302_address(peer)
+}
+
+pub fn parse_target_from_url(url_str: &str) -> Option<String> {
+    let mut s = url_str.trim().trim_matches(|c| c == '"' || c == '\'');
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = s.strip_prefix("http://") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_prefix("https://") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_prefix("http：//") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_prefix("https：//") {
+        s = stripped;
+    } else if let Some(stripped) = s.strip_prefix("//") {
+        s = stripped;
+    } else if s.len() >= 7 && s[..7].eq_ignore_ascii_case("http://") {
+        s = &s[7..];
+    } else if s.len() >= 8 && s[..8].eq_ignore_ascii_case("https://") {
+        s = &s[8..];
+    }
+
+    if let Some(pos) = s.find(|c| c == '/' || c == '?' || c == '#' || c == '\\') {
+        s = &s[..pos];
+    }
+    let s = s.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
 }
 
 fn parse_address_from_body(body: &str) -> ResultType<String> {
@@ -4310,6 +4344,9 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
                         if let Some(s) = addr_val.as_str() {
                             let s = s.trim();
                             if !s.is_empty() {
+                                if let Some(target) = parse_target_from_url(s) {
+                                    return Ok(target);
+                                }
                                 return Ok(s.to_string());
                             }
                         }
@@ -4341,8 +4378,14 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
     for line in trimmed.lines() {
         let line = line.trim().trim_matches(|c| c == '"' || c == '\'');
         if !line.is_empty() {
+            if let Some(target) = parse_target_from_url(line) {
+                return Ok(target);
+            }
             return Ok(line.to_string());
         }
+    }
+    if let Some(target) = parse_target_from_url(trimmed) {
+        return Ok(target);
     }
     Ok(trimmed.to_string())
 }
@@ -4368,33 +4411,174 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
         peer
     };
     let mut url = url_part.trim().to_string();
+    if url.starts_with("http：//") {
+        url = format!("http://{}", &url["http：//".len()..]);
+    } else if url.starts_with("https：//") {
+        url = format!("https://{}", &url["https：//".len()..]);
+    }
     if url.starts_with("//") {
         url = format!("http:{}", url);
     } else if !url.starts_with("http://") && !url.starts_with("https://") {
         url = format!("http://{}", url);
     }
     log::info!("Fetching real target address from 302 URL: {}", url);
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
         .build()?;
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("Failed to fetch 302 address from {}: {}", url, e))?;
-    if !resp.status().is_success() {
-        bail!("Failed to fetch 302 address from {}: HTTP status {}", url, resp.status());
+
+    let mut current_url = url.clone();
+    let mut last_redirect_target: Option<String> = None;
+
+    for _ in 0..10 {
+        let resp = match client.get(&current_url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                if let Some(target) = last_redirect_target {
+                    log::info!("Request to {} failed ({}), falling back to redirect target {}", current_url, e, target);
+                    return Ok(target);
+                }
+                bail!("Failed to fetch 302 address from {}: {}", current_url, e);
+            }
+        };
+
+        let status = resp.status();
+        if status.is_redirection() {
+            if let Some(loc) = resp.headers().get(reqwest::header::LOCATION) {
+                if let Ok(loc_str) = loc.to_str() {
+                    let next_url = if let Ok(parsed_url) = reqwest::Url::parse(loc_str) {
+                        parsed_url
+                    } else if let Ok(base) = reqwest::Url::parse(&current_url) {
+                        base.join(loc_str).map_err(|e| anyhow!("Invalid redirect URL {}: {}", loc_str, e))?
+                    } else {
+                        bail!("Invalid redirect location: {}", loc_str);
+                    };
+
+                    let target = parse_target_from_url(next_url.as_str());
+                    last_redirect_target = target.clone();
+
+                    if let Some(port) = next_url.port() {
+                        if port != 80 && port != 443 {
+                            if let Some(t) = target {
+                                log::info!("Redirected to custom port {}: using target {}", port, t);
+                                return Ok(t);
+                            }
+                        }
+                    }
+
+                    current_url = next_url.to_string();
+                    continue;
+                }
+            }
+            if let Some(target) = last_redirect_target {
+                return Ok(target);
+            }
+            bail!("Redirected with status {} but missing Location header from {}", status, current_url);
+        }
+
+        if status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            if let Ok(parsed) = parse_address_from_body(&body) {
+                log::info!("Successfully parsed 302 address from body: {}", parsed);
+                return Ok(parsed);
+            }
+            if let Some(target) = last_redirect_target {
+                return Ok(target);
+            }
+            if let Some(target) = parse_target_from_url(&current_url) {
+                return Ok(target);
+            }
+            bail!("Failed to parse target address from response at {}", current_url);
+        }
+
+        if let Some(target) = last_redirect_target {
+            return Ok(target);
+        }
+        bail!("Failed to fetch 302 address from {}: HTTP status {}", current_url, status);
     }
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| anyhow!("Failed to read 302 address response from {}: {}", url, e))?;
-    let parsed = parse_address_from_body(&body)?;
-    log::info!("Successfully resolved 302 address {} to {}", peer, parsed);
-    Ok(parsed)
+
+    if let Some(target) = last_redirect_target {
+        return Ok(target);
+    }
+    bail!("Too many redirects while fetching 302 address from {}", url);
 }
 
 pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
     fetch_302_address(peer).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_302_address() {
+        assert!(is_302_address("302:http://example.com/stun"));
+        assert!(is_302_address("302：http://example.com/stun"));
+        assert!(is_302_address("302/example.com/stun"));
+        assert!(is_302_address("301:http://example.com/stun"));
+        assert!(is_302_address("301：http://example.com/stun"));
+        assert!(is_302_address("http://example.com/stun"));
+        assert!(is_302_address("https://example.com/stun"));
+        assert!(is_302_address("http：//example.com/stun"));
+        assert!(is_302_address("https：//example.com/stun"));
+        assert!(is_302_address("HTTP://EXAMPLE.COM/STUN"));
+        assert!(!is_302_address("192.168.1.1"));
+        assert!(!is_302_address("123456789"));
+        assert!(!is_302_address("example.com:21118"));
+    }
+
+    #[test]
+    fn test_parse_target_from_url() {
+        assert_eq!(
+            parse_target_from_url("http://1.2.3.4:5678/"),
+            Some("1.2.3.4:5678".to_string())
+        );
+        assert_eq!(
+            parse_target_from_url("https://1.2.3.4:5678"),
+            Some("1.2.3.4:5678".to_string())
+        );
+        assert_eq!(
+            parse_target_from_url("http://example.com:21118/some/path?foo=bar#hash"),
+            Some("example.com:21118".to_string())
+        );
+        assert_eq!(
+            parse_target_from_url("http://1.2.3.4"),
+            Some("1.2.3.4".to_string())
+        );
+        assert_eq!(
+            parse_target_from_url("1.2.3.4:5678"),
+            Some("1.2.3.4:5678".to_string())
+        );
+        assert_eq!(
+            parse_target_from_url("http：//1.2.3.4:5678/"),
+            Some("1.2.3.4:5678".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_address_from_body() {
+        assert_eq!(
+            parse_address_from_body("1.2.3.4:5678").unwrap(),
+            "1.2.3.4:5678"
+        );
+        assert_eq!(
+            parse_address_from_body("http://1.2.3.4:5678/").unwrap(),
+            "1.2.3.4:5678"
+        );
+        assert_eq!(
+            parse_address_from_body(r#"{"address": "1.2.3.4:5678"}"#).unwrap(),
+            "1.2.3.4:5678"
+        );
+        assert_eq!(
+            parse_address_from_body(r#"{"ip": "1.2.3.4", "port": 5678}"#).unwrap(),
+            "1.2.3.4:5678"
+        );
+        assert_eq!(
+            parse_address_from_body(r#"{"url": "http://1.2.3.4:5678/"}"#).unwrap(),
+            "1.2.3.4:5678"
+        );
+    }
 }
 

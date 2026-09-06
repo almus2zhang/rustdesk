@@ -35,7 +35,11 @@ class IDTextInputFormatter extends TextInputFormatter {
 
 String formatID(String id) {
   String id2 = id.replaceAll(' ', '');
-  if (id2.startsWith('302:') || id2.startsWith('302：') || id2.startsWith('301:') || id2.startsWith('301：')) return id;
+  final lower = id2.toLowerCase();
+  if (lower.startsWith('302:') || lower.startsWith('302：') ||
+      lower.startsWith('301:') || lower.startsWith('301：') ||
+      lower.startsWith('http://') || lower.startsWith('http：//') ||
+      lower.startsWith('https://') || lower.startsWith('https：//')) return id;
   String suffix = '';
   if (id2.endsWith(r'\r') || id2.endsWith(r'/r')) {
     suffix = id2.substring(id2.length - 2, id2.length);
@@ -62,6 +66,10 @@ String trimID(String id) {
     s = '302:${s.substring(4)}';
   } else if (s.startsWith('301：')) {
     s = '301:${s.substring(4)}';
+  } else if (s.toLowerCase().startsWith('http：//')) {
+    s = 'http://${s.substring(7)}';
+  } else if (s.toLowerCase().startsWith('https：//')) {
+    s = 'https://${s.substring(8)}';
   }
   return s;
 }
