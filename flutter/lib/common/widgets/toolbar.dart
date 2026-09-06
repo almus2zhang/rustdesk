@@ -767,6 +767,31 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
           ffi.canvasModel.updateViewStyle();
         },
         child: Text(translate('Align to top'))));
+
+    final mode = bind.mainGetLocalOption(key: kOptionMobileKeyboardLayoutMode);
+    String modeDesc;
+    if (mode == 'phone') {
+      modeDesc = translate('Phone mode (push up canvas, top shortcut bar)');
+    } else if (mode == 'tablet') {
+      modeDesc = translate('Tablet mode (float keyboard, bottom shortcut bar)');
+    } else {
+      modeDesc = '${translate('Auto')} (${isTabletLayoutMode() ? translate('Tablet mode') : translate('Phone mode')})';
+    }
+    v.add(TToggleMenu(
+        value: mode == 'phone' || (mode.isEmpty && !isTabletLayoutMode()),
+        onChanged: (value) async {
+          String nextMode;
+          if (mode == 'phone') {
+            nextMode = 'tablet';
+          } else if (mode == 'tablet') {
+            nextMode = 'auto';
+          } else {
+            nextMode = 'phone';
+          }
+          await bind.mainSetLocalOption(key: kOptionMobileKeyboardLayoutMode, value: nextMode);
+          ffi.canvasModel.updateViewStyle();
+        },
+        child: Text('${translate('Keyboard layout')}: $modeDesc')));
   }
   return v;
 }

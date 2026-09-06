@@ -2234,7 +2234,8 @@ class CanvasModel with ChangeNotifier {
       w = w - mediaData.padding.left - mediaData.padding.right;
       // Vertically, subtract the bottom keyboard inset (viewInsets.bottom) and any
       // bottom overlay (e.g. key-help tools) so the canvas is not covered.
-      double keyboardInset = isAndroid ? 0 : mediaData.viewInsets.bottom;
+      final isTablet = isTabletLayoutMode(null);
+      double keyboardInset = (isAndroid && isTablet) ? 0 : mediaData.viewInsets.bottom;
       h = h -
           keyboardInset -
           (parent.target?.cursorModel.keyHelpToolsRectToAdjustCanvas?.bottom ??
@@ -2336,7 +2337,7 @@ class CanvasModel with ChangeNotifier {
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
     _x = (size.width - displayWidth * _scale) / 2;
-    if (isAndroid && bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y') {
+    if (isAndroid && isTabletLayoutMode(null) && bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y') {
       _y = 0;
     } else {
       _y = (size.height - displayHeight * _scale) / 2;

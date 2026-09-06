@@ -675,6 +675,27 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
             },
     ));
 
+    if (isAndroid) {
+      enhancementsTiles.add(_getPopupDialogRadioEntry(
+        title: 'Keyboard and remote layout mode',
+        list: [
+          _RadioEntry('Auto (adaptive based on screen size)', 'auto'),
+          _RadioEntry('Phone mode (push up canvas, top shortcut bar)', 'phone'),
+          _RadioEntry('Tablet mode (float keyboard, bottom shortcut bar)', 'tablet'),
+        ],
+        getter: () {
+          final mode = bind.mainGetLocalOption(key: kOptionMobileKeyboardLayoutMode);
+          if (mode.isEmpty) return 'auto';
+          return mode;
+        },
+        asyncSetter: (value) async {
+          await bind.mainSetLocalOption(
+              key: kOptionMobileKeyboardLayoutMode, value: value);
+          setState(() {});
+        },
+      ));
+    }
+
     final disabledSettings = bind.isDisableSettings();
     final hideSecuritySettings =
         bind.mainGetBuildinOption(key: kOptionHideSecuritySetting) == 'Y';

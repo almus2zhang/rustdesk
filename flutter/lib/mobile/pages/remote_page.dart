@@ -235,6 +235,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
     // update for Scaffold
     setState(() {});
+    gFFI.canvasModel.updateViewStyle();
   }
 
   void _handleIOSSoftKeyboardInput(String newValue) {
@@ -403,6 +404,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final isTablet = isTabletLayoutMode(context);
     final keyboardIsVisible =
         keyboardVisibilityController.isVisible && _showEdit;
     final showActionButton = !_showBar || keyboardIsVisible || _showGestureHelp;
@@ -413,8 +415,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         return false;
       },
       child: Scaffold(
-          extendBody: isAndroid ? true : false,
-          resizeToAvoidBottomInset: isAndroid ? false : true,
+          extendBody: (isAndroid && isTablet) ? true : false,
+          resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           // workaround for https://github.com/rustdesk/rustdesk/issues/3131
           floatingActionButtonLocation: keyboardIsVisible
               ? FABLocation(FloatingActionButtonLocation.endFloat, 0, -35)
@@ -634,8 +636,35 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       !gFFI.canvasModel.cursorEmbedded &&
       !gFFI.inputModel.relativeMouseMode.value;
 
+  Widget _buildKeyHelpTools(bool isTablet, bool keyboardIsVisible) {
+    if (!isTablet) {
+      // Phone / small screen mode: shortcut bar floats at the very top of the screen
+      return Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: KeyHelpTools(
+            keyboardIsVisible: keyboardIsVisible,
+            showGestureHelp: _showGestureHelp),
+      );
+    }
+    // Tablet / large screen mode
+    if (_isHighRes) {
+      return const Offstage();
+    }
+    return Positioned(
+      bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
+      left: 0,
+      right: 0,
+      child: KeyHelpTools(
+          keyboardIsVisible: keyboardIsVisible,
+          showGestureHelp: _showGestureHelp),
+    );
+  }
+
   Widget getBodyForMobile() {
     final keyboardIsVisible = _showEdit || keyboardVisibilityController.isVisible;
+    final isTablet = isTabletLayoutMode(context);
     return Container(
         color: MyTheme.canvasColor,
         child: Stack(children: () {
@@ -654,22 +683,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               right: 10,
               child: QualityMonitor(gFFI.qualityMonitorModel),
             ),
-            isAndroid && !_isHighRes
-                ? Positioned(
-                    bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty
-                        ? 60
-                        : 10,
-                    left: 0,
-                    right: 0,
-                    child: KeyHelpTools(
-                        keyboardIsVisible: keyboardIsVisible,
-                        showGestureHelp: _showGestureHelp),
-                  )
-                : (_isHighRes
-                    ? Offstage()
-                    : KeyHelpTools(
-                        keyboardIsVisible: keyboardIsVisible,
-                        showGestureHelp: _showGestureHelp)),
+            _buildKeyHelpTools(isTablet, keyboardIsVisible),
             SizedBox(
               width: 0,
               height: 0,
