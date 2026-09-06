@@ -2559,7 +2559,9 @@ connect(BuildContext context, String id,
     } catch (_) {}
   }
   id = id.replaceAll(' ', '');
-  if (id.startsWith('301：')) {
+  if (id.startsWith('302：')) {
+    id = '302:${id.substring(4)}';
+  } else if (id.startsWith('301：')) {
     id = '301:${id.substring(4)}';
   }
   final oldId = id;

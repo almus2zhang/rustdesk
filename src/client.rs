@@ -253,8 +253,8 @@ impl Client {
         if config::is_incoming_only() {
             bail!("Incoming only mode");
         }
-        if is_301_address(peer) {
-            let real_peer = fetch_301_address(peer).await?;
+        if is_302_address(peer) {
+            let real_peer = fetch_302_address(peer).await?;
             let target = check_port(&real_peer, RELAY_PORT + 1);
             interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
             return Ok((
@@ -4284,9 +4284,16 @@ async fn udp_nat_connect(
 }
 
 #[inline]
-pub fn is_301_address(peer: &str) -> bool {
+pub fn is_302_address(peer: &str) -> bool {
     let lower = peer.to_lowercase();
-    lower.starts_with("301:") || lower.starts_with("301：") || lower.starts_with("301/")
+    lower.starts_with("302:") || lower.starts_with("302：") || lower.starts_with("302/")
+        || lower.starts_with("301:") || lower.starts_with("301：") || lower.starts_with("301/")
+}
+
+// Keep is_301_address as alias for backward compatibility
+#[inline]
+pub fn is_301_address(peer: &str) -> bool {
+    is_302_address(peer)
 }
 
 fn parse_address_from_body(body: &str) -> ResultType<String> {
@@ -4340,8 +4347,16 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
     Ok(trimmed.to_string())
 }
 
-pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
-    let url_part = if let Some(stripped) = peer.strip_prefix("301:") {
+pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
+    let url_part = if let Some(stripped) = peer.strip_prefix("302:") {
+        stripped
+    } else if let Some(stripped) = peer.strip_prefix("302：") {
+        stripped
+    } else if let Some(stripped) = peer.strip_prefix("302/") {
+        stripped
+    } else if peer.len() >= 4 && (peer[..4].eq_ignore_ascii_case("302:") || peer[..4].eq_ignore_ascii_case("302/")) {
+        &peer[4..]
+    } else if let Some(stripped) = peer.strip_prefix("301:") {
         stripped
     } else if let Some(stripped) = peer.strip_prefix("301：") {
         stripped
@@ -4358,7 +4373,7 @@ pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
     } else if !url.starts_with("http://") && !url.starts_with("https://") {
         url = format!("http://{}", url);
     }
-    log::info!("Fetching real target address from 301 URL: {}", url);
+    log::info!("Fetching real target address from 302 URL: {}", url);
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
@@ -4366,16 +4381,20 @@ pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
         .get(&url)
         .send()
         .await
-        .map_err(|e| anyhow!("Failed to fetch 301 address from {}: {}", url, e))?;
+        .map_err(|e| anyhow!("Failed to fetch 302 address from {}: {}", url, e))?;
     if !resp.status().is_success() {
-        bail!("Failed to fetch 301 address from {}: HTTP status {}", url, resp.status());
+        bail!("Failed to fetch 302 address from {}: HTTP status {}", url, resp.status());
     }
     let body = resp
         .text()
         .await
-        .map_err(|e| anyhow!("Failed to read 301 address response from {}: {}", url, e))?;
+        .map_err(|e| anyhow!("Failed to read 302 address response from {}: {}", url, e))?;
     let parsed = parse_address_from_body(&body)?;
-    log::info!("Successfully resolved 301 address {} to {}", peer, parsed);
+    log::info!("Successfully resolved 302 address {} to {}", peer, parsed);
     Ok(parsed)
+}
+
+pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
+    fetch_302_address(peer).await
 }
 

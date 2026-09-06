@@ -21,7 +21,7 @@ Yet another remote desktop solution, written in Rust. Works out of the box with 
 
 ### Tablet & Connection Optimizations (Mod Features)
 This project includes productivity and direct connection optimizations:
-- **Dynamic STUN Direct IP & Credential Retention (301: Prefix)**: For direct servers whose public IP/port dynamically changes after STUN, clients can connect using endpoints with a `301:` prefix pointing to a public HTTP(S) URL (e.g. `301:http://example.com/stun_ip`). The client automatically fetches the latest `ip:port` for direct connection while securely persisting credentials (passwords, usernames), eliminating repetitive credential re-entry when IP/port changes.
+- **Dynamic STUN Direct IP & Credential Retention (302: Prefix)**: For direct servers whose public IP/port dynamically changes after STUN, clients can connect using endpoints with a `302:` prefix pointing to a public HTTP(S) URL (e.g. `302:http://example.com/stun_ip`). The client automatically fetches the latest `ip:port` for direct connection while securely persisting credentials (passwords, usernames), eliminating repetitive credential re-entry when IP/port changes.
 - **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
 - **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
 - **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
