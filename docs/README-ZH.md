@@ -12,6 +12,10 @@
 > **免责声明:** <br>
 > RustDesk 的开发人员不纵容或支持任何不道德或非法的软件使用行为。滥用行为，例如未经授权的访问、控制或侵犯隐私，严格违反我们的准则。作者对应用程序的任何滥用行为概不负责。
 
+> [!IMPORTANT]
+> **免责声明与说明:** <br>
+> 本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。
+
 与我们交流: [知乎](https://www.zhihu.com/people/rustdesk) | [Discord](https://discord.gg/nDceKgxnkV) | [Reddit](https://www.reddit.com/r/rustdesk) | [YouTube](https://www.youtube.com/@rustdesk)
 
 [![RustDesk Server Pro](https://img.shields.io/badge/RustDesk%20Server%20Pro-%E9%AB%98%E7%BA%A7%E5%8A%9F%E8%83%BD-blue)](https://rustdesk.com/pricing.html)

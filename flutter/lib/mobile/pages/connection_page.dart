@@ -77,6 +77,35 @@ class _ConnectionPageState extends State<ConnectionPage> {
     Get.put<TextEditingController>(_idEditingController);
   }
 
+  Widget _buildDisclaimerBanner() {
+    return Container(
+      margin: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.amber.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.amber.withOpacity(0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, color: Colors.amber[800], size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Provider.of<FfiModel>(context);
@@ -86,6 +115,7 @@ class _ConnectionPageState extends State<ConnectionPage> {
             delegate: SliverChildListDelegate([
           if (!bind.isCustomClient() && !isIOS)
             Obx(() => _buildUpdateUI(stateGlobal.updateUrl.value)),
+          _buildDisclaimerBanner(),
           _buildRemoteIDTextField(),
         ])),
         SliverFillRemaining(
