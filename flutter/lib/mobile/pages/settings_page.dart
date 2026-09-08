@@ -677,11 +677,11 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
 
     if (isAndroid) {
       enhancementsTiles.add(_getPopupDialogRadioEntry(
-        title: 'Keyboard and remote layout mode',
+        title: '键盘与画面布局模式 / Keyboard layout mode',
         list: [
-          _RadioEntry('Auto (adaptive based on screen size)', 'auto'),
-          _RadioEntry('Phone mode (push up canvas, top shortcut bar)', 'phone'),
-          _RadioEntry('Tablet mode (float keyboard, bottom shortcut bar)', 'tablet'),
+          _RadioEntry('自动自适应 (Auto: 依屏幕尺寸自适应)', 'auto'),
+          _RadioEntry('手机小屏模式 (Phone: 顶起画面+顶部快捷键)', 'phone'),
+          _RadioEntry('平板大屏模式 (Tablet: 键盘浮动+底部快捷键)', 'tablet'),
         ],
         getter: () {
           final mode = bind.mainGetLocalOption(key: kOptionMobileKeyboardLayoutMode);
