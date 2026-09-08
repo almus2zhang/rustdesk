@@ -4330,6 +4330,103 @@ pub fn parse_target_from_url(url_str: &str) -> Option<String> {
     }
 }
 
+pub fn is_valid_address(s: &str) -> bool {
+    let s = s.trim().trim_matches(|c| c == '"' || c == '\'');
+    if s.is_empty() || s.len() > 253 {
+        return false;
+    }
+    // Reject strings with whitespace, html tags, json braces, or invalid characters
+    if s.contains(|c: char| c.is_whitespace() || "<>{}\"\'\\/;=`^|".contains(c)) {
+        return false;
+    }
+
+    // Try parsing as SocketAddr
+    if let Ok(addr) = s.parse::<std::net::SocketAddr>() {
+        return !addr.ip().is_unspecified();
+    }
+    // Try parsing as IpAddr
+    if let Ok(ip) = s.parse::<std::net::IpAddr>() {
+        return !ip.is_unspecified();
+    }
+
+    // Handle host:port
+    let (host_part, has_port) = if s.starts_with('[') {
+        if let Some(idx) = s.find(']') {
+            let host = &s[1..idx];
+            let rem = &s[idx + 1..];
+            if rem.is_empty() {
+                (host, false)
+            } else if let Some(port_str) = rem.strip_prefix(':') {
+                if let Ok(p) = port_str.parse::<u16>() {
+                    if p > 0 {
+                        (host, true)
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    } else if let Some(idx) = s.rfind(':') {
+        let (h, p_str) = s.split_at(idx);
+        let port_str = &p_str[1..];
+        if let Ok(p) = port_str.parse::<u16>() {
+            if p > 0 {
+                (h, true)
+            } else {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    } else {
+        (s, false)
+    };
+
+    if let Ok(ip) = host_part.parse::<std::net::IpAddr>() {
+        return !ip.is_unspecified();
+    }
+
+    // Domain name rules:
+    // Must contain a dot, or be "localhost", or have a valid port if it's a hostname (e.g. desktop-pc:21118)
+    if !host_part.contains('.') && !host_part.eq_ignore_ascii_case("localhost") && !has_port {
+        return false;
+    }
+
+    if host_part.starts_with('.')
+        || host_part.ends_with('.')
+        || host_part.starts_with('-')
+        || host_part.ends_with('-')
+        || host_part.contains("..")
+        || host_part == "0.0.0.0"
+    {
+        return false;
+    }
+
+    host_part.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+}
+
+pub fn format_content_snippet(body: &str) -> String {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        "(内容为空)".to_string()
+    } else {
+        let limit = 300;
+        let mut chars = trimmed.chars();
+        let snippet: String = chars.by_ref().take(limit).collect();
+        if chars.next().is_some() {
+            format!("{}... (内容已截断)", snippet)
+        } else {
+            snippet
+        }
+    }
+}
+
 fn parse_address_from_body(body: &str) -> ResultType<String> {
     let trimmed = body.trim().trim_matches(|c| c == '"' || c == '\'');
     if trimmed.is_empty() {
@@ -4345,9 +4442,13 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
                             let s = s.trim();
                             if !s.is_empty() {
                                 if let Some(target) = parse_target_from_url(s) {
-                                    return Ok(target);
+                                    if is_valid_address(&target) {
+                                        return Ok(target);
+                                    }
                                 }
-                                return Ok(s.to_string());
+                                if is_valid_address(s) {
+                                    return Ok(s.to_string());
+                                }
                             }
                         }
                     }
@@ -4364,10 +4465,13 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
                             "".to_string()
                         };
                         if !port.is_empty() {
-                            return Ok(format!("{}:{}", host, port));
+                            let combined = format!("{}:{}", host, port);
+                            if is_valid_address(&combined) {
+                                return Ok(combined);
+                            }
                         }
                     }
-                    if !host.is_empty() {
+                    if !host.is_empty() && is_valid_address(host) {
                         return Ok(host.to_string());
                     }
                 }
@@ -4379,15 +4483,24 @@ fn parse_address_from_body(body: &str) -> ResultType<String> {
         let line = line.trim().trim_matches(|c| c == '"' || c == '\'');
         if !line.is_empty() {
             if let Some(target) = parse_target_from_url(line) {
-                return Ok(target);
+                if is_valid_address(&target) {
+                    return Ok(target);
+                }
             }
-            return Ok(line.to_string());
+            if is_valid_address(line) {
+                return Ok(line.to_string());
+            }
         }
     }
     if let Some(target) = parse_target_from_url(trimmed) {
-        return Ok(target);
+        if is_valid_address(&target) {
+            return Ok(target);
+        }
     }
-    Ok(trimmed.to_string())
+    if is_valid_address(trimmed) {
+        return Ok(trimmed.to_string());
+    }
+    bail!("无法从返回内容中解析出有效地址");
 }
 
 async fn send_302_request(
@@ -4603,7 +4716,7 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
                     log::info!("Request to {} failed ({}), falling back to redirect target {}", current_url, e, target);
                     return Ok(target);
                 }
-                bail!("Failed to fetch 302 address from {}: {}", current_url, e);
+                bail!("获取302地址失败 ({}): {}", current_url, e);
             }
         };
 
@@ -4620,13 +4733,17 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
                     };
 
                     let target = parse_target_from_url(next_url.as_str());
-                    last_redirect_target = target.clone();
+                    if let Some(ref t) = target {
+                        if is_valid_address(t) {
+                            last_redirect_target = Some(t.clone());
+                        }
+                    }
 
                     if let Some(port) = next_url.port() {
                         if port != 80 && port != 443 {
-                            if let Some(t) = target {
+                            if let Some(ref t) = last_redirect_target {
                                 log::info!("Redirected to custom port {}: using target {}", port, t);
-                                return Ok(t);
+                                return Ok(t.clone());
                             }
                         }
                     }
@@ -4638,7 +4755,12 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
             if let Some(target) = last_redirect_target {
                 return Ok(target);
             }
-            bail!("Redirected with status {} but missing Location header from {}", status, current_url);
+            let body = resp.text().await.unwrap_or_default();
+            bail!(
+                "重定向但缺少有效 Location 头 (HTTP {})，实际返回内容:\n{}",
+                status,
+                format_content_snippet(&body)
+            );
         }
 
         if status.is_success() {
@@ -4650,22 +4772,30 @@ pub async fn fetch_302_address(peer: &str) -> ResultType<String> {
             if let Some(target) = last_redirect_target {
                 return Ok(target);
             }
-            if let Some(target) = parse_target_from_url(&current_url) {
-                return Ok(target);
-            }
-            bail!("Failed to parse target address from response at {}", current_url);
+            bail!(
+                "未能从 {} 解析出有效地址（未跳转或内容格式不符，HTTP {}），实际返回内容:\n{}",
+                current_url,
+                status,
+                format_content_snippet(&body)
+            );
         }
 
         if let Some(target) = last_redirect_target {
             return Ok(target);
         }
-        bail!("Failed to fetch 302 address from {}: HTTP status {}", current_url, status);
+        let body = resp.text().await.unwrap_or_default();
+        bail!(
+            "请求 {} 失败 (HTTP {})，实际返回内容:\n{}",
+            current_url,
+            status,
+            format_content_snippet(&body)
+        );
     }
 
     if let Some(target) = last_redirect_target {
         return Ok(target);
     }
-    bail!("Too many redirects while fetching 302 address from {}", url);
+    bail!("重定向次数过多，未能从 {} 获取到有效地址", url);
 }
 
 pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
@@ -4743,6 +4873,41 @@ mod tests {
             parse_address_from_body(r#"{"url": "http://1.2.3.4:5678/"}"#).unwrap(),
             "1.2.3.4:5678"
         );
+        // Invalid bodies must fail
+        assert!(parse_address_from_body("").is_err());
+        assert!(parse_address_from_body("0.0.0.0").is_err());
+        assert!(parse_address_from_body("404 Not Found").is_err());
+        assert!(parse_address_from_body("<html><body>Welcome</body></html>").is_err());
+        assert!(parse_address_from_body("Unauthorized").is_err());
+    }
+
+    #[test]
+    fn test_is_valid_address() {
+        assert!(is_valid_address("1.2.3.4:9314"));
+        assert!(is_valid_address("1.2.3.4"));
+        assert!(!is_valid_address("0.0.0.0"));
+        assert!(!is_valid_address("0.0.0.0:80"));
+        assert!(is_valid_address("rust.114.nasnas.site:11466"));
+        assert!(is_valid_address("rust.114.nasnas.site"));
+        assert!(is_valid_address("localhost"));
+        assert!(is_valid_address("localhost:21118"));
+        assert!(is_valid_address("desktop-pc:21118"));
+        assert!(!is_valid_address("desktop-pc"));
+        assert!(!is_valid_address("Unauthorized"));
+        assert!(!is_valid_address("404 Not Found"));
+        assert!(!is_valid_address("<html><body>test</body></html>"));
+        assert!(!is_valid_address(r#"{"code": 401}"#));
+    }
+
+    #[test]
+    fn test_format_content_snippet() {
+        assert_eq!(format_content_snippet(""), "(内容为空)");
+        assert_eq!(format_content_snippet("   "), "(内容为空)");
+        assert_eq!(format_content_snippet("Hello World"), "Hello World");
+        let long_str = "a".repeat(400);
+        let snippet = format_content_snippet(&long_str);
+        assert!(snippet.contains("... (内容已截断)"));
+        assert_eq!(snippet.chars().count(), 300 + "... (内容已截断)".chars().count());
     }
 }
 
