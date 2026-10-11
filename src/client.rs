@@ -269,6 +269,22 @@ impl Client {
                 false,
             ));
         }
+        if is_txt_address(peer) {
+            let real_peer = fetch_txt_address(peer).await?;
+            let target = check_port(&real_peer, RELAY_PORT + 1);
+            interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
+            return Ok((
+                (
+                    connect_tcp_local(target, None, CONNECT_TIMEOUT).await?,
+                    true,
+                    None,
+                    None,
+                    "TCP",
+                ),
+                (0, "".to_owned()),
+                false,
+            ));
+        }
         // to-do: remember the port for each peer, so that we can retry easier
         if hbb_common::is_ip_str(peer) {
             return Ok((
@@ -297,6 +313,24 @@ impl Client {
                 (0, "".to_owned()),
                 false,
             ));
+        }
+        // If peer is a domain without port (e.g. rust.stun.nasnas.site), try resolving TXT record
+        if is_possible_domain_name(peer) {
+            if let Ok(real_peer) = fetch_txt_address(peer).await {
+                let target = check_port(&real_peer, RELAY_PORT + 1);
+                interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
+                return Ok((
+                    (
+                        connect_tcp_local(target, None, CONNECT_TIMEOUT).await?,
+                        true,
+                        None,
+                        None,
+                        "TCP",
+                    ),
+                    (0, "".to_owned()),
+                    false,
+                ));
+            }
         }
 
         let other_server = interface.get_lch().read().unwrap().other_server.clone();
@@ -4298,6 +4332,46 @@ pub fn is_301_address(peer: &str) -> bool {
     is_302_address(peer)
 }
 
+#[inline]
+pub fn is_txt_address(peer: &str) -> bool {
+    let lower = peer.to_lowercase();
+    lower.starts_with("txt:")
+        || lower.starts_with("txt：")
+        || lower.starts_with("txt/")
+        || lower.starts_with("dns:")
+        || lower.starts_with("dns：")
+        || lower.starts_with("dns/")
+}
+
+#[inline]
+pub fn extract_domain_from_txt_peer(peer: &str) -> &str {
+    let lower = peer.to_lowercase();
+    for prefix in &["txt:", "txt：", "txt/", "dns:", "dns：", "dns/"] {
+        if lower.starts_with(prefix) {
+            return &peer[prefix.len()..];
+        }
+    }
+    peer
+}
+
+#[inline]
+pub fn is_possible_domain_name(peer: &str) -> bool {
+    let s = peer.trim();
+    if s.is_empty() || s.contains(':') || s.contains('/') || s.contains(' ') {
+        return false;
+    }
+    if !s.contains('.') {
+        return false;
+    }
+    if s.parse::<std::net::IpAddr>().is_ok() {
+        return false;
+    }
+    if !s.chars().any(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    s.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+}
+
 pub fn parse_target_from_url(url_str: &str) -> Option<String> {
     let mut s = url_str.trim().trim_matches(|c| c == '"' || c == '\'');
     if s.is_empty() {
@@ -4802,6 +4876,238 @@ pub async fn fetch_301_address(peer: &str) -> ResultType<String> {
     fetch_302_address(peer).await
 }
 
+pub fn parse_txt_from_doh_json(body: &str) -> ResultType<String> {
+    let v: serde_json::Value = serde_json::from_str(body)?;
+    if let Some(status) = v.get("Status").and_then(|s| s.as_i64()) {
+        if status != 0 {
+            bail!("DNS server returned error status {}", status);
+        }
+    }
+    if let Some(answers) = v.get("Answer").and_then(|a| a.as_array()) {
+        for ans in answers {
+            let qtype = ans.get("type").and_then(|t| t.as_i64()).unwrap_or(0);
+            if qtype == 16 {
+                if let Some(data) = ans.get("data").and_then(|d| d.as_str()) {
+                    if let Ok(addr) = parse_address_from_body(data) {
+                        return Ok(addr);
+                    }
+                    let unquoted: String = data
+                        .split('"')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    if let Ok(addr) = parse_address_from_body(&unquoted) {
+                        return Ok(addr);
+                    }
+                }
+            }
+        }
+    }
+    bail!("未在 DNS TXT 记录中解析到有效地址: {}", format_content_snippet(body));
+}
+
+fn parse_dns_txt_packet(buf: &[u8]) -> ResultType<String> {
+    if buf.len() < 12 {
+        bail!("DNS response too short (< 12 bytes)");
+    }
+    let rcode = buf[3] & 0x0F;
+    if rcode != 0 {
+        bail!("DNS server returned error rcode {}", rcode);
+    }
+    let qdcount = u16::from_be_bytes([buf[4], buf[5]]) as usize;
+    let ancount = u16::from_be_bytes([buf[6], buf[7]]) as usize;
+    if ancount == 0 {
+        bail!("DNS response contains 0 answer records");
+    }
+
+    let mut pos = 12;
+    for _ in 0..qdcount {
+        while pos < buf.len() {
+            let len = buf[pos] as usize;
+            pos += 1;
+            if len == 0 {
+                break;
+            }
+            if len >= 0xC0 {
+                pos += 1;
+                break;
+            }
+            pos += len;
+        }
+        pos += 4;
+    }
+
+    for _ in 0..ancount {
+        if pos >= buf.len() {
+            break;
+        }
+        if buf[pos] >= 0xC0 {
+            pos += 2;
+        } else {
+            while pos < buf.len() {
+                let len = buf[pos] as usize;
+                pos += 1;
+                if len == 0 {
+                    break;
+                }
+                if len >= 0xC0 {
+                    pos += 1;
+                    break;
+                }
+                pos += len;
+            }
+        }
+        if pos + 10 > buf.len() {
+            break;
+        }
+        let rtype = u16::from_be_bytes([buf[pos], buf[pos + 1]]);
+        pos += 8;
+        let rdlength = u16::from_be_bytes([buf[pos], buf[pos + 1]]) as usize;
+        pos += 2;
+        if pos + rdlength > buf.len() {
+            break;
+        }
+        let rdata = &buf[pos..pos + rdlength];
+        pos += rdlength;
+
+        if rtype == 16 {
+            let mut txt_bytes = Vec::new();
+            let mut rpos = 0;
+            while rpos < rdata.len() {
+                let slen = rdata[rpos] as usize;
+                rpos += 1;
+                if rpos + slen <= rdata.len() {
+                    txt_bytes.extend_from_slice(&rdata[rpos..rpos + slen]);
+                    rpos += slen;
+                } else {
+                    break;
+                }
+            }
+            if let Ok(text) = String::from_utf8(txt_bytes) {
+                if let Ok(addr) = parse_address_from_body(&text) {
+                    return Ok(addr);
+                }
+            }
+        }
+    }
+    bail!("未在 UDP DNS 报文中解析到有效 TXT 地址");
+}
+
+async fn query_dns_txt_udp(server: &str, domain: &str) -> ResultType<String> {
+    let mut packet = Vec::with_capacity(64);
+    packet.extend_from_slice(&[0x12, 0x34]);
+    packet.extend_from_slice(&[0x01, 0x00]);
+    packet.extend_from_slice(&[0x00, 0x01]);
+    packet.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+
+    for label in domain.split('.') {
+        let label = label.trim();
+        if label.is_empty() {
+            continue;
+        }
+        if label.len() > 63 {
+            bail!("Domain label exceeds 63 bytes");
+        }
+        packet.push(label.len() as u8);
+        packet.extend_from_slice(label.as_bytes());
+    }
+    packet.push(0x00);
+    packet.extend_from_slice(&16u16.to_be_bytes());
+    packet.extend_from_slice(&1u16.to_be_bytes());
+
+    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    socket.connect(server).await?;
+    socket.send(&packet).await?;
+
+    let mut buf = [0u8; 1024];
+    let len = tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        socket.recv(&mut buf),
+    )
+    .await??;
+
+    parse_dns_txt_packet(&buf[..len])
+}
+
+pub async fn fetch_txt_address(peer: &str) -> ResultType<String> {
+    let domain = extract_domain_from_txt_peer(peer).trim().trim_end_matches('.').trim();
+    if domain.is_empty() {
+        bail!("DNS TXT 查询域名为空");
+    }
+    log::info!("Fetching real target address from DNS TXT for domain: {}", domain);
+
+    // 1. Try DoH endpoints
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(4))
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .build()?;
+
+    let doh_urls = [
+        format!("https://223.5.5.5/resolve?name={}&type=TXT", domain),
+        format!("https://1.12.12.12/resolve?name={}&type=TXT", domain),
+        format!("https://doh.pub/resolve?name={}&type=TXT", domain),
+        format!("https://dns.alidns.com/resolve?name={}&type=TXT", domain),
+        format!("https://1.1.1.1/dns-query?name={}&type=TXT", domain),
+        format!("https://8.8.8.8/resolve?name={}&type=TXT", domain),
+    ];
+
+    let mut last_err = None;
+    for url in &doh_urls {
+        match client
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/dns-json")
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if let Ok(text) = resp.text().await {
+                    match parse_txt_from_doh_json(&text) {
+                        Ok(addr) => {
+                            log::info!("Resolved TXT address {} from DoH {}", addr, url);
+                            return Ok(addr);
+                        }
+                        Err(e) => {
+                            last_err = Some(e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!("DoH query to {} failed: {}", url, e);
+                last_err = Some(anyhow!("DoH query to {} failed: {}", url, e));
+            }
+        }
+    }
+
+    // 2. Fallback to direct UDP DNS queries
+    let udp_servers = [
+        "223.5.5.5:53",
+        "119.29.29.29:53",
+        "114.114.114.114:53",
+        "8.8.8.8:53",
+        "1.1.1.1:53",
+    ];
+
+    for server in &udp_servers {
+        match query_dns_txt_udp(server, domain).await {
+            Ok(addr) => {
+                log::info!("Resolved TXT address {} from UDP DNS {}", addr, server);
+                return Ok(addr);
+            }
+            Err(e) => {
+                log::debug!("UDP DNS query to {} failed: {}", server, e);
+                last_err = Some(e);
+            }
+        }
+    }
+
+    if let Some(err) = last_err {
+        bail!("获取 DNS TXT 记录失败 ({}): {}", domain, err);
+    }
+    bail!("未能从 {} 获取到有效的 DNS TXT 记录", domain);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4908,6 +5214,45 @@ mod tests {
         let snippet = format_content_snippet(&long_str);
         assert!(snippet.contains("... (内容已截断)"));
         assert_eq!(snippet.chars().count(), 300 + "... (内容已截断)".chars().count());
+    }
+
+    #[test]
+    fn test_is_txt_address() {
+        assert!(is_txt_address("txt:rust.stun.nasnas.site"));
+        assert!(is_txt_address("txt：rust.stun.nasnas.site"));
+        assert!(is_txt_address("txt/rust.stun.nasnas.site"));
+        assert!(is_txt_address("dns:rust.stun.nasnas.site"));
+        assert!(is_txt_address("dns：rust.stun.nasnas.site"));
+        assert!(is_txt_address("dns/rust.stun.nasnas.site"));
+        assert!(is_txt_address("TXT:RUST.STUN.NASNAS.SITE"));
+        assert!(!is_txt_address("192.168.1.1"));
+        assert!(!is_txt_address("123456789"));
+        assert!(!is_txt_address("rust.stun.nasnas.site"));
+    }
+
+    #[test]
+    fn test_extract_domain_from_txt_peer() {
+        assert_eq!(extract_domain_from_txt_peer("txt:rust.stun.nasnas.site"), "rust.stun.nasnas.site");
+        assert_eq!(extract_domain_from_txt_peer("dns:rust.stun.nasnas.site"), "rust.stun.nasnas.site");
+        assert_eq!(extract_domain_from_txt_peer("txt：rust.stun.nasnas.site"), "rust.stun.nasnas.site");
+        assert_eq!(extract_domain_from_txt_peer("rust.stun.nasnas.site"), "rust.stun.nasnas.site");
+    }
+
+    #[test]
+    fn test_is_possible_domain_name() {
+        assert!(is_possible_domain_name("rust.stun.nasnas.site"));
+        assert!(is_possible_domain_name("stun.nasnas.site"));
+        assert!(is_possible_domain_name("example.com"));
+        assert!(!is_possible_domain_name("192.168.1.1"));
+        assert!(!is_possible_domain_name("123456789"));
+        assert!(!is_possible_domain_name("example.com:21118"));
+        assert!(!is_possible_domain_name(""));
+    }
+
+    #[test]
+    fn test_parse_txt_from_doh_json() {
+        let json_str = r#"{"Status":0,"TC":false,"RD":true,"RA":true,"AD":false,"CD":false,"Question":{"name":"rust.stun.nasnas.site.","type":16},"Answer":[{"name":"rust.stun.nasnas.site.","TTL":300,"type":16,"data":"\"61.185.176.41:29539\""}]}"#;
+        assert_eq!(parse_txt_from_doh_json(json_str).unwrap(), "61.185.176.41:29539");
     }
 }
 

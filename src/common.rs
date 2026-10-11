@@ -694,10 +694,28 @@ pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>, boo
             a = lic.host;
         }
     }
-    let mut b: Vec<String> = b
-        .drain(..)
-        .map(|x| socket_client::check_port(x, config::RENDEZVOUS_PORT))
-        .collect();
+    if crate::client::is_txt_address(&a) {
+        if let Ok(real) = crate::client::fetch_txt_address(&a).await {
+            a = real;
+        }
+    } else if crate::client::is_302_address(&a) {
+        if let Ok(real) = crate::client::fetch_302_address(&a).await {
+            a = real;
+        }
+    }
+    let mut b: Vec<String> = futures::future::join_all(b.into_iter().map(|mut x| async move {
+        if crate::client::is_txt_address(&x) {
+            if let Ok(real) = crate::client::fetch_txt_address(&x).await {
+                x = real;
+            }
+        } else if crate::client::is_302_address(&x) {
+            if let Ok(real) = crate::client::fetch_302_address(&x).await {
+                x = real;
+            }
+        }
+        socket_client::check_port(x, config::RENDEZVOUS_PORT)
+    }))
+    .await;
     let c = if b.contains(&a) {
         b = b.drain(..).filter(|x| x != &a).collect();
         true
