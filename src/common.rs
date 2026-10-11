@@ -703,7 +703,7 @@ pub async fn get_rendezvous_server(ms_timeout: u64) -> (String, Vec<String>, boo
             a = real;
         }
     }
-    let mut b: Vec<String> = futures::future::join_all(b.into_iter().map(|mut x| async move {
+    let mut b: Vec<String> = join_all(b.into_iter().map(|mut x| async move {
         if crate::client::is_txt_address(&x) {
             if let Ok(real) = crate::client::fetch_txt_address(&x).await {
                 x = real;
