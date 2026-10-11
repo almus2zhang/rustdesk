@@ -10,6 +10,7 @@ import 'package:flutter_hbb/mobile/widgets/floating_mouse_widgets.dart';
 import 'package:flutter_hbb/mobile/widgets/gesture_help.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
 import 'package:flutter_keyboard_visibility/flutter_keyboard_visibility.dart';
+import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:get/get.dart';
 import 'package:provider/provider.dart';
@@ -1403,7 +1404,7 @@ void showOptions(
     }
 
     var popupDialogMenus = List<Widget>.empty(growable: true);
-    final resolution = getResolutionMenu(gFFI, id);
+    final resolution = getResolutionMenu(context, gFFI, id);
     if (resolution != null) {
       popupDialogMenus.add(ListTile(
         contentPadding: EdgeInsets.zero,
@@ -1412,6 +1413,19 @@ void showOptions(
         onTap: () {
           close();
           resolution.onPressed?.call();
+        },
+      ));
+    }
+    final phonePortraitMenu =
+        getPhonePortraitVirtualDisplayMenu(context, gFFI, id);
+    if (phonePortraitMenu != null) {
+      popupDialogMenus.add(ListTile(
+        contentPadding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        title: phonePortraitMenu.child,
+        onTap: () {
+          close();
+          phonePortraitMenu.onPressed?.call();
         },
       ));
     }
@@ -1445,6 +1459,342 @@ void showOptions(
   });
 }
 
+Resolution _getPhonePortraitDimensions(BuildContext context) {
+  try {
+    final media = MediaQuery.of(context);
+    var rawW = (media.size.width * media.devicePixelRatio).round();
+    var rawH = (media.size.height * media.devicePixelRatio).round();
+    if (rawW > rawH) {
+      final tmp = rawW;
+      rawW = rawH;
+      rawH = tmp;
+    }
+    final w = (rawW ~/ 2) * 2;
+    final h = (rawH ~/ 2) * 2;
+    if (w > 0 && h > 0) {
+      return Resolution(w, h);
+    }
+  } catch (e) {
+    debugPrint('Failed to get phone portrait dimensions: $e');
+  }
+  return Resolution(1080, 2400);
+}
+
+Future<void> setupPhonePortraitVirtualDisplay({
+  required BuildContext context,
+  required FFI ffi,
+  required int targetWidth,
+  required int targetHeight,
+}) async {
+  final isZh = localeName.startsWith('zh');
+  final pi = ffi.ffiModel.pi;
+  final w = (targetWidth ~/ 2) * 2;
+  final h = (targetHeight ~/ 2) * 2;
+
+  BotToast.showText(
+    text: isZh ? '正在配置手机专属竖屏...' : 'Setting up phone portrait display...',
+  );
+
+  final hasVirtual =
+      pi.RustDeskVirtualDisplays.isNotEmpty || pi.amyuniVirtualDisplayCount > 0;
+  if (!hasVirtual) {
+    if (pi.isRustDeskIdd) {
+      await bind.sessionToggleVirtualDisplay(
+          sessionId: ffi.sessionId, index: 1, on: true);
+    } else if (pi.isAmyuniIdd) {
+      await bind.sessionToggleVirtualDisplay(
+          sessionId: ffi.sessionId, index: 0, on: true);
+    }
+  }
+
+  int targetDisplayIndex = -1;
+  final initialCount = pi.displays.length;
+  for (var i = 0; i < 15; i++) {
+    for (var d = 0; d < pi.displays.length; d++) {
+      if (pi.displays[d].isVirtualDisplayResolution) {
+        targetDisplayIndex = d;
+        break;
+      }
+    }
+    if (targetDisplayIndex != -1) break;
+    if (pi.displays.length > 1 && pi.displays.length > initialCount) {
+      targetDisplayIndex = pi.displays.length - 1;
+      break;
+    }
+    await Future.delayed(const Duration(milliseconds: 200));
+  }
+
+  if (targetDisplayIndex == -1) {
+    targetDisplayIndex = pi.displays.isNotEmpty ? pi.displays.length - 1 : 0;
+  }
+
+  await bind.sessionChangeResolution(
+    sessionId: ffi.sessionId,
+    display: targetDisplayIndex,
+    width: w,
+    height: h,
+  );
+
+  if (pi.currentDisplay != targetDisplayIndex &&
+      targetDisplayIndex < pi.displays.length) {
+    openMonitorInTheSameTab(targetDisplayIndex, ffi, pi);
+  }
+
+  BotToast.showText(
+    text: isZh
+        ? '已切换至竖屏虚拟显示器 ($w x $h)'
+        : 'Switched to portrait virtual display ($w x $h)',
+  );
+}
+
+void showCustomResolutionInputDialog({
+  required BuildContext context,
+  required FFI ffi,
+  required int initialWidth,
+  required int initialHeight,
+  required Function(int width, int height) onConfirm,
+}) {
+  final isZh = localeName.startsWith('zh');
+  final widthController = TextEditingController(text: initialWidth.toString());
+  final heightController =
+      TextEditingController(text: initialHeight.toString());
+
+  ffi.dialogManager.show((setState, close, ctx) {
+    return CustomAlertDialog(
+      title: Text(isZh ? '自定义分辨率' : 'Custom Resolution'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: widthController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: isZh ? '宽度' : 'Width',
+                    hintText: '1080',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text('×', style: TextStyle(fontSize: 18)),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: heightController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: isZh ? '高度' : 'Height',
+                    hintText: '2400',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            isZh
+                ? '提示: 分辨率将自动调整为偶数以适配硬件编码'
+                : 'Note: Dimensions will be adjusted to even numbers.',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => close(),
+          child: Text(translate('Cancel')),
+        ),
+        ElevatedButton(
+          onPressed: () {
+            final w = int.tryParse(widthController.text.trim());
+            final h = int.tryParse(heightController.text.trim());
+            if (w == null || h == null || w <= 0 || h <= 0) {
+              BotToast.showText(
+                text: isZh ? '请输入有效的分辨率' : 'Please enter valid dimensions',
+              );
+              return;
+            }
+            final evenW = (w ~/ 2) * 2;
+            final evenH = (h ~/ 2) * 2;
+            close();
+            onConfirm(evenW, evenH);
+          },
+          child: Text(translate('OK')),
+        ),
+      ],
+    );
+  }, clickMaskDismiss: true, backDismiss: true).then((value) {
+    _disableAndroidSoftKeyboard();
+  });
+}
+
+TTextMenu? getPhonePortraitVirtualDisplayMenu(
+    BuildContext context, FFI ffi, String id) {
+  if (!showVirtualDisplayMenu(ffi)) {
+    return null;
+  }
+  final isZh = localeName.startsWith('zh');
+  final phoneRes = _getPhonePortraitDimensions(context);
+
+  return TTextMenu(
+    child: Text(isZh ? '手机专属竖屏 (虚拟屏)' : 'Phone Portrait Display'),
+    onPressed: () {
+      final pi = ffi.ffiModel.pi;
+      final hasVirtual = pi.RustDeskVirtualDisplays.isNotEmpty ||
+          pi.amyuniVirtualDisplayCount > 0;
+
+      ffi.dialogManager.show((setState, close, ctx) {
+        return CustomAlertDialog(
+          title: Text(isZh ? '手机专属竖屏 (虚拟屏)' : 'Phone Portrait Display'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  leading: const Icon(Icons.stay_current_portrait),
+                  title: Text(
+                    isZh
+                        ? '📱 匹配本机屏幕 (${phoneRes.width}x${phoneRes.height})'
+                        : '📱 Match phone screen (${phoneRes.width}x${phoneRes.height})',
+                  ),
+                  onTap: () {
+                    close();
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: phoneRes.width,
+                      targetHeight: phoneRes.height,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    isZh
+                        ? '📐 1080 x 2400 (20:9 全面屏)'
+                        : '📐 1080 x 2400 (20:9 Fullscreen)',
+                  ),
+                  onTap: () {
+                    close();
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: 1080,
+                      targetHeight: 2400,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    isZh
+                        ? '📐 1080 x 1920 (16:9 标准竖屏)'
+                        : '📐 1080 x 1920 (16:9 Standard)',
+                  ),
+                  onTap: () {
+                    close();
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: 1080,
+                      targetHeight: 1920,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    isZh
+                        ? '⚡ 720 x 1600 (流畅省流)'
+                        : '⚡ 720 x 1600 (Smooth / low bandwidth)',
+                  ),
+                  onTap: () {
+                    close();
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: 720,
+                      targetHeight: 1600,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  leading: const Icon(Icons.tune),
+                  title: Text(
+                    isZh ? '✏️ 自定义竖屏分辨率...' : '✏️ Custom portrait resolution...',
+                  ),
+                  onTap: () {
+                    close();
+                    showCustomResolutionInputDialog(
+                      context: context,
+                      ffi: ffi,
+                      initialWidth: phoneRes.width,
+                      initialHeight: phoneRes.height,
+                      onConfirm: (w, h) {
+                        setupPhonePortraitVirtualDisplay(
+                          context: context,
+                          ffi: ffi,
+                          targetWidth: w,
+                          targetHeight: h,
+                        );
+                      },
+                    );
+                  },
+                ),
+                if (hasVirtual) ...[
+                  const Divider(color: MyTheme.border),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    leading: const Icon(Icons.tv_off),
+                    title: Text(
+                      isZh
+                          ? '🔌 拔出虚拟屏 (恢复默认显示)'
+                          : '🔌 Plug out virtual display',
+                    ),
+                    onTap: () async {
+                      close();
+                      await bind.sessionToggleVirtualDisplay(
+                        sessionId: ffi.sessionId,
+                        index: kAllVirtualDisplay,
+                        on: false,
+                      );
+                      if (pi.displays.isNotEmpty && pi.currentDisplay != 0) {
+                        openMonitorInTheSameTab(0, ffi, pi);
+                      }
+                      BotToast.showText(
+                        text: isZh ? '已拔出虚拟显示器' : 'Virtual displays plugged out',
+                      );
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }, clickMaskDismiss: true, backDismiss: true).then((value) {
+        _disableAndroidSoftKeyboard();
+      });
+    },
+  );
+}
+
 TTextMenu? getVirtualDisplayMenu(FFI ffi, String id) {
   if (!showVirtualDisplayMenu(ffi)) {
     return null;
@@ -1468,41 +1818,91 @@ TTextMenu? getVirtualDisplayMenu(FFI ffi, String id) {
   );
 }
 
-TTextMenu? getResolutionMenu(FFI ffi, String id) {
+TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
   final ffiModel = ffi.ffiModel;
   final pi = ffiModel.pi;
   final resolutions = pi.resolutions;
   final display = pi.tryGetDisplayIfNotAllDisplay(display: pi.currentDisplay);
 
-  final visible =
-      ffiModel.keyboard && (resolutions.length > 1) && display != null;
+  final visible = ffiModel.keyboard && display != null;
   if (!visible) return null;
+
+  final isZh = localeName.startsWith('zh');
+  final phoneRes = _getPhonePortraitDimensions(context);
 
   return TTextMenu(
     child: Text(translate("Resolution")),
     onPressed: () {
-      ffi.dialogManager.show((setState, close, context) {
-        final children = resolutions
-            .map((e) => getRadio<String>(
-                  Text('${e.width}x${e.height}'),
-                  '${e.width}x${e.height}',
-                  '${display.width}x${display.height}',
-                  (value) {
-                    close();
-                    bind.sessionChangeResolution(
-                      sessionId: ffi.sessionId,
-                      display: pi.currentDisplay,
-                      width: e.width,
-                      height: e.height,
-                    );
-                  },
-                ))
-            .toList();
+      ffi.dialogManager.show((setState, close, ctx) {
+        final children = <Widget>[
+          for (var e in resolutions)
+            getRadio<String>(
+              Text('${e.width}x${e.height}'),
+              '${e.width}x${e.height}',
+              '${display.width}x${display.height}',
+              (value) {
+                close();
+                bind.sessionChangeResolution(
+                  sessionId: ffi.sessionId,
+                  display: pi.currentDisplay,
+                  width: e.width,
+                  height: e.height,
+                );
+              },
+            ),
+          const Divider(color: MyTheme.border),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.stay_current_portrait),
+            title: Text(
+              isZh
+                  ? '📱 匹配手机屏幕 (${phoneRes.width}x${phoneRes.height})'
+                  : '📱 Match phone screen (${phoneRes.width}x${phoneRes.height})',
+            ),
+            onTap: () {
+              close();
+              bind.sessionChangeResolution(
+                sessionId: ffi.sessionId,
+                display: pi.currentDisplay,
+                width: phoneRes.width,
+                height: phoneRes.height,
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.tune),
+            title: Text(
+              isZh ? '✏️ 自定义分辨率...' : '✏️ Custom resolution...',
+            ),
+            onTap: () {
+              close();
+              showCustomResolutionInputDialog(
+                context: context,
+                ffi: ffi,
+                initialWidth: phoneRes.width,
+                initialHeight: phoneRes.height,
+                onConfirm: (w, h) {
+                  bind.sessionChangeResolution(
+                    sessionId: ffi.sessionId,
+                    display: pi.currentDisplay,
+                    width: w,
+                    height: h,
+                  );
+                },
+              );
+            },
+          ),
+        ];
         return CustomAlertDialog(
           title: Text(translate('Resolution')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: children,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: children,
+            ),
           ),
         );
       }, clickMaskDismiss: true, backDismiss: true).then((value) {

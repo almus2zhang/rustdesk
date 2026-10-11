@@ -2999,14 +2999,43 @@ pub(super) fn change_resolution_directly(
             CDS_UPDATEREGISTRY | CDS_GLOBAL | CDS_RESET,
             NULL,
         );
-        if res != DISP_CHANGE_SUCCESSFUL {
-            bail!(
-                "ChangeDisplaySettingsExW failed, res={}, error {}",
-                res,
-                io::Error::last_os_error()
-            );
+        if res == DISP_CHANGE_SUCCESSFUL {
+            return Ok(());
         }
-        Ok(())
+
+        // If direct change failed (e.g. requesting portrait mode width < height on landscape monitors),
+        // try setting dmDisplayOrientation.
+        let mut curr_dm: DEVMODEW = std::mem::zeroed();
+        curr_dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        if EnumDisplaySettingsW(device_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut curr_dm) != 0 {
+            let target_orientation = if width < height {
+                1 // DMDO_90 (Portrait)
+            } else {
+                0 // DMDO_DEFAULT (Landscape)
+            };
+            if curr_dm.dmDisplayOrientation != target_orientation {
+                curr_dm.dmDisplayOrientation = target_orientation;
+                curr_dm.dmPelsWidth = width as _;
+                curr_dm.dmPelsHeight = height as _;
+                curr_dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | 0x00000080; // DM_DISPLAYORIENTATION
+                let retry_res = ChangeDisplaySettingsExW(
+                    device_name.as_ptr(),
+                    &mut curr_dm,
+                    NULL as _,
+                    CDS_UPDATEREGISTRY | CDS_GLOBAL | CDS_RESET,
+                    NULL,
+                );
+                if retry_res == DISP_CHANGE_SUCCESSFUL {
+                    return Ok(());
+                }
+            }
+        }
+
+        bail!(
+            "ChangeDisplaySettingsExW failed, res={}, error {}",
+            res,
+            io::Error::last_os_error()
+        );
     }
 }
 
