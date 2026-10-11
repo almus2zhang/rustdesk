@@ -3013,8 +3013,10 @@ pub(super) fn change_resolution_directly(
             } else {
                 0 // DMDO_DEFAULT (Landscape)
             };
-            if curr_dm.dmDisplayOrientation != target_orientation {
-                curr_dm.dmDisplayOrientation = target_orientation;
+            if unsafe { curr_dm.u1.s2().dmDisplayOrientation } != target_orientation {
+                unsafe {
+                    curr_dm.u1.s2_mut().dmDisplayOrientation = target_orientation;
+                }
                 curr_dm.dmPelsWidth = width as _;
                 curr_dm.dmPelsHeight = height as _;
                 curr_dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | 0x00000080; // DM_DISPLAYORIENTATION
