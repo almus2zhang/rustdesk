@@ -586,7 +586,7 @@ class FfiModel with ChangeNotifier {
                           value: '0');
                       await bind.mainSetLocalOption(
                           key: kOptionAlignToTopRight, value: 'N');
-                      parent.target?.canvasModel.updateViewStyle();
+                      await parent.target?.canvasModel.updateViewStyle();
                     },
                   ),
                   const Divider(),
@@ -630,7 +630,7 @@ class FfiModel with ChangeNotifier {
                                   value: hwnd);
                               await bind.mainSetLocalOption(
                                   key: kOptionAlignToTopRight, value: 'Y');
-                              parent.target?.canvasModel.updateViewStyle();
+                              await parent.target?.canvasModel.updateViewStyle();
                             },
                           );
                         },
