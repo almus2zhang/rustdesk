@@ -4152,7 +4152,13 @@ impl Connection {
             return;
         }
         if t.impl_key.starts_with("app_window:select:") {
-            let hwnd = t.impl_key["app_window:select:".len()..].parse::<usize>().unwrap_or(0);
+            let rest = &t.impl_key["app_window:select:".len()..];
+            let parts: Vec<&str> = rest.split(':').collect();
+            let hwnd = parts[0].parse::<usize>().unwrap_or(0);
+            if parts.len() > 1 {
+                let direct = parts[1] != "crop" && parts[1] != "N" && parts[1] != "0";
+                crate::server::video_service::set_direct_window_capture(direct);
+            }
             self.select_app_window(hwnd).await;
             return;
         }

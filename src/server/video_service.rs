@@ -79,6 +79,7 @@ lazy_static::lazy_static! {
     pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
     static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
     static ref SELECTED_WINDOW: Arc<std::sync::atomic::AtomicUsize> = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    static ref DIRECT_WINDOW_CAPTURE: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(true));
 }
 
 pub fn set_selected_window(hwnd: usize) {
@@ -87,6 +88,14 @@ pub fn set_selected_window(hwnd: usize) {
 
 pub fn get_selected_window() -> usize {
     SELECTED_WINDOW.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+pub fn set_direct_window_capture(direct: bool) {
+    DIRECT_WINDOW_CAPTURE.store(direct, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn get_direct_window_capture() -> bool {
+    DIRECT_WINDOW_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 #[cfg(windows)]
@@ -648,6 +657,21 @@ fn run(vs: VideoService) -> ResultType<()> {
         log::info!("disable dxgi with option, fall back to gdi");
         c.set_gdi();
     }
+    #[cfg(windows)]
+    {
+        let sel_hwnd = get_selected_window();
+        if sel_hwnd != 0 {
+            if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                let cur_w = ((ww as usize) / 2) * 2;
+                let cur_h = ((wh as usize) / 2) * 2;
+                if cur_w > 0 && cur_h > 0 {
+                    c.width = cur_w;
+                    c.height = cur_h;
+                    c.origin = (wx, wy);
+                }
+            }
+        }
+    }
     let mut video_qos = VIDEO_QOS.lock().unwrap();
     let mut spf = video_qos.spf();
     let mut quality = video_qos.ratio();
@@ -811,10 +835,9 @@ fn run(vs: VideoService) -> ResultType<()> {
         {
             let sel_hwnd = get_selected_window();
             if sel_hwnd != 0 {
-                if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                let direct_mode = get_direct_window_capture();
+                if let Some((wx, wy, cur_w, cur_h, win_data)) = crate::platform::capture_window_bitmap(sel_hwnd, direct_mode) {
                     window_not_found_count = 0;
-                    let cur_w = ((ww as usize) / 2) * 2;
-                    let cur_h = ((wh as usize) / 2) * 2;
                     if c.width != cur_w || c.height != cur_h {
                         log::info!(
                             "Window size changed: {}x{} -> {}x{}",
@@ -832,6 +855,45 @@ fn run(vs: VideoService) -> ResultType<()> {
                             }).ok();
                         }
                     }
+
+                    frame_controller.reset();
+                    let now = time::Instant::now();
+                    let time = now - start;
+                    let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
+                    let pb = scrap::PixelBuffer::with_BGRA(&win_data, cur_w, cur_h);
+                    let frame = scrap::Frame::PixelBuffer(pb);
+                    let frame_to_send = frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
+                    let send_conn_ids = handle_one_frame(
+                        display_idx,
+                        &sp,
+                        frame_to_send,
+                        ms,
+                        &mut encoder,
+                        recorder.clone(),
+                        &mut encode_fail_counter,
+                        &mut first_frame,
+                        capture_width,
+                        capture_height,
+                    )?;
+                    frame_controller.set_send(now, send_conn_ids);
+                    send_counter += 1;
+
+                    let mut fetched_conn_ids = HashSet::new();
+                    let timeout_millis = 3_000u64;
+                    let wait_begin = Instant::now();
+                    while wait_begin.elapsed().as_millis() < timeout_millis as _ {
+                        frame_controller.try_wait_next(&mut fetched_conn_ids, 300);
+                        if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
+                            break;
+                        }
+                    }
+                    DISPLAY_CONN_IDS.lock().unwrap().remove(&display_idx);
+
+                    let elapsed = now.elapsed();
+                    if elapsed < spf {
+                        std::thread::sleep(spf - elapsed);
+                    }
+                    continue;
                 } else {
                     window_not_found_count += 1;
                     if window_not_found_count > 30 {
@@ -904,46 +966,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                         }
                     }
 
-                    #[cfg(windows)]
-                    let sel_hwnd = get_selected_window();
-                    #[cfg(windows)]
-                    let frame_to_crop = if sel_hwnd != 0 {
-                        if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
-                            let crop_w = ((ww as usize) / 2) * 2;
-                            let crop_h = ((wh as usize) / 2) * 2;
-                            if crop_w > 0 && crop_h > 0 {
-                                match &frame {
-                                    scrap::Frame::PixelBuffer(pb) => {
-                                        let rel_x = wx - c_display_origin.0;
-                                        let rel_y = wy - c_display_origin.1;
-                                        let cropped_pb = crop_pixelbuffer(
-                                            pb.data(),
-                                            pb.width(),
-                                            pb.height(),
-                                            rel_x,
-                                            rel_y,
-                                            crop_w,
-                                            crop_h,
-                                            &mut cropped_buffer,
-                                        );
-                                        Some(scrap::Frame::PixelBuffer(cropped_pb))
-                                    }
-                                    _ => None,
-                                }
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    #[cfg(windows)]
-                    let active_frame = frame_to_crop.as_ref().unwrap_or(&frame);
-                    #[cfg(not(windows))]
-                    let active_frame = &frame;
-                    let frame = active_frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
+                    let frame = frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
                     let send_conn_ids = handle_one_frame(
                         display_idx,
                         &sp,

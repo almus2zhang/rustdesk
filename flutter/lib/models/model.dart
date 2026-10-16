@@ -590,6 +590,33 @@ class FfiModel with ChangeNotifier {
                     },
                   ),
                   const Divider(),
+                  StatefulBuilder(
+                    builder: (context, setSwitchState) {
+                      final directMode = bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+                      return SwitchListTile(
+                        dense: true,
+                        secondary: const Icon(Icons.crop_free, size: 22),
+                        title: Text(
+                          translate('Direct Window Capture'),
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          directMode
+                              ? translate('Capture target window directly (isolated, not affected by overlapping windows)')
+                              : translate('Crop from desktop coordinates'),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                        value: directMode,
+                        onChanged: (val) async {
+                          final newVal = val ? 'Y' : 'N';
+                          await bind.mainSetLocalOption(
+                              key: 'direct_window_capture', value: newVal);
+                          setSwitchState(() {});
+                        },
+                      );
+                    },
+                  ),
+                  const Divider(),
                   if (list.isEmpty)
                     Padding(
                       padding: const EdgeInsets.all(24.0),
@@ -624,10 +651,12 @@ class FfiModel with ChangeNotifier {
                             ),
                             onTap: () async {
                               close();
+                              final directMode = bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+                              final modeStr = directMode ? 'direct' : 'crop';
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'select_window',
-                                  value: hwnd);
+                                  value: '$hwnd:$modeStr');
                               await bind.mainSetLocalOption(
                                   key: kOptionAlignToTopRight, value: 'N');
                               await parent.target?.canvasModel.updateViewStyle();

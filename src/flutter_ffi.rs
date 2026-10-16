@@ -701,8 +701,14 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             return;
         }
         if name == "select_window" {
-            let hwnd = value.parse::<u64>().unwrap_or(0);
-            session.select_app_window(hwnd);
+            let parts: Vec<&str> = value.split(':').collect();
+            let hwnd = parts[0].parse::<u64>().unwrap_or(0);
+            let direct = if parts.len() > 1 {
+                parts[1] != "crop" && parts[1] != "N" && parts[1] != "0"
+            } else {
+                true
+            };
+            session.select_app_window(hwnd, direct);
             return;
         }
         session.set_option(name, value);

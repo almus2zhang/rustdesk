@@ -4643,6 +4643,153 @@ pub fn get_window_rect(hwnd: usize) -> Option<(i32, i32, i32, i32)> {
     }
 }
 
+pub fn capture_window_bitmap(hwnd: usize, direct_mode: bool) -> Option<(i32, i32, usize, usize, Vec<u8>)> {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) == 0 {
+            return None;
+        }
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
+        let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetWindowRect(hwnd, &mut rect) == 0 {
+            return None;
+        }
+        let wx = rect.left;
+        let wy = rect.top;
+        let w = rect.right - rect.left;
+        let h = rect.bottom - rect.top;
+        if w <= 0 || h <= 0 || wx < -10000 || wy < -10000 {
+            return None;
+        }
+        let w_even = ((w as usize) / 2) * 2;
+        let h_even = ((h as usize) / 2) * 2;
+        if w_even == 0 || h_even == 0 {
+            return None;
+        }
+
+        let (hdc_src, is_window_dc) = if direct_mode {
+            let dc = GetWindowDC(hwnd);
+            if !dc.is_null() {
+                (dc, true)
+            } else {
+                (GetDC(std::ptr::null_mut()), false)
+            }
+        } else {
+            (GetDC(std::ptr::null_mut()), false)
+        };
+
+        if hdc_src.is_null() {
+            return None;
+        }
+
+        let hdc_mem = CreateCompatibleDC(hdc_src);
+        if hdc_mem.is_null() {
+            if is_window_dc {
+                ReleaseDC(hwnd, hdc_src);
+            } else {
+                ReleaseDC(std::ptr::null_mut(), hdc_src);
+            }
+            return None;
+        }
+
+        let hbmp = CreateCompatibleBitmap(hdc_src, w_even as i32, h_even as i32);
+        if hbmp.is_null() {
+            DeleteDC(hdc_mem);
+            if is_window_dc {
+                ReleaseDC(hwnd, hdc_src);
+            } else {
+                ReleaseDC(std::ptr::null_mut(), hdc_src);
+            }
+            return None;
+        }
+
+        let old_bmp = SelectObject(hdc_mem, hbmp as _);
+
+        let mut captured = false;
+        if direct_mode {
+            // PW_RENDERFULLCONTENT = 2 (Windows 8.1+)
+            if PrintWindow(hwnd, hdc_mem, 2) != 0 {
+                captured = true;
+            } else if PrintWindow(hwnd, hdc_mem, 0) != 0 {
+                captured = true;
+            } else if is_window_dc {
+                // Fall back to BitBlt from window DC directly
+                if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_src, 0, 0, SRCCOPY) != 0 {
+                    captured = true;
+                }
+            }
+        }
+
+        // If not direct_mode or direct capture failed, capture from desktop DC at (wx, wy)
+        if !captured {
+            let hdc_screen = if is_window_dc {
+                GetDC(std::ptr::null_mut())
+            } else {
+                hdc_src
+            };
+            if !hdc_screen.is_null() {
+                if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_screen, wx, wy, SRCCOPY | CAPTUREBLT) != 0 {
+                    captured = true;
+                }
+                if is_window_dc {
+                    ReleaseDC(std::ptr::null_mut(), hdc_screen);
+                }
+            }
+        }
+
+        let mut data = Vec::new();
+        if captured {
+            let bytes_len = w_even * h_even * 4;
+            data.resize(bytes_len, 0);
+            let mut bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as _,
+                    biWidth: w_even as i32,
+                    biHeight: -(h_even as i32), // Top-down
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB,
+                    biSizeImage: bytes_len as _,
+                    biXPelsPerMeter: 0,
+                    biYPelsPerMeter: 0,
+                    biClrUsed: 0,
+                    biClrImportant: 0,
+                },
+                bmiColors: [RGBQUAD { rgbBlue: 0, rgbGreen: 0, rgbRed: 0, rgbReserved: 0 }],
+            };
+            let lines = GetDIBits(
+                hdc_mem,
+                hbmp,
+                0,
+                h_even as u32,
+                data.as_mut_ptr() as *mut _,
+                &mut bmi,
+                winapi::um::wingdi::DIB_RGB_COLORS,
+            );
+            if lines == 0 {
+                captured = false;
+            }
+        }
+
+        SelectObject(hdc_mem, old_bmp);
+        DeleteObject(hbmp as _);
+        DeleteDC(hdc_mem);
+        if is_window_dc {
+            ReleaseDC(hwnd, hdc_src);
+        } else {
+            ReleaseDC(std::ptr::null_mut(), hdc_src);
+        }
+
+        if captured {
+            Some((wx, wy, w_even, h_even, data))
+        } else {
+            None
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod tests {

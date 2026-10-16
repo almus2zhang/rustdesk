@@ -235,6 +235,11 @@ pub fn get_window_rect(_hwnd: usize) -> Option<(i32, i32, i32, i32)> {
     None
 }
 
+#[cfg(not(windows))]
+pub fn capture_window_bitmap(_hwnd: usize, _direct_mode: bool) -> Option<(i32, i32, usize, usize, Vec<u8>)> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

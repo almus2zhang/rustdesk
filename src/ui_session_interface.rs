@@ -455,10 +455,11 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
-    pub fn select_app_window(&self, hwnd: u64) {
+    pub fn select_app_window(&self, hwnd: u64, direct_mode: bool) {
+        let mode_str = if direct_mode { "direct" } else { "crop" };
         let mut misc = Misc::new();
         misc.set_toggle_privacy_mode(TogglePrivacyMode {
-            impl_key: format!("app_window:select:{}", hwnd),
+            impl_key: format!("app_window:select:{}:{}", hwnd, mode_str),
             on: false,
             ..Default::default()
         });
