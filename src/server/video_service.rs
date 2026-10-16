@@ -97,7 +97,6 @@ pub fn set_direct_window_capture(direct: bool) {
 pub fn get_direct_window_capture() -> bool {
     DIRECT_WINDOW_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
 }
-}
 
 struct Screenshot {
     sid: String,
