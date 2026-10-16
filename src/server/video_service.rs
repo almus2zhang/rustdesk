@@ -89,6 +89,7 @@ pub fn get_selected_window() -> usize {
     SELECTED_WINDOW.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+#[cfg(windows)]
 fn crop_pixelbuffer<'a>(
     data: &'a [u8],
     full_w: usize,
@@ -457,12 +458,15 @@ fn get_capturer_monitor(
     }
 
     let (mut origin, mut width, mut height) = (display.origin(), display.width(), display.height());
-    let sel_hwnd = get_selected_window();
-    if sel_hwnd != 0 {
-        if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
-            origin = (wx, wy);
-            width = ((ww as usize) / 2) * 2;
-            height = ((wh as usize) / 2) * 2;
+    #[cfg(windows)]
+    {
+        let sel_hwnd = get_selected_window();
+        if sel_hwnd != 0 {
+            if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                origin = (wx, wy);
+                width = ((ww as usize) / 2) * 2;
+                height = ((wh as usize) / 2) * 2;
+            }
         }
     }
     let name = display.name();
@@ -691,6 +695,7 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut would_block_count = 0u32;
     let mut yuv = Vec::new();
     let mut mid_data = Vec::new();
+    #[cfg(windows)]
     let mut cropped_buffer = Vec::new();
     let mut repeat_encode_counter = 0;
     let repeat_encode_max = 10;
@@ -753,22 +758,25 @@ fn run(vs: VideoService) -> ResultType<()> {
                 bail!("Desktop changed");
             }
         }
-        let sel_hwnd = get_selected_window();
-        if sel_hwnd != 0 {
-            if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
-                let cur_w = ((ww as usize) / 2) * 2;
-                let cur_h = ((wh as usize) / 2) * 2;
-                if c.origin != (wx, wy) || c.width != cur_w || c.height != cur_h {
-                    log::info!(
-                        "Window rect changed: ({}, {}) {}x{} -> ({}, {}) {}x{}",
-                        c.origin.0, c.origin.1, c.width, c.height, wx, wy, cur_w, cur_h
-                    );
+        #[cfg(windows)]
+        {
+            let sel_hwnd = get_selected_window();
+            if sel_hwnd != 0 {
+                if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                    let cur_w = ((ww as usize) / 2) * 2;
+                    let cur_h = ((wh as usize) / 2) * 2;
+                    if c.origin != (wx, wy) || c.width != cur_w || c.height != cur_h {
+                        log::info!(
+                            "Window rect changed: ({}, {}) {}x{} -> ({}, {}) {}x{}",
+                            c.origin.0, c.origin.1, c.width, c.height, wx, wy, cur_w, cur_h
+                        );
+                        bail!("SWITCH");
+                    }
+                } else {
+                    log::info!("Selected window closed, revert to full screen");
+                    set_selected_window(0);
                     bail!("SWITCH");
                 }
-            } else {
-                log::info!("Selected window closed, revert to full screen");
-                set_selected_window(0);
-                bail!("SWITCH");
             }
         }
         let now = time::Instant::now();
@@ -830,7 +838,9 @@ fn run(vs: VideoService) -> ResultType<()> {
                         }
                     }
 
+                    #[cfg(windows)]
                     let sel_hwnd = get_selected_window();
+                    #[cfg(windows)]
                     let frame_to_crop = if sel_hwnd != 0 {
                         if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                             let crop_w = ((ww as usize) / 2) * 2;
@@ -869,7 +879,10 @@ fn run(vs: VideoService) -> ResultType<()> {
                     } else {
                         None
                     };
+                    #[cfg(windows)]
                     let active_frame = frame_to_crop.as_ref().unwrap_or(&frame);
+                    #[cfg(not(windows))]
+                    let active_frame = &frame;
                     let frame = active_frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
                     let send_conn_ids = handle_one_frame(
                         display_idx,
@@ -1376,13 +1389,16 @@ pub fn make_display_changed_msg(
                 .clone(),
         },
     };
-    let sel_hwnd = get_selected_window();
-    if sel_hwnd != 0 {
-        if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
-            display.x = wx;
-            display.y = wy;
-            display.width = ((ww / 2) * 2) as i32;
-            display.height = ((wh / 2) * 2) as i32;
+    #[cfg(windows)]
+    {
+        let sel_hwnd = get_selected_window();
+        if sel_hwnd != 0 {
+            if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                display.x = wx;
+                display.y = wy;
+                display.width = ((ww / 2) * 2) as i32;
+                display.height = ((wh / 2) * 2) as i32;
+            }
         }
     }
     let mut misc = Misc::new();
