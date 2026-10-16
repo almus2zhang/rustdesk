@@ -170,6 +170,10 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch) {
+      if (lastTapDownDetails != null &&
+          !ffi.cursorModel.isInRemoteRect(lastTapDownDetails.localPosition)) {
+        return;
+      }
       final isMoved =
           await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
       if (isMoved) {
@@ -195,6 +199,10 @@ class _RawTouchGestureDetectorRegionState
       // Cannot use `_lastTapDownDetails` because Flutter calls `onTapUp` before `onTap`, clearing the cached details.
       // Using `_lastTapDownPositionForMouseMode` instead.
       if (shouldBlockMouseModeEvent()) {
+        return;
+      }
+      if (_lastTapDownPositionForMouseMode != null &&
+          !ffi.cursorModel.isInRemoteRect(_lastTapDownPositionForMouseMode!)) {
         return;
       }
       // Mobile, "Mouse mode"
@@ -229,6 +237,10 @@ class _RawTouchGestureDetectorRegionState
     // Check if the position is in a blocked area when using the mouse mode.
     if (!handleTouch) {
       if (shouldBlockMouseModeEvent()) {
+        return;
+      }
+      if (_lastTapDownPositionForMouseMode != null &&
+          !ffi.cursorModel.isInRemoteRect(_lastTapDownPositionForMouseMode!)) {
         return;
       }
     }
@@ -274,6 +286,9 @@ class _RawTouchGestureDetectorRegionState
     }
     if (!ffi.ffiModel.isPeerMobile) {
       if (handleTouch) {
+        if (!ffi.cursorModel.isInRemoteRect(_cacheLongPressPosition)) {
+          return;
+        }
         final isMoved = await ffi.cursorModel
             .move(_cacheLongPressPosition.dx, _cacheLongPressPosition.dy);
         if (!isMoved) {
@@ -281,6 +296,9 @@ class _RawTouchGestureDetectorRegionState
         }
       } else {
         if (shouldBlockMouseModeEvent()) {
+          return;
+        }
+        if (!ffi.cursorModel.isInRemoteRect(_cacheLongPressPosition)) {
           return;
         }
       }
@@ -322,9 +340,10 @@ class _RawTouchGestureDetectorRegionState
     // mobile mouse mode or desktop touch screen
     final isMobileMouseMode = isMobile && !ffiModel.touchMode;
     // We can't use `d.localPosition` here because it's always (0, 0) on desktop.
-    final isDesktopInRemoteRect = (isDesktop || isWebDesktop) &&
+    final isInRemoteRect =
         ffi.cursorModel.isInRemoteRect(_doubleFinerTapPosition);
-    if (isMobileMouseMode || isDesktopInRemoteRect) {
+    final isDesktopInRemoteRect = (isDesktop || isWebDesktop) && isInRemoteRect;
+    if ((isMobileMouseMode && isInRemoteRect) || isDesktopInRemoteRect) {
       await inputModel.tap(MouseButtons.right);
     }
   }
@@ -367,6 +386,10 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch) {
+      if (lastTapDownDetails != null &&
+          !ffi.cursorModel.isInRemoteRect(lastTapDownDetails.localPosition)) {
+        return;
+      }
       if (lastTapDownDetails != null) {
         await ffi.cursorModel.move(lastTapDownDetails.localPosition.dx,
             lastTapDownDetails.localPosition.dy);

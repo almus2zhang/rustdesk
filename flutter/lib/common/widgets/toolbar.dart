@@ -756,6 +756,18 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
         },
         child: Text(translate('View Mode'))));
   }
+
+  if (isMobile) {
+    v.add(TToggleMenu(
+        value: ffi.canvasModel.isAlignToTopRight,
+        onChanged: (value) async {
+          if (value == null) return;
+          await bind.mainSetLocalOption(
+              key: kOptionAlignToTopRight, value: value ? 'Y' : 'N');
+          ffi.canvasModel.updateViewStyle();
+        },
+        child: Text(translate('Align top-right (App Mode)'))));
+  }
   
   if (isAndroid) {
     final option = 'align_to_top_for_tablet';

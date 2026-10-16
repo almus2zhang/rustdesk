@@ -2335,14 +2335,26 @@ class CanvasModel with ChangeNotifier {
     tryUpdateScrollStyle(Duration.zero, style);
   }
 
+  bool get isAlignToTopRight =>
+      bind.mainGetLocalOption(key: kOptionAlignToTopRight) == 'Y' ||
+      bind.mainGetLocalOption(key: kOptionSingleAppMode) == 'Y';
+
   _resetCanvasOffset(int displayWidth, int displayHeight) {
-    _x = (size.width - displayWidth * _scale) / 2;
-    if (isAndroid && isTabletLayoutMode(null) && bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y') {
+    final alignTopRight = isAlignToTopRight;
+    if (alignTopRight) {
+      _x = size.width - displayWidth * _scale;
       _y = 0;
     } else {
-      _y = (size.height - displayHeight * _scale) / 2;
+      _x = (size.width - displayWidth * _scale) / 2;
+      if (isAndroid &&
+          isTabletLayoutMode(null) &&
+          bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y') {
+        _y = 0;
+      } else {
+        _y = (size.height - displayHeight * _scale) / 2;
+      }
     }
-    if (isMobile) {
+    if (isMobile && !alignTopRight) {
       _moveToCenterCursor();
     }
   }
@@ -3099,15 +3111,19 @@ class CursorModel with ChangeNotifier {
   Offset? getRemotePosInRect(Offset offset) {
     final adjust = parent.target?.canvasModel.getAdjustY() ?? 0;
     final newPos = _getNewPos(offset.dx, offset.dy, adjust);
-    final visibleRect = getVisibleRect();
+    final visibleRect = getVisibleRect().inflate(0.5);
     if (!isPointInRect(newPos, visibleRect)) {
       return null;
     }
     final rect = parent.target?.ffiModel.rect;
     if (rect != null) {
-      if (!isPointInRect(newPos, rect)) {
+      final tolerantRect = rect.inflate(0.5);
+      if (!isPointInRect(newPos, tolerantRect)) {
         return null;
       }
+      final clampedX = newPos.dx.clamp(rect.left, rect.right);
+      final clampedY = newPos.dy.clamp(rect.top, rect.bottom);
+      return Offset(clampedX, clampedY);
     }
     return newPos;
   }

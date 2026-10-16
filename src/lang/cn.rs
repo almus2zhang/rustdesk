@@ -118,6 +118,8 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Unblock user input", "取消阻止用户输入"),
         ("Adjust Window", "调节窗口"),
         ("Original", "原始比例"),
+        ("Align top-right (App Mode)", "画面靠上靠右 (单程序模式)"),
+        ("Align to top", "靠上对齐"),
         ("Shrink", "收缩"),
         ("Stretch", "伸展"),
         ("Scrollbar", "滚动条"),
