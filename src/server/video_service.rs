@@ -94,26 +94,51 @@ fn crop_pixelbuffer<'a>(
     data: &'a [u8],
     full_w: usize,
     full_h: usize,
-    crop_x: usize,
-    crop_y: usize,
+    rel_x: i32,
+    rel_y: i32,
     crop_w: usize,
     crop_h: usize,
     out: &'a mut Vec<u8>,
 ) -> scrap::PixelBuffer<'a> {
-    out.resize(crop_w * crop_h * 4, 0);
+    let target_len = crop_w * crop_h * 4;
+    out.resize(target_len, 0);
+    out.fill(0);
     let bytes_per_pixel = 4;
     let full_stride = full_w * bytes_per_pixel;
     let crop_stride = crop_w * bytes_per_pixel;
 
-    for row in 0..crop_h {
-        let src_row = crop_y + row;
-        if src_row < full_h {
-            let src_start = src_row * full_stride + crop_x * bytes_per_pixel;
-            let src_end = (src_start + crop_stride).min(data.len());
-            let dst_start = row * crop_stride;
-            let copy_len = src_end.saturating_sub(src_start).min(crop_stride);
-            if src_start < data.len() && copy_len > 0 {
-                out[dst_start..dst_start + copy_len].copy_from_slice(&data[src_start..src_start + copy_len]);
+    let (src_x, dst_x, copy_w) = if rel_x >= 0 {
+        let sx = rel_x as usize;
+        let cw = crop_w.min(full_w.saturating_sub(sx));
+        (sx, 0usize, cw)
+    } else {
+        let dx = (-rel_x) as usize;
+        let cw = crop_w.saturating_sub(dx).min(full_w);
+        (0usize, dx, cw)
+    };
+
+    let (src_y, dst_y, copy_h) = if rel_y >= 0 {
+        let sy = rel_y as usize;
+        let ch = crop_h.min(full_h.saturating_sub(sy));
+        (sy, 0usize, ch)
+    } else {
+        let dy = (-rel_y) as usize;
+        let ch = crop_h.saturating_sub(dy).min(full_h);
+        (0usize, dy, ch)
+    };
+
+    if copy_w > 0 && copy_h > 0 && src_x < full_w && src_y < full_h {
+        let copy_bytes = copy_w * bytes_per_pixel;
+        for row in 0..copy_h {
+            let cur_src_row = src_y + row;
+            let cur_dst_row = dst_y + row;
+            if cur_src_row < full_h && cur_dst_row < crop_h {
+                let src_start = cur_src_row * full_stride + src_x * bytes_per_pixel;
+                let dst_start = cur_dst_row * crop_stride + dst_x * bytes_per_pixel;
+                if src_start + copy_bytes <= data.len() && dst_start + copy_bytes <= out.len() {
+                    out[dst_start..dst_start + copy_bytes]
+                        .copy_from_slice(&data[src_start..src_start + copy_bytes]);
+                }
             }
         }
     }
@@ -401,6 +426,7 @@ fn check_uac_switch(privacy_mode_id: i32, capturer_privacy_mode_id: i32) -> Resu
 
 pub(super) struct CapturerInfo {
     pub origin: (i32, i32),
+    pub display_origin: (i32, i32),
     pub width: usize,
     pub height: usize,
     pub ndisplay: usize,
@@ -458,6 +484,7 @@ fn get_capturer_monitor(
     }
 
     let (mut origin, mut width, mut height) = (display.origin(), display.width(), display.height());
+    let display_origin = display.origin();
     #[cfg(windows)]
     {
         let sel_hwnd = get_selected_window();
@@ -519,6 +546,7 @@ fn get_capturer_monitor(
     )?;
     Ok(CapturerInfo {
         origin,
+        display_origin,
         width,
         height,
         ndisplay,
@@ -560,6 +588,7 @@ fn get_capturer_camera(current: usize) -> ResultType<CapturerInfo> {
     );
     return Ok(CapturerInfo {
         origin,
+        display_origin: origin,
         width,
         height,
         ndisplay: ncamera,
@@ -791,7 +820,7 @@ fn run(vs: VideoService) -> ResultType<()> {
 
         let time = now - start;
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
-        let c_origin = c.origin;
+        let c_display_origin = c.display_origin;
         let res = match c.frame(spf) {
             Ok(frame) => {
                 repeat_encode_counter = 0;
@@ -849,25 +878,19 @@ fn run(vs: VideoService) -> ResultType<()> {
                             if crop_w > 0 && crop_h > 0 {
                                 match &frame {
                                     scrap::Frame::PixelBuffer(pb) => {
-                                        let crop_x = (wx - c_origin.0).max(0) as usize;
-                                        let crop_y = (wy - c_origin.1).max(0) as usize;
-                                        let valid_w = crop_w.min(pb.width().saturating_sub(crop_x));
-                                        let valid_h = crop_h.min(pb.height().saturating_sub(crop_y));
-                                        if valid_w > 0 && valid_h > 0 {
-                                            let cropped_pb = crop_pixelbuffer(
-                                                pb.data(),
-                                                pb.width(),
-                                                pb.height(),
-                                                crop_x,
-                                                crop_y,
-                                                valid_w,
-                                                valid_h,
-                                                &mut cropped_buffer,
-                                            );
-                                            Some(scrap::Frame::PixelBuffer(cropped_pb))
-                                        } else {
-                                            None
-                                        }
+                                        let rel_x = wx - c_display_origin.0;
+                                        let rel_y = wy - c_display_origin.1;
+                                        let cropped_pb = crop_pixelbuffer(
+                                            pb.data(),
+                                            pb.width(),
+                                            pb.height(),
+                                            rel_x,
+                                            rel_y,
+                                            crop_w,
+                                            crop_h,
+                                            &mut cropped_buffer,
+                                        );
+                                        Some(scrap::Frame::PixelBuffer(cropped_pb))
                                     }
                                     _ => None,
                                 }
@@ -1350,6 +1373,10 @@ fn try_broadcast_display_changed(
     cap: &CapturerInfo,
     refresh: bool,
 ) -> ResultType<()> {
+    #[cfg(windows)]
+    if get_selected_window() != 0 {
+        return Ok(());
+    }
     if refresh {
         // Get display information immediately.
         crate::display_service::check_displays_changed().ok();
