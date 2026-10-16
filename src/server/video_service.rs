@@ -97,61 +97,6 @@ pub fn set_direct_window_capture(direct: bool) {
 pub fn get_direct_window_capture() -> bool {
     DIRECT_WINDOW_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
 }
-
-#[cfg(windows)]
-fn crop_pixelbuffer<'a>(
-    data: &'a [u8],
-    full_w: usize,
-    full_h: usize,
-    rel_x: i32,
-    rel_y: i32,
-    crop_w: usize,
-    crop_h: usize,
-    out: &'a mut Vec<u8>,
-) -> scrap::PixelBuffer<'a> {
-    let target_len = crop_w * crop_h * 4;
-    out.resize(target_len, 0);
-    out.fill(0);
-    let bytes_per_pixel = 4;
-    let full_stride = if full_h > 0 { data.len() / full_h } else { full_w * bytes_per_pixel };
-    let crop_stride = crop_w * bytes_per_pixel;
-
-    let (src_x, dst_x, copy_w) = if rel_x >= 0 {
-        let sx = rel_x as usize;
-        let cw = crop_w.min(full_w.saturating_sub(sx));
-        (sx, 0usize, cw)
-    } else {
-        let dx = (-rel_x) as usize;
-        let cw = crop_w.saturating_sub(dx).min(full_w);
-        (0usize, dx, cw)
-    };
-
-    let (src_y, dst_y, copy_h) = if rel_y >= 0 {
-        let sy = rel_y as usize;
-        let ch = crop_h.min(full_h.saturating_sub(sy));
-        (sy, 0usize, ch)
-    } else {
-        let dy = (-rel_y) as usize;
-        let ch = crop_h.saturating_sub(dy).min(full_h);
-        (0usize, dy, ch)
-    };
-
-    if copy_w > 0 && copy_h > 0 && src_x < full_w && src_y < full_h {
-        let copy_bytes = copy_w * bytes_per_pixel;
-        for row in 0..copy_h {
-            let cur_src_row = src_y + row;
-            let cur_dst_row = dst_y + row;
-            if cur_src_row < full_h && cur_dst_row < crop_h {
-                let src_start = cur_src_row * full_stride + src_x * bytes_per_pixel;
-                let dst_start = cur_dst_row * crop_stride + dst_x * bytes_per_pixel;
-                if src_start + copy_bytes <= data.len() && dst_start + copy_bytes <= out.len() {
-                    out[dst_start..dst_start + copy_bytes]
-                        .copy_from_slice(&data[src_start..src_start + copy_bytes]);
-                }
-            }
-        }
-    }
-    scrap::PixelBuffer::with_BGRA(out, crop_w, crop_h)
 }
 
 struct Screenshot {
@@ -748,8 +693,6 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut would_block_count = 0u32;
     let mut yuv = Vec::new();
     let mut mid_data = Vec::new();
-    #[cfg(windows)]
-    let mut cropped_buffer = Vec::new();
     let mut repeat_encode_counter = 0;
     let repeat_encode_max = 10;
     let mut encode_fail_counter = 0;
