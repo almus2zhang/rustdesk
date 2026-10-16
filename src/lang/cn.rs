@@ -124,6 +124,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Full Screen (Exit App Mode)", "全屏幕模式 (退出单程序模式)"),
         ("Show full remote desktop", "显示完整的远程桌面"),
         ("No open application windows found", "未找到打开的程序窗口"),
+        ("Tap to switch", "点击切换"),
         ("Shrink", "收缩"),
         ("Stretch", "伸展"),
         ("Scrollbar", "滚动条"),

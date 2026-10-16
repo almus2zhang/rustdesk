@@ -230,7 +230,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
         SystemChrome.setEnabledSystemUIMode(
             isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
-            overlays: SystemUiOverlay.values);
+            overlays: isAndroid ? [] : SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
       });
     }
@@ -363,7 +363,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _timer = Timer(kMobileDelaySoftKeyboardFocus, () {
         SystemChrome.setEnabledSystemUIMode(
             isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
-            overlays: SystemUiOverlay.values);
+            overlays: isAndroid ? [] : SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
       });
     });
@@ -416,7 +416,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         return false;
       },
       child: Scaffold(
-          extendBody: (isAndroid && isTablet) ? true : false,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           // workaround for https://github.com/rustdesk/rustdesk/issues/3131
           floatingActionButtonLocation: keyboardIsVisible
@@ -472,6 +473,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     child: isWebDesktop
                         ? getBodyForDesktopWithListener()
                         : SafeArea(
+                            top: !isAndroid,
+                            bottom: !isAndroid,
                             child:
                                 OrientationBuilder(builder: (ctx, orientation) {
                               if (_currentOrientation != orientation) {
@@ -945,8 +948,16 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
   var _more = true;
   var _fn = false;
   var _pin = false;
+  late bool _collapsed;
   final _keyboardVisibilityController = KeyboardVisibilityController();
   final _key = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    _collapsed =
+        bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
+  }
 
   InputModel get inputModel => gFFI.inputModel;
 
@@ -997,6 +1008,42 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
       return Offstage();
     }
+
+    if (_collapsed) {
+      gFFI.cursorModel
+          .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
+      return Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8.0, right: 8.0),
+          child: Material(
+            color: const Color(0xBB000000),
+            borderRadius: BorderRadius.circular(16),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () {
+                setState(() {
+                  _collapsed = false;
+                  bind.mainSetLocalOption(
+                      key: 'key_help_tools_collapsed', value: 'N');
+                });
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.keyboard_outlined, size: 16, color: Colors.white),
+                    SizedBox(width: 4),
+                    Icon(Icons.expand_more, size: 14, color: Colors.white70),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final size = MediaQuery.of(context).size;
 
     final pi = gFFI.ffiModel.pi;
@@ -1039,6 +1086,14 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
               ),
           active: _pin,
           icon: Icons.push_pin),
+      wrap(
+          '',
+          () => setState(() {
+                _collapsed = true;
+                bind.mainSetLocalOption(
+                    key: 'key_help_tools_collapsed', value: 'Y');
+              }),
+          icon: Icons.expand_less),
 
       wrap('', () {
         inputModel.inputKey('VK_LEFT');

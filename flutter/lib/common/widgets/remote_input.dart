@@ -518,7 +518,9 @@ class _RawTouchGestureDetectorRegionState
       }
     } else {
       // mobile
-      if (_isHighRes) {
+      final twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
+      final isWheelMode = twoFingerMode == 'wheel';
+      if (isWheelMode) {
         _twoFingerScrollX += d.focalPointDelta.dx;
         _twoFingerScrollY += d.focalPointDelta.dy;
 

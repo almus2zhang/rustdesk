@@ -125,6 +125,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Full Screen (Exit App Mode)", "Full Screen (Exit App Mode)"),
         ("Show full remote desktop", "Show full remote desktop"),
         ("No open application windows found", "No open application windows found"),
+        ("Tap to switch", "Tap to switch"),
         ("ubuntu-21-04-required", "Wayland requires Ubuntu 21.04 or higher version."),
         ("wayland-requires-higher-linux-version", "Wayland requires higher version of linux distro. Please try X11 desktop or change your OS."),
         ("xdp-portal-unavailable", "Wayland screen capture failed. The XDG Desktop Portal may have crashed or is unavailable. Try restarting it with `systemctl --user restart xdg-desktop-portal`."),

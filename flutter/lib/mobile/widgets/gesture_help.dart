@@ -57,12 +57,25 @@ class GestureHelp extends StatefulWidget {
 class _GestureHelpState extends State<GestureHelp> {
   late int _selectedIndex;
   late bool _touchMode;
+  late String _twoFingerMode;
   final VirtualMouseMode _virtualMouseMode;
 
   _GestureHelpState(bool touchMode, VirtualMouseMode virtualMouseMode)
       : _virtualMouseMode = virtualMouseMode {
     _touchMode = touchMode;
     _selectedIndex = _touchMode ? 1 : 0;
+    _twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
+    if (_twoFingerMode.isEmpty) {
+      _twoFingerMode = 'canvas';
+    }
+  }
+
+  void _toggleTwoFingerMode() {
+    final newMode = _twoFingerMode == 'wheel' ? 'canvas' : 'wheel';
+    setState(() {
+      _twoFingerMode = newMode;
+      bind.mainSetLocalOption(key: 'two_finger_mode', value: newMode);
+    });
   }
 
   /// Helper to exit relative mouse mode when certain conditions are met.
@@ -272,6 +285,27 @@ class _GestureHelpState extends State<GestureHelp> {
                                     ],
                                   )),
                             )),
+                      if (!_touchMode)
+                        Transform.translate(
+                          offset: const Offset(-10.0, -12.0),
+                          child: InkWell(
+                            onTap: _toggleTwoFingerMode,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Checkbox(
+                                  value: _twoFingerMode == 'wheel',
+                                  onChanged: (_) => _toggleTwoFingerMode(),
+                                ),
+                                Text(
+                                  _twoFingerMode == 'wheel'
+                                      ? '${translate("Two-Finger Move")}: ${translate("Mouse Wheel")} (${translate("Tap to switch")})'
+                                      : '${translate("Two-Finger Move")}: ${translate("Canvas Move")} (${translate("Tap to switch")})',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
@@ -335,9 +369,14 @@ class _GestureHelpState extends State<GestureHelp> {
                               translate("Mouse Wheel")),
                           GestureInfo(
                               width,
-                              GestureIcons.iconGestureFDrag,
+                              _twoFingerMode == 'wheel'
+                                  ? GestureIcons.iconGestureFThreeFingers
+                                  : GestureIcons.iconGestureFDrag,
                               translate("Two-Finger Move"),
-                              translate("Canvas Move")),
+                              _twoFingerMode == 'wheel'
+                                  ? '${translate("Mouse Wheel")} (${translate("Tap to switch")})'
+                                  : '${translate("Canvas Move")} (${translate("Tap to switch")})',
+                              onTap: _toggleTwoFingerMode),
                           GestureInfo(
                               width,
                               GestureIcons.iconGesturePinch,
@@ -352,21 +391,29 @@ class _GestureHelpState extends State<GestureHelp> {
 
 class GestureInfo extends StatelessWidget {
   const GestureInfo(this.width, this.icon, this.fromText, this.toText,
-      {Key? key})
+      {Key? key, this.onTap})
       : super(key: key);
 
   final String fromText;
   final String toText;
   final IconData icon;
   final double width;
+  final VoidCallback? onTap;
 
   final iconSize = 35.0;
   final iconColor = MyTheme.accent;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    Widget content = Container(
         width: width,
+        padding: onTap != null ? const EdgeInsets.all(4) : EdgeInsets.zero,
+        decoration: onTap != null
+            ? BoxDecoration(
+                border: Border.all(color: MyTheme.accent.withOpacity(0.35)),
+                borderRadius: BorderRadius.circular(8),
+              )
+            : null,
         child: Column(
           children: [
             Icon(
@@ -384,8 +431,19 @@ class GestureInfo extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context).textTheme.bodySmall?.color))
+                    color: onTap != null
+                        ? MyTheme.accent
+                        : Theme.of(context).textTheme.bodySmall?.color))
           ],
         ));
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: content,
+      );
+    }
+    return content;
   }
 }
