@@ -1087,13 +1087,13 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           active: _pin,
           icon: Icons.push_pin),
       wrap(
-          '',
+          'Hide',
           () => setState(() {
                 _collapsed = true;
                 bind.mainSetLocalOption(
                     key: 'key_help_tools_collapsed', value: 'Y');
               }),
-          icon: Icons.expand_less),
+          icon: Icons.keyboard_hide),
 
       wrap('', () {
         inputModel.inputKey('VK_LEFT');
@@ -1195,20 +1195,59 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         padding: EdgeInsets.only(
             top: (isAndroid || !_keyboardVisibilityController.isVisible || isHighRes) ? 4 : 24,
             bottom: isHighRes ? 4 : 8),
-        child: Wrap(
-          spacing: space,
-          runSpacing: space,
-          children: <Widget>[SizedBox(width: 9999)] +
-              modifiers +
-              keys +
-              (_fn ? fn : []) +
-              (_more
-                  ? more
-                  : [
-                      wrap('Enter', () {
-                        inputModel.inputKey('VK_ENTER');
-                      })
-                    ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6.0, bottom: 2.0),
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _collapsed = true;
+                      bind.mainSetLocalOption(
+                          key: 'key_help_tools_collapsed', value: 'Y');
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0x33FFFFFF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
+                        const SizedBox(width: 4),
+                        Text(
+                          translate('Hide'),
+                          style: const TextStyle(color: Colors.white70, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Wrap(
+              spacing: space,
+              runSpacing: space,
+              children: <Widget>[SizedBox(width: 9999)] +
+                  modifiers +
+                  keys +
+                  (_fn ? fn : []) +
+                  (_more
+                      ? more
+                      : [
+                          wrap('Enter', () {
+                            inputModel.inputKey('VK_ENTER');
+                          })
+                        ]),
+            ),
+          ],
         ));
   }
 }

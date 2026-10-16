@@ -4628,11 +4628,14 @@ pub fn get_window_rect(hwnd: usize) -> Option<(i32, i32, i32, i32)> {
         if IsWindow(hwnd) == 0 {
             return None;
         }
+        if IsIconic(hwnd) != 0 {
+            ShowWindow(hwnd, SW_RESTORE);
+        }
         let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
         if GetWindowRect(hwnd, &mut rect) != 0 {
             let w = rect.right - rect.left;
             let h = rect.bottom - rect.top;
-            if w > 0 && h > 0 {
+            if w > 0 && h > 0 && rect.left > -10000 && rect.top > -10000 {
                 return Some((rect.left, rect.top, w, h));
             }
         }

@@ -629,7 +629,7 @@ class FfiModel with ChangeNotifier {
                                   name: 'select_window',
                                   value: hwnd);
                               await bind.mainSetLocalOption(
-                                  key: kOptionAlignToTopRight, value: 'Y');
+                                  key: kOptionAlignToTopRight, value: 'N');
                               await parent.target?.canvasModel.updateViewStyle();
                             },
                           );

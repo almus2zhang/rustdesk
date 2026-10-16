@@ -104,7 +104,7 @@ fn crop_pixelbuffer<'a>(
     out.resize(target_len, 0);
     out.fill(0);
     let bytes_per_pixel = 4;
-    let full_stride = full_w * bytes_per_pixel;
+    let full_stride = if full_h > 0 { data.len() / full_h } else { full_w * bytes_per_pixel };
     let crop_stride = crop_w * bytes_per_pixel;
 
     let (src_x, dst_x, copy_w) = if rel_x >= 0 {
@@ -734,6 +734,26 @@ fn run(vs: VideoService) -> ResultType<()> {
     let capture_height = c.height;
     let (mut second_instant, mut send_counter) = (Instant::now(), 0);
 
+    #[cfg(windows)]
+    static LAST_SEL_WINDOW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    #[cfg(windows)]
+    {
+        let sel_hwnd = get_selected_window();
+        let last_sel = LAST_SEL_WINDOW.swap(sel_hwnd, std::sync::atomic::Ordering::SeqCst);
+        if sel_hwnd != 0 || last_sel != 0 {
+            if let Some(msg_out) = make_display_changed_msg(display_idx, None, vs.source) {
+                let msg_out = Arc::new(msg_out);
+                sp.send_shared(msg_out.clone());
+                sp.snapshot(move |sps| {
+                    sps.send_shared(msg_out.clone());
+                    Ok(())
+                }).ok();
+            }
+        }
+    }
+    #[cfg(windows)]
+    let mut window_not_found_count = 0usize;
+
     while sp.ok() {
         #[cfg(windows)]
         check_uac_switch(c.privacy_mode_id, c._capturer_privacy_mode_id)?;
@@ -792,20 +812,36 @@ fn run(vs: VideoService) -> ResultType<()> {
             let sel_hwnd = get_selected_window();
             if sel_hwnd != 0 {
                 if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
+                    window_not_found_count = 0;
                     let cur_w = ((ww as usize) / 2) * 2;
                     let cur_h = ((wh as usize) / 2) * 2;
-                    if c.origin != (wx, wy) || c.width != cur_w || c.height != cur_h {
+                    if c.width != cur_w || c.height != cur_h {
                         log::info!(
-                            "Window rect changed: ({}, {}) {}x{} -> ({}, {}) {}x{}",
-                            c.origin.0, c.origin.1, c.width, c.height, wx, wy, cur_w, cur_h
+                            "Window size changed: {}x{} -> {}x{}",
+                            c.width, c.height, cur_w, cur_h
                         );
                         bail!("SWITCH");
+                    } else if c.origin != (wx, wy) {
+                        c.origin = (wx, wy);
+                        if let Some(msg_out) = make_display_changed_msg(display_idx, None, vs.source) {
+                            let msg_out = Arc::new(msg_out);
+                            sp.send_shared(msg_out.clone());
+                            sp.snapshot(move |sps| {
+                                sps.send_shared(msg_out.clone());
+                                Ok(())
+                            }).ok();
+                        }
                     }
                 } else {
-                    log::info!("Selected window closed, revert to full screen");
-                    set_selected_window(0);
-                    bail!("SWITCH");
+                    window_not_found_count += 1;
+                    if window_not_found_count > 30 {
+                        log::info!("Selected window closed, revert to full screen");
+                        set_selected_window(0);
+                        bail!("SWITCH");
+                    }
                 }
+            } else {
+                window_not_found_count = 0;
             }
         }
         let now = time::Instant::now();
