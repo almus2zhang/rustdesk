@@ -791,6 +791,7 @@ fn run(vs: VideoService) -> ResultType<()> {
 
         let time = now - start;
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
+        let c_origin = c.origin;
         let res = match c.frame(spf) {
             Ok(frame) => {
                 repeat_encode_counter = 0;
@@ -848,8 +849,8 @@ fn run(vs: VideoService) -> ResultType<()> {
                             if crop_w > 0 && crop_h > 0 {
                                 match &frame {
                                     scrap::Frame::PixelBuffer(pb) => {
-                                        let crop_x = (wx - c.origin.0).max(0) as usize;
-                                        let crop_y = (wy - c.origin.1).max(0) as usize;
+                                        let crop_x = (wx - c_origin.0).max(0) as usize;
+                                        let crop_y = (wy - c_origin.1).max(0) as usize;
                                         let valid_w = crop_w.min(pb.width().saturating_sub(crop_x));
                                         let valid_h = crop_h.min(pb.height().saturating_sub(crop_y));
                                         if valid_w > 0 && valid_h > 0 {
