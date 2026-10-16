@@ -4616,7 +4616,18 @@ pub fn focus_app_window(hwnd: usize) {
             if IsIconic(hwnd) != 0 {
                 ShowWindow(hwnd, SW_RESTORE);
             }
-            SetForegroundWindow(hwnd);
+            let fg_wnd = GetForegroundWindow();
+            let fg_thread = GetWindowThreadProcessId(fg_wnd, std::ptr::null_mut());
+            let cur_thread = winapi::um::processthreadsapi::GetCurrentThreadId();
+            if fg_thread != 0 && fg_thread != cur_thread {
+                AttachThreadInput(cur_thread, fg_thread, TRUE);
+                SetForegroundWindow(hwnd);
+                BringWindowToTop(hwnd);
+                AttachThreadInput(cur_thread, fg_thread, FALSE);
+            } else {
+                SetForegroundWindow(hwnd);
+                BringWindowToTop(hwnd);
+            }
         }
     }
 }
@@ -4668,39 +4679,47 @@ pub fn capture_window_bitmap(hwnd: usize, direct_mode: bool) -> Option<(i32, i32
             return None;
         }
 
-        let (hdc_src, is_window_dc) = if direct_mode {
-            let dc = GetWindowDC(hwnd);
-            if !dc.is_null() {
-                (dc, true)
-            } else {
-                (GetDC(std::ptr::null_mut()), false)
-            }
-        } else {
-            (GetDC(std::ptr::null_mut()), false)
+        let hdc_screen = GetDC(std::ptr::null_mut());
+        if hdc_screen.is_null() {
+            return None;
+        }
+        let hdc_mem = CreateCompatibleDC(hdc_screen);
+        if hdc_mem.is_null() {
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
+            return None;
+        }
+
+        let bytes_len = w_even * h_even * 4;
+        let mut bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as _,
+                biWidth: w_even as i32,
+                biHeight: -(h_even as i32), // Top-down DIB
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB,
+                biSizeImage: bytes_len as _,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD { rgbBlue: 0, rgbGreen: 0, rgbRed: 0, rgbReserved: 0 }],
         };
 
-        if hdc_src.is_null() {
-            return None;
-        }
+        let mut bits_ptr: *mut c_void = std::ptr::null_mut();
+        let hbmp = CreateDIBSection(
+            hdc_mem,
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits_ptr,
+            std::ptr::null_mut(),
+            0,
+        );
 
-        let hdc_mem = CreateCompatibleDC(hdc_src);
-        if hdc_mem.is_null() {
-            if is_window_dc {
-                ReleaseDC(hwnd, hdc_src);
-            } else {
-                ReleaseDC(std::ptr::null_mut(), hdc_src);
-            }
-            return None;
-        }
-
-        let hbmp = CreateCompatibleBitmap(hdc_src, w_even as i32, h_even as i32);
-        if hbmp.is_null() {
+        if hbmp.is_null() || bits_ptr.is_null() {
             DeleteDC(hdc_mem);
-            if is_window_dc {
-                ReleaseDC(hwnd, hdc_src);
-            } else {
-                ReleaseDC(std::ptr::null_mut(), hdc_src);
-            }
+            ReleaseDC(std::ptr::null_mut(), hdc_screen);
             return None;
         }
 
@@ -4713,79 +4732,40 @@ pub fn capture_window_bitmap(hwnd: usize, direct_mode: bool) -> Option<(i32, i32
                 captured = true;
             } else if PrintWindow(hwnd, hdc_mem, 0) != 0 {
                 captured = true;
-            } else if is_window_dc {
-                // Fall back to BitBlt from window DC directly
-                if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_src, 0, 0, SRCCOPY) != 0 {
-                    captured = true;
-                }
-            }
-        }
-
-        // If not direct_mode or direct capture failed, capture from desktop DC at (wx, wy)
-        if !captured {
-            let hdc_screen = if is_window_dc {
-                GetDC(std::ptr::null_mut())
             } else {
-                hdc_src
-            };
-            if !hdc_screen.is_null() {
-                if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_screen, wx, wy, SRCCOPY | CAPTUREBLT) != 0 {
-                    captured = true;
-                }
-                if is_window_dc {
-                    ReleaseDC(std::ptr::null_mut(), hdc_screen);
+                let hdc_win = GetWindowDC(hwnd);
+                if !hdc_win.is_null() {
+                    if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_win, 0, 0, SRCCOPY) != 0 {
+                        captured = true;
+                    }
+                    ReleaseDC(hwnd, hdc_win);
                 }
             }
         }
 
-        let mut data = Vec::new();
-        if captured {
-            let bytes_len = w_even * h_even * 4;
-            data.resize(bytes_len, 0);
-            let mut bmi = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as _,
-                    biWidth: w_even as i32,
-                    biHeight: -(h_even as i32), // Top-down
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    biCompression: BI_RGB,
-                    biSizeImage: bytes_len as _,
-                    biXPelsPerMeter: 0,
-                    biYPelsPerMeter: 0,
-                    biClrUsed: 0,
-                    biClrImportant: 0,
-                },
-                bmiColors: [RGBQUAD { rgbBlue: 0, rgbGreen: 0, rgbRed: 0, rgbReserved: 0 }],
-            };
-            let lines = GetDIBits(
-                hdc_mem,
-                hbmp,
-                0,
-                h_even as u32,
-                data.as_mut_ptr() as *mut _,
-                &mut bmi,
-                winapi::um::wingdi::DIB_RGB_COLORS,
-            );
-            if lines == 0 {
-                captured = false;
+        // If not direct mode or direct capture failed, capture from screen DC at window position (wx, wy)
+        if !captured {
+            if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_screen, wx, wy, SRCCOPY | CAPTUREBLT) != 0 {
+                captured = true;
+            } else if BitBlt(hdc_mem, 0, 0, w_even as i32, h_even as i32, hdc_screen, wx, wy, SRCCOPY) != 0 {
+                captured = true;
             }
         }
+
+        let result = if captured {
+            GdiFlush();
+            let slice = std::slice::from_raw_parts(bits_ptr as *const u8, bytes_len);
+            Some((wx, wy, w_even, h_even, slice.to_vec()))
+        } else {
+            None
+        };
 
         SelectObject(hdc_mem, old_bmp);
         DeleteObject(hbmp as _);
         DeleteDC(hdc_mem);
-        if is_window_dc {
-            ReleaseDC(hwnd, hdc_src);
-        } else {
-            ReleaseDC(std::ptr::null_mut(), hdc_src);
-        }
+        ReleaseDC(std::ptr::null_mut(), hdc_screen);
 
-        if captured {
-            Some((wx, wy, w_even, h_even, data))
-        } else {
-            None
-        }
+        result
     }
 }
 

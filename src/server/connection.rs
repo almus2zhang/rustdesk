@@ -3971,7 +3971,12 @@ impl Connection {
         if hwnd != 0 {
             crate::platform::focus_app_window(hwnd);
         }
-        self.refresh_video_display(None);
+        if let Some(msg_out) =
+            video_service::make_display_changed_msg(self.display_idx, None, self.video_source())
+        {
+            self.send(msg_out).await;
+        }
+        self.refresh_video_display(Some(self.display_idx));
     }
 
     async fn handle_switch_display(&mut self, s: SwitchDisplay) {

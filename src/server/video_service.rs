@@ -733,6 +733,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             &sp.name(),
         )?;
         if sp.is_option_true(OPTION_REFRESH) {
+            sp.set_option_bool(OPTION_REFRESH, false);
             if vs.source.is_monitor() {
                 let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);
             }
@@ -838,11 +839,13 @@ fn run(vs: VideoService) -> ResultType<()> {
                     continue;
                 } else {
                     window_not_found_count += 1;
-                    if window_not_found_count > 30 {
+                    if window_not_found_count > 60 {
                         log::info!("Selected window closed, revert to full screen");
                         set_selected_window(0);
                         bail!("SWITCH");
                     }
+                    std::thread::sleep(spf);
+                    continue;
                 }
             } else {
                 window_not_found_count = 0;
