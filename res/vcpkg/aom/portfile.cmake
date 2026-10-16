@@ -13,6 +13,7 @@ if(DEFINED ENV{USE_AOM_391})
         OUT_SOURCE_PATH SOURCE_PATH
         URL "https://aomedia.googlesource.com/aom"
         REF 8ad484f8a18ed1853c094e7d3a4e023b2a92df28 # 3.9.1
+        FETCH_REF v3.9.1
         PATCHES
             aom-uninitialized-pointer.diff
             aom-avx2.diff
@@ -23,6 +24,7 @@ else()
         OUT_SOURCE_PATH SOURCE_PATH
         URL "https://aomedia.googlesource.com/aom"
         REF 10aece4157eb79315da205f39e19bf6ab3ee30d0 # 3.12.1
+        FETCH_REF v3.12.1
         PATCHES
             aom-uninitialized-pointer.diff
             # aom-avx2.diff
