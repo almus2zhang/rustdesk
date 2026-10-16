@@ -640,7 +640,7 @@ class FfiModel with ChangeNotifier {
               ),
             ),
             actions: [
-              CancelButton(onPressed: close),
+              dialogButton("Cancel", onPressed: close, isOutline: true),
             ],
           );
         },
