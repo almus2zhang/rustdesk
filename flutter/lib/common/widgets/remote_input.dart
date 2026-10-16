@@ -112,6 +112,7 @@ class _RawTouchGestureDetectorRegionState
 
   double _twoFingerScrollX = 0;
   double _twoFingerScrollY = 0;
+  bool _twoFingerIsZooming = false;
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -486,6 +487,8 @@ class _RawTouchGestureDetectorRegionState
       // Initialize the last focal point to calculate deltas manually.
       _lastSpecialHoldDragFocalPoint = d.focalPoint;
     }
+    _scale = 1.0;
+    _twoFingerIsZooming = false;
     _twoFingerScrollX = 0;
     _twoFingerScrollY = 0;
   }
@@ -521,32 +524,48 @@ class _RawTouchGestureDetectorRegionState
       final twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
       final isWheelMode = twoFingerMode == 'wheel';
       if (isWheelMode) {
-        _twoFingerScrollX += d.focalPointDelta.dx;
-        _twoFingerScrollY += d.focalPointDelta.dy;
-
-        const double threshold = 8.0;
-        int scrollX = 0;
-        int scrollY = 0;
-
-        if (_twoFingerScrollX.abs() >= threshold) {
-          scrollX = (_twoFingerScrollX / threshold).truncate();
-          _twoFingerScrollX -= scrollX * threshold;
-        }
-        if (_twoFingerScrollY.abs() >= threshold) {
-          scrollY = (_twoFingerScrollY / threshold).truncate();
-          _twoFingerScrollY -= scrollY * threshold;
+        // If pinch-to-zoom is detected (scale changed significantly from 1.0), zoom canvas.
+        if (!_twoFingerIsZooming && (d.scale - 1.0).abs() > 0.05) {
+          _twoFingerIsZooming = true;
+          _twoFingerScrollX = 0;
+          _twoFingerScrollY = 0;
         }
 
-        if (scrollX != 0 || scrollY != 0) {
-          if (!widget.isCamera) {
-            await bind.sessionSendMouse(
-                sessionId: sessionId,
-                msg: json.encode(inputModel.modify({
-                  'id': inputModel.id,
-                  'type': 'wheel',
-                  'x': scrollX.toString(),
-                  'y': scrollY.toString(),
-                })));
+        if (_twoFingerIsZooming) {
+          if (_scale > 0 && d.scale > 0) {
+            ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
+            _scale = d.scale;
+            ffi.canvasModel.panX(d.focalPointDelta.dx);
+            ffi.canvasModel.panY(d.focalPointDelta.dy);
+          }
+        } else {
+          _twoFingerScrollX += d.focalPointDelta.dx;
+          _twoFingerScrollY += d.focalPointDelta.dy;
+
+          const double threshold = 8.0;
+          int scrollX = 0;
+          int scrollY = 0;
+
+          if (_twoFingerScrollX.abs() >= threshold) {
+            scrollX = (_twoFingerScrollX / threshold).truncate();
+            _twoFingerScrollX -= scrollX * threshold;
+          }
+          if (_twoFingerScrollY.abs() >= threshold) {
+            scrollY = (_twoFingerScrollY / threshold).truncate();
+            _twoFingerScrollY -= scrollY * threshold;
+          }
+
+          if (scrollX != 0 || scrollY != 0) {
+            if (!widget.isCamera) {
+              await bind.sessionSendMouse(
+                  sessionId: sessionId,
+                  msg: json.encode(inputModel.modify({
+                    'id': inputModel.id,
+                    'type': 'wheel',
+                    'x': scrollX.toString(),
+                    'y': scrollY.toString(),
+                  })));
+            }
           }
         }
       } else {
@@ -571,6 +590,7 @@ class _RawTouchGestureDetectorRegionState
     } else {
       // mobile
       _scale = 1;
+      _twoFingerIsZooming = false;
       // No idea why we need to set the view style to "" here.
       // bind.sessionSetViewStyle(sessionId: sessionId, value: "");
     }
