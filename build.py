@@ -25,6 +25,9 @@ else:
 flutter_build_dir_2 = f'flutter/{flutter_build_dir}'
 skip_cargo = False
 
+# Avoid googlesource 503 errors when fetching libwebm submodule
+os.system('git config --global url."https://github.com/webmproject/libwebm".insteadOf "https://chromium.googlesource.com/webm/libwebm"')
+
 
 def get_deb_arch() -> str:
     custom_arch = os.environ.get("DEB_ARCH")
