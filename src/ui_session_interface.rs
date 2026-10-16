@@ -443,6 +443,30 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
+    pub fn get_app_window_list(&self) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: "app_window:query".to_string(),
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
+    pub fn select_app_window(&self, hwnd: u64) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: format!("app_window:select:{}", hwnd),
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
     #[cfg(not(feature = "flutter"))]
     pub fn refresh_video(&self, _display: i32) {
         self.send(Data::Message(LoginConfigHandler::refresh()));
@@ -1539,6 +1563,11 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     #[inline]
+    pub fn handle_window_list(&self, data: &str) {
+        self.ui_handler.handle_window_list(data);
+    }
+
+    #[inline]
     pub fn change_resolution(&self, display: i32, width: i32, height: i32) {
         *self.last_change_display.lock().unwrap() =
             ChangeDisplayRecord::new(display, width, height);
@@ -1727,6 +1756,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn printer_request(&self, id: i32, path: String);
     fn handle_screenshot_resp(&self, sid: String, msg: String);
     fn handle_terminal_response(&self, response: TerminalResponse);
+    fn handle_window_list(&self, _data: &str) {}
 }
 
 impl<T: InvokeUiSession> Deref for Session<T> {

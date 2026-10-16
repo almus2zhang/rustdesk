@@ -473,6 +473,8 @@ class FfiModel with ChangeNotifier {
         _handlePrinterRequest(evt, sessionId, peerId);
       } else if (name == 'screenshot') {
         _handleScreenshot(evt, sessionId, peerId);
+      } else if (name == 'window_list') {
+        _handleWindowList(evt, sessionId, peerId);
       } else if (name == 'exit_relative_mouse_mode') {
         // Handle exit shortcut from rdev grab loop (Ctrl+Alt on Win/Linux, Cmd+G on macOS)
         parent.target?.inputModel.exitRelativeMouseModeWithKeyRelease();
@@ -547,6 +549,104 @@ class FfiModel with ChangeNotifier {
         ),
         tag: '$msgBoxType-$msgBoxTitle-$msgBoxTitle',
       );
+    }
+  }
+
+  _handleWindowList(
+      Map<String, dynamic> evt, SessionID sessionId, String peerId) {
+    try {
+      final String raw = evt['data'] ?? '[]';
+      final List<dynamic> list = jsonDecode(raw);
+      final dialogManager = parent.target?.dialogManager;
+      if (dialogManager == null) return;
+      dialogManager.dismissByTag('app-window-picker');
+      dialogManager.show(
+        tag: 'app-window-picker',
+        (setState, close, context) {
+          return CustomAlertDialog(
+            title: Text(translate('Select Remote Window (Single App)')),
+            content: Container(
+              constraints: const BoxConstraints(maxHeight: 400),
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.fullscreen, color: Colors.blue),
+                    title: Text(
+                      translate('Full Screen (Exit App Mode)'),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Text(translate('Show full remote desktop')),
+                    onTap: () async {
+                      close();
+                      await bind.sessionPeerOption(
+                          sessionId: sessionId,
+                          name: 'select_window',
+                          value: '0');
+                      await bind.mainSetLocalOption(
+                          key: kOptionAlignToTopRight, value: 'N');
+                      parent.target?.canvasModel.updateViewStyle();
+                    },
+                  ),
+                  const Divider(),
+                  if (list.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Center(
+                        child: Text(
+                            translate('No open application windows found')),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: list.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final item = list[index];
+                          final title = item['title']?.toString() ?? '';
+                          final name = item['name']?.toString() ?? '';
+                          final hwnd = item['hwnd']?.toString() ?? '0';
+                          final w = item['width']?.toString() ?? '';
+                          final h = item['height']?.toString() ?? '';
+                          return ListTile(
+                            leading: const Icon(Icons.laptop_chromebook),
+                            title: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            subtitle: Text(
+                              '$name ($w x $h)',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            onTap: () async {
+                              close();
+                              await bind.sessionPeerOption(
+                                  sessionId: sessionId,
+                                  name: 'select_window',
+                                  value: hwnd);
+                              await bind.mainSetLocalOption(
+                                  key: kOptionAlignToTopRight, value: 'Y');
+                              parent.target?.canvasModel.updateViewStyle();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            actions: [
+              CancelButton(onPressed: close),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to handle window_list: $e');
     }
   }
 

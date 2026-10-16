@@ -3965,6 +3965,15 @@ impl Connection {
         });
     }
 
+    async fn select_app_window(&mut self, hwnd: usize) {
+        log::info!("select_app_window: {}", hwnd);
+        crate::server::video_service::set_selected_window(hwnd);
+        if hwnd != 0 {
+            crate::platform::focus_app_window(hwnd);
+        }
+        self.refresh_video_display(None);
+    }
+
     async fn handle_switch_display(&mut self, s: SwitchDisplay) {
         let display_idx = s.display as usize;
         if self.display_idx != display_idx {
@@ -4126,6 +4135,27 @@ impl Connection {
     }
 
     async fn toggle_privacy_mode(&mut self, t: TogglePrivacyMode) {
+        if t.impl_key == "app_window:query" {
+            let windows = crate::platform::get_app_window_list();
+            if let Ok(json_str) = serde_json::to_string(&windows) {
+                let mut msg_out = Message::new();
+                let res = MessageBox {
+                    msgtype: "app_window_list".to_owned(),
+                    title: "".to_owned(),
+                    text: json_str,
+                    link: "".to_owned(),
+                    ..Default::default()
+                };
+                msg_out.set_message_box(res);
+                self.send(msg_out).await;
+            }
+            return;
+        }
+        if t.impl_key.starts_with("app_window:select:") {
+            let hwnd = t.impl_key["app_window:select:".len()..].parse::<usize>().unwrap_or(0);
+            self.select_app_window(hwnd).await;
+            return;
+        }
         if t.on {
             self.turn_on_privacy(t.impl_key).await;
         } else {

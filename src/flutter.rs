@@ -1183,6 +1183,10 @@ impl InvokeUiSession for FlutterHandler {
             }
         }
     }
+
+    fn handle_window_list(&self, data: &str) {
+        self.push_event("window_list", &[("data", data)], &[]);
+    }
 }
 
 impl FlutterHandler {

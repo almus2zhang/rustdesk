@@ -2024,6 +2024,10 @@ impl<T: InvokeUiSession> Remote<T> {
                     _ => {}
                 },
                 Some(message::Union::MessageBox(msgbox)) => {
+                    if msgbox.msgtype == "app_window_list" {
+                        self.handler.handle_window_list(&msgbox.text);
+                        continue;
+                    }
                     let mut link = msgbox.link;
                     if let Some(v) = config::HELPER_URL.get(&link as &str) {
                         link = v.to_string();

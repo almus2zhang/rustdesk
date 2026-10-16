@@ -210,6 +210,31 @@ pub fn get_pids_of_process_with_first_arg<S1: AsRef<str>, S2: AsRef<str>>(
     }
 }
 
+#[cfg(not(windows))]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AppWindowInfo {
+    pub hwnd: usize,
+    pub title: String,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+#[cfg(not(windows))]
+pub fn get_app_window_list() -> Vec<AppWindowInfo> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn focus_app_window(_hwnd: usize) {}
+
+#[cfg(not(windows))]
+pub fn get_window_rect(_hwnd: usize) -> Option<(i32, i32, i32, i32)> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

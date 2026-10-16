@@ -4516,6 +4516,131 @@ pub(super) fn get_pids_with_first_arg_by_wmic<S1: AsRef<str>, S2: AsRef<str>>(
         .unwrap_or_default()
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AppWindowInfo {
+    pub hwnd: usize,
+    pub title: String,
+    pub name: String,
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+pub fn get_app_window_list() -> Vec<AppWindowInfo> {
+    let mut list = Vec::new();
+    unsafe {
+        EnumWindows(
+            Some(enum_windows_callback),
+            &mut list as *mut Vec<AppWindowInfo> as LPARAM,
+        );
+    }
+    list
+}
+
+unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> BOOL {
+    let list = &mut *(lparam as *mut Vec<AppWindowInfo>);
+    if IsWindowVisible(hwnd) == 0 {
+        return TRUE;
+    }
+    let len = GetWindowTextLengthW(hwnd);
+    if len <= 0 {
+        return TRUE;
+    }
+    let mut title_buf = vec![0u16; (len + 1) as usize];
+    GetWindowTextW(hwnd, title_buf.as_mut_ptr(), len + 1);
+    let title = String::from_utf16_lossy(&title_buf[..len as usize]).trim().to_string();
+    if title.is_empty() {
+        return TRUE;
+    }
+
+    let mut pid = 0;
+    GetWindowThreadProcessId(hwnd, &mut pid);
+    if pid == std::process::id() || pid == 0 {
+        return TRUE;
+    }
+
+    let mut class_buf = [0u16; 256];
+    let class_len = GetClassNameW(hwnd, class_buf.as_mut_ptr(), 256);
+    let class_name = String::from_utf16_lossy(&class_buf[..class_len as usize]);
+    if ["Progman", "Shell_TrayWnd", "Windows.UI.Core.CoreWindow"].contains(&class_name.as_str()) {
+        return TRUE;
+    }
+
+    let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+    if GetWindowRect(hwnd, &mut rect) == 0 {
+        return TRUE;
+    }
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if width < 100 || height < 100 {
+        return TRUE;
+    }
+
+    let mut proc_name = String::new();
+    let h_proc = OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION,
+        0,
+        pid,
+    );
+    if !h_proc.is_null() {
+        let mut path_buf = [0u16; 1024];
+        let mut size = 1024;
+        if winapi::um::winbase::QueryFullProcessImageNameW(h_proc, 0, path_buf.as_mut_ptr(), &mut size) != 0 {
+            let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
+            if let Some(filename) = std::path::Path::new(&full_path).file_name() {
+                proc_name = filename.to_string_lossy().to_string();
+            }
+        }
+        CloseHandle(h_proc);
+    }
+    if proc_name.is_empty() {
+        proc_name = class_name;
+    }
+
+    list.push(AppWindowInfo {
+        hwnd: hwnd as usize,
+        title,
+        name: proc_name,
+        x: rect.left,
+        y: rect.top,
+        width,
+        height,
+    });
+    TRUE
+}
+
+pub fn focus_app_window(hwnd: usize) {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) != 0 {
+            if IsIconic(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            SetForegroundWindow(hwnd);
+        }
+    }
+}
+
+pub fn get_window_rect(hwnd: usize) -> Option<(i32, i32, i32, i32)> {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) == 0 {
+            return None;
+        }
+        let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetWindowRect(hwnd, &mut rect) != 0 {
+            let w = rect.right - rect.left;
+            let h = rect.bottom - rect.top;
+            if w > 0 && h > 0 {
+                return Some((rect.left, rect.top, w, h));
+            }
+        }
+        None
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

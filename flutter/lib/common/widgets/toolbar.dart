@@ -162,6 +162,18 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
         onPressed: () => ffi.cursorModel.reset()));
   }
 
+  if (isDefaultConn) {
+    v.add(TTextMenu(
+        child: Text(translate('Select Remote Window (Single App)')),
+        onPressed: () async {
+          if (isMobile && Navigator.canPop(context)) {
+            Navigator.pop(context);
+          }
+          await bind.sessionPeerOption(
+              sessionId: sessionId, name: 'get_window_list', value: '');
+        }));
+  }
+
   // https://github.com/rustdesk/rustdesk/pull/9731
   // Does not work for connection established by "accept".
   connectWithToken(
@@ -767,6 +779,16 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
           ffi.canvasModel.updateViewStyle();
         },
         child: Text(translate('Align top-right (App Mode)'))));
+  }
+
+  if (isDefaultConn) {
+    v.add(TToggleMenu(
+        value: false,
+        onChanged: (_) async {
+          await bind.sessionPeerOption(
+              sessionId: sessionId, name: 'get_window_list', value: '');
+        },
+        child: Text(translate('Select Remote Window (Single App)'))));
   }
   
   if (isAndroid) {
