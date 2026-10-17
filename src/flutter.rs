@@ -1189,7 +1189,7 @@ impl InvokeUiSession for FlutterHandler {
     }
 
     fn handle_window_closed(&self) {
-        self.push_event("window_closed", &[], &[]);
+        self.push_event::<&str>("window_closed", &[], &[]);
     }
 }
 
