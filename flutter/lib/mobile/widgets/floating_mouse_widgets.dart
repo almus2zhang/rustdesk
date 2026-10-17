@@ -122,6 +122,9 @@ class _FloatingWheelState extends State<FloatingWheel> {
   bool _isDownDown = false;
 
   Orientation? _previousOrientation;
+  Offset _preSavedPos = Offset.zero;
+  bool _isDragging = false;
+  Offset _startPointerPos = Offset.zero;
 
   Timer? _scrollTimer;
 
@@ -132,22 +135,88 @@ class _FloatingWheelState extends State<FloatingWheel> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _resetPosition();
+      final currentOrientation = MediaQuery.of(context).orientation;
+      _previousOrientation = currentOrientation;
+      _resetPosition(currentOrientation);
     });
   }
 
-  void _resetPosition() {
-    final size = MediaQuery.of(context).size;
-    setState(() {
+  String _getPositionKey(Orientation ori) {
+    final strOri = ori == Orientation.landscape ? 'l' : 'p';
+    return 'w$strOri-mouse-btn-pos';
+  }
+
+  static Offset? _loadPositionFromString(String s) {
+    if (s.isEmpty) {
+      return null;
+    }
+    try {
+      final m = jsonDecode(s);
+      return Offset((m['x'] as num).toDouble(), (m['y'] as num).toDouble());
+    } catch (e) {
+      debugPrintStack(label: 'Failed to load position "$s" $e');
+      return null;
+    }
+  }
+
+  void _trySavePosition() {
+    if (_previousOrientation == null) return;
+    if (((_position - _preSavedPos)).distanceSquared < 0.1) return;
+    final pos = jsonEncode({
+      'x': _position.dx,
+      'y': _position.dy,
+    });
+    bind.setLocalFlutterOption(
+        k: _getPositionKey(_previousOrientation!), v: pos);
+    _preSavedPos = _position;
+  }
+
+  void _restorePosition(Orientation ori) {
+    final ps = bind.getLocalFlutterOption(k: _getPositionKey(ori));
+    final pos = _loadPositionFromString(ps);
+    if (pos == null) {
+      final size = MediaQuery.of(context).size;
       _position = Offset(
         size.width - _wheelWidth - _kSpaceToHorizontalEdge,
         (size.height - _wheelHeight) / 2,
       );
+    } else {
+      _position = pos;
+      _preSavedPos = pos;
+    }
+  }
+
+  void _resetPosition(Orientation ori) {
+    setState(() {
+      _restorePosition(ori);
       _isInitialized = true;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _updateBlockedRect();
     });
+  }
+
+  void _onMoveUpdateDelta(Offset delta) {
+    final size = MediaQuery.of(context).size;
+    Offset newPosition = _position + delta;
+    double minX = _kSpaceToHorizontalEdge;
+    double minY = _kSpaceToVerticalEdge;
+    double maxX = size.width - _wheelWidth - _kSpaceToHorizontalEdge;
+    double maxY = size.height - _wheelHeight - _kSpaceToVerticalEdge;
+    newPosition = Offset(
+      newPosition.dx.clamp(minX, maxX),
+      newPosition.dy.clamp(minY, maxY),
+    );
+    final isPositionChanged = !(isDoubleEqual(newPosition.dx, _position.dx) &&
+        isDoubleEqual(newPosition.dy, _position.dy));
+    setState(() {
+      _position = newPosition;
+    });
+    if (isPositionChanged) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _updateBlockedRect();
+      });
+    }
   }
 
   void _updateBlockedRect() {
@@ -166,6 +235,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
     if (_lastBlockedRect != null) {
       _cursorModel.removeBlockedRect(_lastBlockedRect!);
     }
+    _trySavePosition();
     super.dispose();
   }
 
@@ -173,9 +243,9 @@ class _FloatingWheelState extends State<FloatingWheel> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final currentOrientation = MediaQuery.of(context).orientation;
-    if (_previousOrientation != null &&
+    if (_previousOrientation == null ||
         _previousOrientation != currentOrientation) {
-      _resetPosition();
+      _resetPosition(currentOrientation);
     }
     _previousOrientation = currentOrientation;
   }
@@ -187,10 +257,38 @@ class _FloatingWheelState extends State<FloatingWheel> {
       bool Function() flagGetter,
       BorderRadiusGeometry borderRadius,
       IconData iconData) {
+    Offset arrowStartPos = Offset.zero;
+    bool arrowIsDragging = false;
     return Listener(
-      onPointerDown: onPointerDown,
-      onPointerUp: onPointerUp,
-      onPointerCancel: onPointerCancel,
+      onPointerDown: (event) {
+        arrowStartPos = event.position;
+        arrowIsDragging = false;
+        onPointerDown(event);
+      },
+      onPointerMove: (event) {
+        if (!arrowIsDragging &&
+            (event.position - arrowStartPos).distance > 12.0) {
+          arrowIsDragging = true;
+          _stopScrollTimer();
+        }
+        if (arrowIsDragging) {
+          _onMoveUpdateDelta(event.delta);
+        }
+      },
+      onPointerUp: (event) {
+        if (arrowIsDragging) {
+          _trySavePosition();
+        }
+        arrowIsDragging = false;
+        onPointerUp(event);
+      },
+      onPointerCancel: (event) {
+        if (arrowIsDragging) {
+          _trySavePosition();
+        }
+        arrowIsDragging = false;
+        onPointerCancel(event);
+      },
       child: Container(
         width: _wheelWidth,
         height: 55,
@@ -250,22 +348,43 @@ class _FloatingWheelState extends State<FloatingWheel> {
           ),
           Listener(
             onPointerDown: (event) {
+              _startPointerPos = event.position;
+              _isDragging = false;
               setState(() {
                 _isMidDown = true;
               });
-              _inputModel.tapDown(MouseButtons.wheel);
+            },
+            onPointerMove: (event) {
+              if (!_isDragging &&
+                  (event.position - _startPointerPos).distance > 4.0) {
+                _isDragging = true;
+              }
+              if (_isDragging) {
+                _onMoveUpdateDelta(event.delta);
+              }
             },
             onPointerUp: (event) {
               setState(() {
                 _isMidDown = false;
               });
-              _inputModel.tapUp(MouseButtons.wheel);
+              if (_isDragging) {
+                _trySavePosition();
+              } else {
+                _inputModel.tapDown(MouseButtons.wheel);
+                Future.delayed(const Duration(milliseconds: 50), () {
+                  _inputModel.tapUp(MouseButtons.wheel);
+                });
+              }
+              _isDragging = false;
             },
             onPointerCancel: (event) {
               setState(() {
                 _isMidDown = false;
               });
-              _inputModel.tapUp(MouseButtons.wheel);
+              if (_isDragging) {
+                _trySavePosition();
+              }
+              _isDragging = false;
             },
             child: Container(
               width: _wheelWidth,

@@ -25,14 +25,21 @@ Yet another remote desktop solution, written in Rust. Works out of the box with 
 
 ### Tablet & Connection Optimizations (Mod Features)
 This project includes productivity and direct connection optimizations:
+- **DNS TXT Record Resolution Direct Connect (txt: / dns: Prefix / Domain Auto-detect)**: Supports querying DNS TXT records to automatically retrieve dynamic target IP and port addresses for direct connection. Supports prefixes like `txt:yourdomain.com` or `dns:yourdomain.com`, as well as standard domain inputs. Queries are executed concurrently via multiple public DoH servers (AliDNS, DNSPod, Cloudflare, Google, etc.) and traditional UDP 53, with automated credential persistence.
 - **Dynamic STUN Direct IP & Credential Retention (302: Prefix / HTTP(S) URLs)**: For direct servers whose public IP/port dynamically changes after STUN, clients can connect using endpoints with a `302:` (or legacy `301:`) prefix, or directly input `http://` or `https://` URLs (e.g. `http://example.com/stun_ip`). The client automatically extracts the real direct target address from HTTP 301/302 redirect headers (Location) or response body while securely persisting credentials (passwords, usernames), eliminating repetitive credential re-entry when IP/port changes.
+- **Single App Window Remote Control (Single App Mode)**: Select and focus on a specific application window on the remote host instead of transmitting the entire desktop. Features both direct window capture (isolated, unaffected by overlapping windows) and desktop crop mode. On mobile clients, the app window automatically aligns to the top-left (persisted across sessions without reset), offering an immersive, native-like mobile app experience for desktop software without dealing with unnecessary desktop borders.
+- **Mobile & Virtual Mouse Usability Enhancements**:
+  - Independent, collapsible shortcut bar (`KeyHelpTools`) decoupled from soft keyboard visibility; always accessible and can be tucked into a small draggable floating icon anywhere on screen with position persistence.
+  - Floating virtual mouse wheel widget with full drag-and-drop repositioning and orientation-aware position persistence.
+  - Streamlined mobile input by removing redundant soft-keyboard collapse overlays on phones.
+  - Dual-finger pinch-to-zoom preserved alongside two-finger wheel scrolling.
 - **Immersive Full-Screen**: A true borderless immersive mode that ensures the remote canvas is never squeezed or deformed by system navigation bars or soft keyboards.
 - **High-Resolution Layout**: For tablets with physical width ≥ 2560px, the control bar (left) and shortcut key bar (right) are displayed side-by-side at the bottom for maximum efficiency.
 - **Sticky Control Bars**: Controls and shortcut keys remain visible by default and collapse together, providing instant access to essential functions.
 - **Intelligent Input Focus**: Enhanced compatibility for third-party IMEs (like Doubao IME). Features include focus locking and automatic focus restoration to prevent typing failures.
 - **Persistent Background Connectivity**: Implemented Android foreground service to prevent session timeouts. Connections remain active even when the app is minimized or switched to the background.
 - **Productivity-First**: The soft keyboard is intelligently positioned above the control bars to avoid overlapping, keeping your shortcuts accessible while typing.
-*Recommended for large-screen tablets. For the best experience, Doubao IME is recommended for voice input.*
+*Recommended for large-screen tablets and mobile devices. For the best experience, Doubao IME is recommended for voice input.*
 below are the screenshots of set remote screen to 16:9 and 16:10 on 3:2 tablets.
 
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)

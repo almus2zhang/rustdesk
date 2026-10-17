@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -408,7 +410,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final isTablet = isTabletLayoutMode(context);
     final keyboardIsVisible =
         keyboardVisibilityController.isVisible && _showEdit;
-    final showActionButton = !_showBar || keyboardIsVisible || _showGestureHelp;
+    final showKeyboardHideFab = isTablet && keyboardIsVisible;
+    final showActionButton = (!keyboardIsVisible || isTablet) &&
+        (!_showBar || showKeyboardHideFab || _showGestureHelp);
 
     return WillPopScope(
       onWillPop: () async {
@@ -420,15 +424,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           extendBodyBehindAppBar: true,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           // workaround for https://github.com/rustdesk/rustdesk/issues/3131
-          floatingActionButtonLocation: keyboardIsVisible
+          floatingActionButtonLocation: showKeyboardHideFab
               ? FABLocation(FloatingActionButtonLocation.endFloat, 0, -35)
               : null,
           floatingActionButton: !showActionButton
               ? null
               : FloatingActionButton(
-                  mini: !keyboardIsVisible,
+                  mini: !showKeyboardHideFab,
                   child: Icon(
-                    (keyboardIsVisible || _showGestureHelp)
+                    (showKeyboardHideFab || _showGestureHelp)
                         ? Icons.expand_more
                         : Icons.expand_less,
                     color: Colors.white,
@@ -436,7 +440,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   backgroundColor: MyTheme.accent,
                   onPressed: () {
                     setState(() {
-                      if (keyboardIsVisible) {
+                      if (showKeyboardHideFab) {
                         _showEdit = false;
                         gFFI.invokeMethod("enable_soft_keyboard", false);
                         _mobileFocusNode.unfocus();
@@ -641,29 +645,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       !gFFI.inputModel.relativeMouseMode.value;
 
   Widget _buildKeyHelpTools(bool isTablet, bool keyboardIsVisible) {
-    if (!isTablet) {
-      // Phone / small screen mode: shortcut bar floats at the very top of the screen
-      return Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: KeyHelpTools(
-            keyboardIsVisible: keyboardIsVisible,
-            showGestureHelp: _showGestureHelp),
-      );
-    }
-    // Tablet / large screen mode
-    if (_isHighRes) {
+    if (isTablet && _isHighRes) {
       return const Offstage();
     }
-    return Positioned(
-      bottom: _showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
-      left: 0,
-      right: 0,
-      child: KeyHelpTools(
-          keyboardIsVisible: keyboardIsVisible,
-          showGestureHelp: _showGestureHelp),
-    );
+    return KeyHelpTools(
+        isTablet: isTablet,
+        showBar: _showBar,
+        keyboardIsVisible: keyboardIsVisible,
+        showGestureHelp: _showGestureHelp);
   }
 
   Widget getBodyForMobile() {
@@ -931,14 +920,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 }
 
 class KeyHelpTools extends StatefulWidget {
+  final bool isTablet;
+  final bool showBar;
   final bool keyboardIsVisible;
   final bool showGestureHelp;
 
-  /// need to show by external request, etc [keyboardIsVisible] or [changeTouchMode]
-  bool get requestShow => keyboardIsVisible || showGestureHelp;
-
-  KeyHelpTools(
-      {required this.keyboardIsVisible, required this.showGestureHelp});
+  KeyHelpTools({
+    required this.isTablet,
+    required this.showBar,
+    required this.keyboardIsVisible,
+    required this.showGestureHelp,
+  });
 
   @override
   State<KeyHelpTools> createState() => _KeyHelpToolsState();
@@ -952,11 +944,109 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
   final _keyboardVisibilityController = KeyboardVisibilityController();
   final _key = GlobalKey();
 
+  Offset _position = Offset.zero;
+  bool _isPositionInitialized = false;
+  Orientation? _previousOrientation;
+  Offset _preSavedPos = Offset.zero;
+  bool _isDragging = false;
+  Offset _dragStartPos = Offset.zero;
+
   @override
   void initState() {
     super.initState();
     _collapsed =
         bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final currentOrientation = MediaQuery.of(context).orientation;
+        _previousOrientation = currentOrientation;
+        _resetPosition(currentOrientation);
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final currentOrientation = MediaQuery.of(context).orientation;
+    if (_previousOrientation == null ||
+        _previousOrientation != currentOrientation) {
+      _resetPosition(currentOrientation);
+    }
+    _previousOrientation = currentOrientation;
+  }
+
+  @override
+  void dispose() {
+    _trySavePosition();
+    super.dispose();
+  }
+
+  String _getPositionKey(Orientation ori) {
+    final strOri = ori == Orientation.landscape ? 'l' : 'p';
+    return 'kht-$strOri-pos';
+  }
+
+  static Offset? _loadPositionFromString(String s) {
+    if (s.isEmpty) return null;
+    try {
+      final m = jsonDecode(s);
+      return Offset((m['x'] as num).toDouble(), (m['y'] as num).toDouble());
+    } catch (e) {
+      return null;
+    }
+  }
+
+  void _trySavePosition() {
+    if (_previousOrientation == null) return;
+    if ((_position - _preSavedPos).distanceSquared < 0.1) return;
+    final pos = jsonEncode({
+      'x': _position.dx,
+      'y': _position.dy,
+    });
+    bind.setLocalFlutterOption(
+        k: _getPositionKey(_previousOrientation!), v: pos);
+    _preSavedPos = _position;
+  }
+
+  void _restorePosition(Orientation ori) {
+    final ps = bind.getLocalFlutterOption(k: _getPositionKey(ori));
+    final pos = _loadPositionFromString(ps);
+    if (pos == null) {
+      final size = MediaQuery.of(context).size;
+      _position = Offset(
+        max(0.0, size.width - 64 - 10),
+        10,
+      );
+    } else {
+      _position = pos;
+      _preSavedPos = pos;
+    }
+  }
+
+  void _resetPosition(Orientation ori) {
+    setState(() {
+      _restorePosition(ori);
+      _isPositionInitialized = true;
+    });
+  }
+
+  void _onDragDelta(Offset delta) {
+    final size = MediaQuery.of(context).size;
+    Offset newPosition = _position + delta;
+    const double iconW = 64;
+    const double iconH = 36;
+    double minX = 0;
+    double minY = 0;
+    double maxX = max(0.0, size.width - iconW);
+    double maxY = max(0.0, size.height - iconH);
+    newPosition = Offset(
+      newPosition.dx.clamp(minX, maxX),
+      newPosition.dy.clamp(minY, maxY),
+    );
+    setState(() {
+      _position = newPosition;
+    });
   }
 
   InputModel get inputModel => gFFI.inputModel;
@@ -998,46 +1088,59 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
   @override
   Widget build(BuildContext context) {
-    final hasModifierOn = inputModel.ctrl ||
-        inputModel.alt ||
-        inputModel.shift ||
-        inputModel.command;
-
-    if (!_pin && !hasModifierOn && !widget.requestShow) {
-      gFFI.cursorModel
-          .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
-      return Offstage();
-    }
-
     if (_collapsed) {
       gFFI.cursorModel
           .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
-      return Align(
-        alignment: Alignment.topRight,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 8.0, right: 8.0),
+      final size = MediaQuery.of(context).size;
+      final curPos = _isPositionInitialized
+          ? _position
+          : Offset(max(0.0, size.width - 64 - 10), 10);
+      return Positioned(
+        left: curPos.dx,
+        top: curPos.dy,
+        child: Listener(
+          onPointerDown: (event) {
+            _dragStartPos = event.position;
+            _isDragging = false;
+          },
+          onPointerMove: (event) {
+            if (!_isDragging && (event.position - _dragStartPos).distance > 5) {
+              _isDragging = true;
+            }
+            if (_isDragging) {
+              _onDragDelta(event.delta);
+            }
+          },
+          onPointerUp: (event) {
+            if (_isDragging) {
+              _trySavePosition();
+            } else {
+              setState(() {
+                _collapsed = false;
+                bind.mainSetLocalOption(
+                    key: 'key_help_tools_collapsed', value: 'N');
+              });
+            }
+            _isDragging = false;
+          },
+          onPointerCancel: (event) {
+            if (_isDragging) {
+              _trySavePosition();
+            }
+            _isDragging = false;
+          },
           child: Material(
             color: const Color(0xBB000000),
             borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: () {
-                setState(() {
-                  _collapsed = false;
-                  bind.mainSetLocalOption(
-                      key: 'key_help_tools_collapsed', value: 'N');
-                });
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.keyboard_outlined, size: 16, color: Colors.white),
-                    SizedBox(width: 4),
-                    Icon(Icons.expand_more, size: 14, color: Colors.white70),
-                  ],
-                ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.keyboard_outlined, size: 16, color: Colors.white),
+                  SizedBox(width: 4),
+                  Icon(Icons.expand_more, size: 14, color: Colors.white70),
+                ],
               ),
             ),
           ),
@@ -1189,7 +1292,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       _updateRect();
     });
     final isHighRes = size.width > 2560;
-    return Container(
+    final expandedWidget = Container(
         key: _key,
         color: isHighRes ? Colors.transparent : Color(0xAA000000),
         padding: EdgeInsets.only(
@@ -1249,6 +1352,21 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
             ),
           ],
         ));
+
+    if (!widget.isTablet) {
+      return Positioned(
+        top: 0,
+        left: 0,
+        right: 0,
+        child: expandedWidget,
+      );
+    }
+    return Positioned(
+      bottom: widget.showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
+      left: 0,
+      right: 0,
+      child: expandedWidget,
+    );
   }
 }
 

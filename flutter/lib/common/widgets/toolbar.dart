@@ -768,14 +768,16 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
 
   if (isMobile) {
     v.add(TToggleMenu(
-        value: ffi.canvasModel.isAlignToTopRight,
+        value: ffi.canvasModel.isAlignToTopLeft,
         onChanged: (value) async {
           if (value == null) return;
+          await bind.mainSetLocalOption(
+              key: kOptionAlignToTopLeft, value: value ? 'Y' : 'N');
           await bind.mainSetLocalOption(
               key: kOptionAlignToTopRight, value: value ? 'Y' : 'N');
           ffi.canvasModel.updateViewStyle();
         },
-        child: Text(translate('Align top-right (App Mode)'))));
+        child: Text(translate('Align top-left (App Mode)'))));
   }
 
   if (isDefaultConn) {

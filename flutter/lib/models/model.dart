@@ -584,8 +584,7 @@ class FfiModel with ChangeNotifier {
                           sessionId: sessionId,
                           name: 'select_window',
                           value: '0');
-                      await bind.mainSetLocalOption(
-                          key: kOptionAlignToTopRight, value: 'N');
+                      parent.target?.canvasModel.isSingleAppMode = false;
                       await parent.target?.canvasModel.updateViewStyle();
                     },
                   ),
@@ -657,8 +656,7 @@ class FfiModel with ChangeNotifier {
                                   sessionId: sessionId,
                                   name: 'select_window',
                                   value: '$hwnd:$modeStr');
-                              await bind.mainSetLocalOption(
-                                  key: kOptionAlignToTopRight, value: 'N');
+                              parent.target?.canvasModel.isSingleAppMode = (hwnd != '0');
                               await parent.target?.canvasModel.updateViewStyle();
                             },
                           );
@@ -2453,14 +2451,19 @@ class CanvasModel with ChangeNotifier {
     tryUpdateScrollStyle(Duration.zero, style);
   }
 
-  bool get isAlignToTopRight =>
+  bool isSingleAppMode = false;
+
+  bool get isAlignToTopLeft =>
+      bind.mainGetLocalOption(key: kOptionAlignToTopLeft) == 'Y' ||
       bind.mainGetLocalOption(key: kOptionAlignToTopRight) == 'Y' ||
       bind.mainGetLocalOption(key: kOptionSingleAppMode) == 'Y';
 
+  bool get isAlignToTopRight => isAlignToTopLeft;
+
   _resetCanvasOffset(int displayWidth, int displayHeight) {
-    final alignTopRight = isAlignToTopRight;
-    if (alignTopRight) {
-      _x = size.width - displayWidth * _scale;
+    final alignTopLeft = isSingleAppMode && isAlignToTopLeft;
+    if (alignTopLeft) {
+      _x = 0;
       _y = 0;
     } else {
       _x = (size.width - displayWidth * _scale) / 2;
@@ -2472,7 +2475,7 @@ class CanvasModel with ChangeNotifier {
         _y = (size.height - displayHeight * _scale) / 2;
       }
     }
-    if (isMobile && !alignTopRight) {
+    if (isMobile && !alignTopLeft) {
       _moveToCenterCursor();
     }
   }
