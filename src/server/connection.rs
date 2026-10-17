@@ -1616,6 +1616,8 @@ impl Connection {
                 "supported_privacy_mode_impl".into(),
                 json!(privacy_mode::get_supported_privacy_mode_impl()),
             );
+            let sel_hwnd = crate::server::video_service::get_selected_window();
+            platform_additions.insert("selected_window".into(), json!(sel_hwnd));
         }
         #[cfg(target_os = "macos")]
         {

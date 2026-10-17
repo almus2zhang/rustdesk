@@ -475,6 +475,8 @@ class FfiModel with ChangeNotifier {
         _handleScreenshot(evt, sessionId, peerId);
       } else if (name == 'window_list') {
         _handleWindowList(evt, sessionId, peerId);
+      } else if (name == 'window_closed') {
+        _handleWindowClosed(sessionId);
       } else if (name == 'exit_relative_mouse_mode') {
         // Handle exit shortcut from rdev grab loop (Ctrl+Alt on Win/Linux, Cmd+G on macOS)
         parent.target?.inputModel.exitRelativeMouseModeWithKeyRelease();
@@ -584,7 +586,12 @@ class FfiModel with ChangeNotifier {
                           sessionId: sessionId,
                           name: 'select_window',
                           value: '0');
+                      parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
                       parent.target?.canvasModel.isSingleAppMode = false;
+                      await bind.sessionPeerOption(
+                          sessionId: sessionId,
+                          name: 'is_single_app_mode',
+                          value: 'N');
                       await parent.target?.canvasModel.updateViewStyle();
                     },
                   ),
@@ -656,7 +663,12 @@ class FfiModel with ChangeNotifier {
                                   sessionId: sessionId,
                                   name: 'select_window',
                                   value: '$hwnd:$modeStr');
+                              parent.target?.ffiModel.pi.platformAdditions['selected_window'] = int.tryParse(hwnd) ?? hwnd;
                               parent.target?.canvasModel.isSingleAppMode = (hwnd != '0');
+                              await bind.sessionPeerOption(
+                                  sessionId: sessionId,
+                                  name: 'is_single_app_mode',
+                                  value: (hwnd != '0') ? 'Y' : 'N');
                               await parent.target?.canvasModel.updateViewStyle();
                             },
                           );
@@ -675,6 +687,14 @@ class FfiModel with ChangeNotifier {
     } catch (e) {
       debugPrint('Failed to handle window_list: $e');
     }
+  }
+
+  _handleWindowClosed(SessionID sessionId) async {
+    parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
+    parent.target?.canvasModel.isSingleAppMode = false;
+    await bind.sessionPeerOption(
+        sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
+    await parent.target?.canvasModel.updateViewStyle();
   }
 
   _handlePrinterRequest(
@@ -1528,6 +1548,21 @@ class FfiModel with ChangeNotifier {
           debugPrint('Failed to decode platformAdditions $e');
         }
       }
+      final selWin = _pi.platformAdditions['selected_window'];
+      if (selWin != null && selWin != 0) {
+        parent.target?.canvasModel.isSingleAppMode = true;
+      } else if (_pi.platformAdditions.containsKey('selected_window')) {
+        parent.target?.canvasModel.isSingleAppMode = false;
+      } else {
+        final saved = await bind.sessionGetPeerOption(
+            sessionId: sessionId, name: 'is_single_app_mode');
+        if (saved == 'Y') {
+          parent.target?.canvasModel.isSingleAppMode = true;
+        }
+      }
+      if (parent.target?.canvasModel.isSingleAppMode == true) {
+        await parent.target?.canvasModel.updateViewStyle();
+      }
     }
 
     _pi.isSet.value = true;
@@ -1786,6 +1821,14 @@ class FfiModel with ChangeNotifier {
         }
         if (!updateJson.containsKey(kPlatformAdditionsAmyuniVirtualDisplays)) {
           _pi.platformAdditions.remove(kPlatformAdditionsAmyuniVirtualDisplays);
+        }
+        final selWin = _pi.platformAdditions['selected_window'];
+        if (selWin != null && selWin != 0) {
+          parent.target?.canvasModel.isSingleAppMode = true;
+          parent.target?.canvasModel.updateViewStyle();
+        } else if (_pi.platformAdditions.containsKey('selected_window')) {
+          parent.target?.canvasModel.isSingleAppMode = false;
+          parent.target?.canvasModel.updateViewStyle();
         }
       } catch (e) {
         debugPrint('Failed to decode platformAdditions $e');
@@ -2451,7 +2494,21 @@ class CanvasModel with ChangeNotifier {
     tryUpdateScrollStyle(Duration.zero, style);
   }
 
-  bool isSingleAppMode = false;
+  bool _isSingleAppMode = false;
+
+  bool get isSingleAppMode {
+    if (_isSingleAppMode) return true;
+    final selWin =
+        parent.target?.ffiModel.pi.platformAdditions['selected_window'];
+    if (selWin != null && selWin != 0) {
+      return true;
+    }
+    return false;
+  }
+
+  set isSingleAppMode(bool value) {
+    _isSingleAppMode = value;
+  }
 
   bool get isAlignToTopLeft =>
       bind.mainGetLocalOption(key: kOptionAlignToTopLeft) == 'Y' ||
@@ -2796,6 +2853,7 @@ class CanvasModel with ChangeNotifier {
     _timerMobileRestoreCanvasOffset?.cancel();
     _offsetBeforeMobileSoftKeyboard = null;
     _scaleBeforeMobileSoftKeyboard = null;
+    _isSingleAppMode = false;
   }
 
   updateScrollPercent() {

@@ -842,6 +842,16 @@ fn run(vs: VideoService) -> ResultType<()> {
                     if window_not_found_count > 60 {
                         log::info!("Selected window closed, revert to full screen");
                         set_selected_window(0);
+                        let mut msg_out = Message::new();
+                        let res = hbb_common::message_proto::MessageBox {
+                            msgtype: "app_window_closed".to_owned(),
+                            ..Default::default()
+                        };
+                        msg_out.set_message_box(res);
+                        let _ = sp.snapshot(move |sps| {
+                            sps.send_shared(Arc::new(msg_out.clone()));
+                            Ok(())
+                        });
                         bail!("SWITCH");
                     }
                     std::thread::sleep(spf);

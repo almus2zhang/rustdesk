@@ -1187,6 +1187,10 @@ impl InvokeUiSession for FlutterHandler {
     fn handle_window_list(&self, data: &str) {
         self.push_event("window_list", &[("data", data)], &[]);
     }
+
+    fn handle_window_closed(&self) {
+        self.push_event("window_closed", &[], &[]);
+    }
 }
 
 impl FlutterHandler {

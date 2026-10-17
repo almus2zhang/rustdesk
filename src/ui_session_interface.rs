@@ -1569,6 +1569,11 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     #[inline]
+    pub fn handle_window_closed(&self) {
+        self.ui_handler.handle_window_closed();
+    }
+
+    #[inline]
     pub fn change_resolution(&self, display: i32, width: i32, height: i32) {
         *self.last_change_display.lock().unwrap() =
             ChangeDisplayRecord::new(display, width, height);
@@ -1758,6 +1763,7 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn handle_screenshot_resp(&self, sid: String, msg: String);
     fn handle_terminal_response(&self, response: TerminalResponse);
     fn handle_window_list(&self, _data: &str) {}
+    fn handle_window_closed(&self) {}
 }
 
 impl<T: InvokeUiSession> Deref for Session<T> {

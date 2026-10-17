@@ -2028,6 +2028,10 @@ impl<T: InvokeUiSession> Remote<T> {
                         self.handler.handle_window_list(&msgbox.text);
                         return true;
                     }
+                    if msgbox.msgtype == "app_window_closed" {
+                        self.handler.handle_window_closed();
+                        return true;
+                    }
                     let mut link = msgbox.link;
                     if let Some(v) = config::HELPER_URL.get(&link as &str) {
                         link = v.to_string();
