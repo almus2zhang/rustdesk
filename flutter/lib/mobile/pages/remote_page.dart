@@ -395,7 +395,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 Expanded(
                     flex: 7,
                     child: KeyHelpTools(
-                        keyboardIsVisible: true, showGestureHelp: false)),
+                        isTablet: true,
+                        showBar: true,
+                        embedded: true,
+                        keyboardIsVisible: true,
+                        showGestureHelp: false)),
               ],
             ),
           ),
@@ -924,12 +928,14 @@ class KeyHelpTools extends StatefulWidget {
   final bool showBar;
   final bool keyboardIsVisible;
   final bool showGestureHelp;
+  final bool embedded;
 
   KeyHelpTools({
-    required this.isTablet,
-    required this.showBar,
+    this.isTablet = false,
+    this.showBar = true,
     required this.keyboardIsVisible,
     required this.showGestureHelp,
+    this.embedded = false,
   });
 
   @override
@@ -1088,7 +1094,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
   @override
   Widget build(BuildContext context) {
-    if (_collapsed) {
+    if (!widget.embedded && _collapsed) {
       gFFI.cursorModel
           .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
       final size = MediaQuery.of(context).size;
@@ -1352,6 +1358,10 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
             ),
           ],
         ));
+
+    if (widget.embedded) {
+      return expandedWidget;
+    }
 
     if (!widget.isTablet) {
       return Positioned(
