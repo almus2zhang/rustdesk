@@ -243,6 +243,7 @@ List<(String, String)> otherDefaultSettings() {
         'Use all my displays for the remote session',
         kKeyUseAllMyDisplaysForTheRemoteSession
       ),
+    if (isMobile) ('Show Esc key in top-left corner', kOptionShowEscKey),
     ('Keep terminal sessions on disconnect', kOptionTerminalPersistent),
   ];
 

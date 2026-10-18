@@ -794,6 +794,18 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
         },
         child: Text(translate('Align to top'))));
   }
+
+  if (isMobile) {
+    v.add(TToggleMenu(
+        value: ffi.canvasModel.showEscKey.value,
+        onChanged: (value) async {
+          if (value == null) return;
+          await bind.mainSetLocalOption(
+              key: kOptionShowEscKey, value: value ? 'Y' : 'N');
+          ffi.canvasModel.showEscKey.value = value;
+        },
+        child: Text(translate('Show Esc key in top-left corner'))));
+  }
   return v;
 }
 

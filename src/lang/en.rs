@@ -135,6 +135,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Adaptive", "Adaptive"),
         ("Quality", "Quality"),
         ("Keyboard layout", "Keyboard layout"),
+        ("Show Esc key in top-left corner", "Show Esc key in top-left corner"),
         ("Full Screen (Exit App Mode)", "Full Screen (Exit App Mode)"),
         ("Show full remote desktop", "Show full remote desktop"),
         ("Direct Window Capture", "Direct Window Capture"),

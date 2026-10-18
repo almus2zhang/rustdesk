@@ -2346,6 +2346,8 @@ class CanvasModel with ChangeNotifier {
   final ScrollController _vertical = ScrollController();
 
   final _imageOverflow = false.obs;
+  final RxBool showEscKey =
+      (bind.mainGetLocalOption(key: kOptionShowEscKey) == 'Y').obs;
 
   WeakReference<FFI> parent;
 

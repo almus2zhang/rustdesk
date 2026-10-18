@@ -720,8 +720,57 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               ffi: gFFI,
             ));
           }
+          final topPadding = MediaQuery.of(context).padding.top;
+          final leftPadding = MediaQuery.of(context).padding.left;
+          final escTop = max(10.0, isAndroid ? topPadding + 4.0 : 10.0);
+          final escLeft = max(10.0, leftPadding + 4.0);
+          paints.add(Positioned(
+            top: escTop,
+            left: escLeft,
+            child: Obx(() => gFFI.canvasModel.showEscKey.value
+                ? _buildFloatingEscKeyContent()
+                : const SizedBox.shrink()),
+          ));
           return paints;
         }()));
+  }
+
+  Widget _buildFloatingEscKeyContent() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          gFFI.inputModel.inputKey('VK_ESCAPE');
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xBB000000),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white24, width: 1.0),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black38,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Center(
+            child: Text(
+              'Esc',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget getBodyForDesktopWithListener() {
@@ -1729,7 +1778,7 @@ void showOptions(
         enabled: enabled,
         onTap: () {
           if (enabled) {
-            r?.onChanged?.call(val);
+            r.onChanged?.call(val);
             codec.value = val;
           }
         },

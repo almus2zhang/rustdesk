@@ -134,6 +134,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Adaptive", "适应"),
         ("Quality", "画质"),
         ("Keyboard layout", "键盘布局"),
+        ("Show Esc key in top-left corner", "屏幕左上角显示Esc键"),
         ("Full Screen (Exit App Mode)", "全屏幕模式 (退出单程序模式)"),
         ("Show full remote desktop", "显示完整的远程桌面"),
         ("Direct Window Capture", "直接获取程序窗口模式"),
