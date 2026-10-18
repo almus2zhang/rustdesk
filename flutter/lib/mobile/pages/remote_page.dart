@@ -1527,54 +1527,379 @@ void showOptions(
   }
 
   dialogManager.show((setState, close, context) {
+    final resolution = getResolutionMenu(context, gFFI, id);
+    final phonePortraitMenu =
+        getPhonePortraitVirtualDisplayMenu(context, gFFI, id);
+    final virtualDisplayMenu = getVirtualDisplayMenu(gFFI, id);
+
     var viewStyle =
         (viewStyleRadios.isNotEmpty ? viewStyleRadios[0].groupValue : '').obs;
     var imageQuality =
         (imageQualityRadios.isNotEmpty ? imageQualityRadios[0].groupValue : '')
             .obs;
     var codec = (codecRadios.isNotEmpty ? codecRadios[0].groupValue : '').obs;
-    final radios = [
-      for (var e in viewStyleRadios)
-        Obx(() => getRadio<String>(
-            e.child,
-            e.value,
-            viewStyle.value,
-            e.onChanged != null
-                ? (v) {
-                    e.onChanged?.call(v);
-                    if (v != null) viewStyle.value = v;
-                  }
-                : null)),
-      // Show custom scale controls when custom view style is selected
+
+    TRadioMenu<String>? findRadio(List<TRadioMenu<String>> list, String val) {
+      for (final e in list) {
+        if (e.value == val) return e;
+      }
+      return null;
+    }
+
+    Widget buildSegmentButton({
+      required String text,
+      required bool selected,
+      bool enabled = true,
+      required VoidCallback onTap,
+    }) {
+      final isDarkTheme = MyTheme.currentThemeMode() == ThemeMode.dark;
+      final primary = Theme.of(context).colorScheme.primary;
+      final numColorSelected = Colors.white;
+      final numColorUnselected = isDarkTheme ? Colors.white70 : Colors.black87;
+      final numColorDisabled = isDarkTheme ? Colors.white24 : Colors.black26;
+
+      final numBgSelected = primary.withOpacity(0.85);
+      final numBgUnselected = isDarkTheme
+          ? Colors.white.withOpacity(0.06)
+          : Colors.black.withOpacity(0.04);
+
+      return InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(4),
+        child: Ink(
+          height: 34,
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: selected
+                  ? primary
+                  : Theme.of(context).dividerColor.withOpacity(0.3),
+            ),
+            borderRadius: BorderRadius.circular(4),
+            color: selected ? numBgSelected : numBgUnselected,
+          ),
+          child: Center(
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12.5,
+                color: !enabled
+                    ? numColorDisabled
+                    : (selected ? numColorSelected : numColorUnselected),
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    Widget buildSectionTitle(String title) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 4),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).hintColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final scaleButtons = [
+      buildSectionTitle(translate('Scale')),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Original'),
+                  selected: viewStyle.value == kRemoteViewStyleOriginal,
+                  onTap: () {
+                    final r =
+                        findRadio(viewStyleRadios, kRemoteViewStyleOriginal);
+                    r?.onChanged?.call(kRemoteViewStyleOriginal);
+                    viewStyle.value = kRemoteViewStyleOriginal;
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Adaptive'),
+                  selected: viewStyle.value == kRemoteViewStyleAdaptive,
+                  onTap: () {
+                    final r =
+                        findRadio(viewStyleRadios, kRemoteViewStyleAdaptive);
+                    r?.onChanged?.call(kRemoteViewStyleAdaptive);
+                    viewStyle.value = kRemoteViewStyleAdaptive;
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Custom'),
+                  selected: viewStyle.value == kRemoteViewStyleCustom,
+                  onTap: () {
+                    final r = findRadio(viewStyleRadios, kRemoteViewStyleCustom);
+                    r?.onChanged?.call(kRemoteViewStyleCustom);
+                    viewStyle.value = kRemoteViewStyleCustom;
+                  },
+                ),
+              ),
+            ],
+          )),
       Obx(() => viewStyle.value == kRemoteViewStyleCustom
           ? MobileCustomScaleControls(ffi: gFFI)
           : const SizedBox.shrink()),
-      const Divider(color: MyTheme.border),
-      for (var e in imageQualityRadios)
-        Obx(() => getRadio<String>(
-            e.child,
-            e.value,
-            imageQuality.value,
-            e.onChanged != null
-                ? (v) {
-                    e.onChanged?.call(v);
-                    if (v != null) imageQuality.value = v;
-                  }
-                : null)),
-      const Divider(color: MyTheme.border),
-      for (var e in codecRadios)
-        Obx(() => getRadio<String>(
-            e.child,
-            e.value,
-            codec.value,
-            e.onChanged != null
-                ? (v) {
-                    e.onChanged?.call(v);
-                    if (v != null) codec.value = v;
-                  }
-                : null)),
-      if (codecRadios.isNotEmpty) const Divider(color: MyTheme.border),
     ];
+
+    final qualityButtons = [
+      buildSectionTitle(translate('Image Quality')),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Quality'),
+                  selected: imageQuality.value == kRemoteImageQualityBest,
+                  onTap: () {
+                    final r =
+                        findRadio(imageQualityRadios, kRemoteImageQualityBest);
+                    r?.onChanged?.call(kRemoteImageQualityBest);
+                    imageQuality.value = kRemoteImageQualityBest;
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Balanced'),
+                  selected: imageQuality.value == kRemoteImageQualityBalanced,
+                  onTap: () {
+                    final r = findRadio(
+                        imageQualityRadios, kRemoteImageQualityBalanced);
+                    r?.onChanged?.call(kRemoteImageQualityBalanced);
+                    imageQuality.value = kRemoteImageQualityBalanced;
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Speed'),
+                  selected: imageQuality.value == kRemoteImageQualityLow,
+                  onTap: () {
+                    final r =
+                        findRadio(imageQualityRadios, kRemoteImageQualityLow);
+                    r?.onChanged?.call(kRemoteImageQualityLow);
+                    imageQuality.value = kRemoteImageQualityLow;
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Custom'),
+                  selected: imageQuality.value == kRemoteImageQualityCustom,
+                  onTap: () {
+                    final r = findRadio(
+                        imageQualityRadios, kRemoteImageQualityCustom);
+                    r?.onChanged?.call(kRemoteImageQualityCustom);
+                    imageQuality.value = kRemoteImageQualityCustom;
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
+    Widget buildCodecBtn(String label, String val) {
+      final r = findRadio(codecRadios, val);
+      final enabled = r != null && r.onChanged != null;
+      return buildSegmentButton(
+        text: label,
+        selected: codec.value == val,
+        enabled: enabled,
+        onTap: () {
+          if (enabled) {
+            r?.onChanged?.call(val);
+            codec.value = val;
+          }
+        },
+      );
+    }
+
+    final codecButtons = [
+      buildSectionTitle(translate('Codec')),
+      Obx(() => Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(child: buildCodecBtn(translate('Auto'), 'auto')),
+                  const SizedBox(width: 6),
+                  Expanded(child: buildCodecBtn('VP8', 'vp8')),
+                  const SizedBox(width: 6),
+                  Expanded(child: buildCodecBtn('VP9', 'vp9')),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(child: buildCodecBtn('AV1', 'av1')),
+                  const SizedBox(width: 6),
+                  Expanded(child: buildCodecBtn('H264', 'h264')),
+                  const SizedBox(width: 6),
+                  Expanded(child: buildCodecBtn('H265', 'h265')),
+                ],
+              ),
+            ],
+          )),
+    ];
+
+    final resolutionButtons = [
+      buildSectionTitle(translate('Resolution')),
+      Row(
+        children: [
+          Expanded(
+            child: buildSegmentButton(
+              text: translate('Resolution'),
+              selected: false,
+              enabled: resolution != null,
+              onTap: () {
+                close();
+                resolution?.onPressed?.call();
+              },
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: buildSegmentButton(
+              text: translate('Fit Phone'),
+              selected: false,
+              enabled: phonePortraitMenu != null,
+              onTap: () {
+                close();
+                phonePortraitMenu?.onPressed?.call();
+              },
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: buildSegmentButton(
+              text: translate('Virtual Display'),
+              selected: false,
+              enabled: virtualDisplayMenu != null,
+              onTap: () {
+                close();
+                virtualDisplayMenu?.onPressed?.call();
+              },
+            ),
+          ),
+        ],
+      ),
+    ];
+
+    final isSingleApp = gFFI.canvasModel.isSingleAppMode.obs;
+    final appModeButtons = [
+      buildSectionTitle(translate('Program selection')),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Full Screen'),
+                  selected: !isSingleApp.value,
+                  onTap: () async {
+                    if (isSingleApp.value) {
+                      isSingleApp.value = false;
+                      await bind.sessionPeerOption(
+                          sessionId: gFFI.sessionId,
+                          name: 'select_window',
+                          value: '0');
+                      gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
+                      gFFI.canvasModel.isSingleAppMode = false;
+                      await bind.sessionPeerOption(
+                          sessionId: gFFI.sessionId,
+                          name: 'is_single_app_mode',
+                          value: 'N');
+                      await gFFI.canvasModel.updateViewStyle();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Single App'),
+                  selected: isSingleApp.value,
+                  onTap: () async {
+                    close();
+                    await bind.sessionPeerOption(
+                        sessionId: gFFI.sessionId,
+                        name: 'get_window_list',
+                        value: '');
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
+    final rawKbdMode =
+        bind.mainGetLocalOption(key: kOptionMobileKeyboardLayoutMode);
+    final kbdMode = (rawKbdMode.isEmpty ? 'auto' : rawKbdMode).obs;
+    final keyboardLayoutButtons = [
+      buildSectionTitle(translate('Keyboard layout')),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Auto'),
+                  selected: kbdMode.value == 'auto' || kbdMode.value.isEmpty,
+                  onTap: () async {
+                    kbdMode.value = 'auto';
+                    await bind.mainSetLocalOption(
+                        key: kOptionMobileKeyboardLayoutMode, value: 'auto');
+                    gFFI.canvasModel.updateViewStyle();
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Squeeze screen'),
+                  selected: kbdMode.value == 'phone',
+                  onTap: () async {
+                    kbdMode.value = 'phone';
+                    await bind.mainSetLocalOption(
+                        key: kOptionMobileKeyboardLayoutMode, value: 'phone');
+                    gFFI.canvasModel.updateViewStyle();
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: translate('Float above screen'),
+                  selected: kbdMode.value == 'tablet',
+                  onTap: () async {
+                    kbdMode.value = 'tablet';
+                    await bind.mainSetLocalOption(
+                        key: kOptionMobileKeyboardLayoutMode, value: 'tablet');
+                    gFFI.canvasModel.updateViewStyle();
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
     final rxCursorToggleValues = cursorToggles.map((e) => e.value.obs).toList();
     final cursorTogglesList = cursorToggles
         .asMap()
@@ -1614,7 +1939,7 @@ void showOptions(
       ...displayTogglesList,
     ];
 
-    Widget privacyModeWidget = Offstage();
+    Widget privacyModeWidget = const Offstage();
     if (privacyModeList.length > 1) {
       privacyModeWidget = ListTile(
         contentPadding: EdgeInsets.zero,
@@ -1625,56 +1950,27 @@ void showOptions(
       );
     }
 
-    var popupDialogMenus = List<Widget>.empty(growable: true);
-    final resolution = getResolutionMenu(context, gFFI, id);
-    if (resolution != null) {
-      popupDialogMenus.add(ListTile(
-        contentPadding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        title: resolution.child,
-        onTap: () {
-          close();
-          resolution.onPressed?.call();
-        },
-      ));
-    }
-    final phonePortraitMenu =
-        getPhonePortraitVirtualDisplayMenu(context, gFFI, id);
-    if (phonePortraitMenu != null) {
-      popupDialogMenus.add(ListTile(
-        contentPadding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        title: phonePortraitMenu.child,
-        onTap: () {
-          close();
-          phonePortraitMenu.onPressed?.call();
-        },
-      ));
-    }
-    final virtualDisplayMenu = getVirtualDisplayMenu(gFFI, id);
-    if (virtualDisplayMenu != null) {
-      popupDialogMenus.add(ListTile(
-        contentPadding: EdgeInsets.zero,
-        visualDensity: VisualDensity.compact,
-        title: virtualDisplayMenu.child,
-        onTap: () {
-          close();
-          virtualDisplayMenu.onPressed?.call();
-        },
-      ));
-    }
-    if (popupDialogMenus.isNotEmpty) {
-      popupDialogMenus.add(const Divider(color: MyTheme.border));
-    }
-
     return CustomAlertDialog(
       content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: displays +
-              radios +
-              popupDialogMenus +
-              toggles +
-              [privacyModeWidget]),
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ...displays,
+          ...scaleButtons,
+          const SizedBox(height: 4),
+          ...qualityButtons,
+          const SizedBox(height: 4),
+          ...codecButtons,
+          const SizedBox(height: 4),
+          ...resolutionButtons,
+          const SizedBox(height: 4),
+          ...appModeButtons,
+          const SizedBox(height: 4),
+          ...keyboardLayoutButtons,
+          const Divider(color: MyTheme.border),
+          ...toggles,
+          privacyModeWidget,
+        ],
+      ),
     );
   }, clickMaskDismiss: true, backDismiss: true).then((value) {
     _disableAndroidSoftKeyboard();

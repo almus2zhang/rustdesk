@@ -992,6 +992,38 @@ class _DisplayMenuState extends State<_DisplayMenu> {
             menuChildren: getVirtualDisplayMenuChildren(ffi, id, null),
             child: Text(translate("Virtual display")),
           ),
+        if (ffi.connType == ConnType.defaultConn)
+          _SubmenuButton(
+            ffi: widget.ffi,
+            child: Text(translate('Program selection')),
+            menuChildren: [
+              MenuButton(
+                child: Text(translate('Full Screen')),
+                onPressed: () async {
+                  await bind.sessionPeerOption(
+                      sessionId: ffi.sessionId,
+                      name: 'select_window',
+                      value: '0');
+                  ffi.ffiModel.pi.platformAdditions['selected_window'] = 0;
+                  ffi.canvasModel.isSingleAppMode = false;
+                  await bind.sessionPeerOption(
+                      sessionId: ffi.sessionId,
+                      name: 'is_single_app_mode',
+                      value: 'N');
+                  await ffi.canvasModel.updateViewStyle();
+                },
+              ),
+              MenuButton(
+                child: Text(translate('Single App')),
+                onPressed: () async {
+                  await bind.sessionPeerOption(
+                      sessionId: ffi.sessionId,
+                      name: 'get_window_list',
+                      value: '');
+                },
+              ),
+            ],
+          ),
         if (ffi.connType == ConnType.defaultConn) cursorToggles(),
         Divider(),
         toggles(),

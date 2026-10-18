@@ -484,11 +484,11 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   }
   return [
     radio(autoLabel, 'auto', true),
-    if (codecs[0]) radio('VP8', 'vp8', codecs[0]),
+    radio('VP8', 'vp8', codecs[0]),
     radio('VP9', 'vp9', true),
-    if (codecs[1]) radio('AV1', 'av1', codecs[1]),
-    if (codecs[2]) radio('H264', 'h264', codecs[2]),
-    if (codecs[3]) radio('H265', 'h265', codecs[3]),
+    radio('AV1', 'av1', codecs[1]),
+    radio('H264', 'h264', codecs[2]),
+    radio('H265', 'h265', codecs[3]),
   ];
 }
 
@@ -780,51 +780,19 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
         child: Text(translate('Align top-left (App Mode)'))));
   }
 
-  if (isDefaultConn) {
+  if (isMobile) {
+    final option = 'align_to_top';
     v.add(TToggleMenu(
-        value: false,
-        onChanged: (_) async {
-          await bind.sessionPeerOption(
-              sessionId: sessionId, name: 'get_window_list', value: '');
-        },
-        child: Text(translate('Select Remote Window (Single App)'))));
-  }
-  
-  if (isAndroid) {
-    final option = 'align_to_top_for_tablet';
-    v.add(TToggleMenu(
-        value: bind.mainGetLocalOption(key: option) == 'Y',
+        value: bind.mainGetLocalOption(key: option) == 'Y' ||
+            bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y',
         onChanged: (value) async {
           if (value == null) return;
           await bind.mainSetLocalOption(key: option, value: value ? 'Y' : 'N');
+          await bind.mainSetLocalOption(
+              key: 'align_to_top_for_tablet', value: value ? 'Y' : 'N');
           ffi.canvasModel.updateViewStyle();
         },
         child: Text(translate('Align to top'))));
-
-    final mode = bind.mainGetLocalOption(key: kOptionMobileKeyboardLayoutMode);
-    String modeDesc;
-    if (mode == 'phone') {
-      modeDesc = translate('Phone mode (push up canvas, top shortcut bar)');
-    } else if (mode == 'tablet') {
-      modeDesc = translate('Tablet mode (float keyboard, bottom shortcut bar)');
-    } else {
-      modeDesc = '${translate('Auto')} (${isTabletLayoutMode() ? translate('Tablet mode') : translate('Phone mode')})';
-    }
-    v.add(TToggleMenu(
-        value: mode == 'phone' || (mode.isEmpty && !isTabletLayoutMode()),
-        onChanged: (value) async {
-          String nextMode;
-          if (mode == 'phone') {
-            nextMode = 'tablet';
-          } else if (mode == 'tablet') {
-            nextMode = 'auto';
-          } else {
-            nextMode = 'phone';
-          }
-          await bind.mainSetLocalOption(key: kOptionMobileKeyboardLayoutMode, value: nextMode);
-          ffi.canvasModel.updateViewStyle();
-        },
-        child: Text('${translate('Keyboard layout')}: $modeDesc')));
   }
   return v;
 }
