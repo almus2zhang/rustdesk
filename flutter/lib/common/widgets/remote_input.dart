@@ -202,10 +202,6 @@ class _RawTouchGestureDetectorRegionState
       if (shouldBlockMouseModeEvent()) {
         return;
       }
-      if (_lastTapDownPositionForMouseMode != null &&
-          !ffi.cursorModel.isInRemoteRect(_lastTapDownPositionForMouseMode!)) {
-        return;
-      }
       // Mobile, "Mouse mode"
       await inputModel.tap(MouseButtons.left);
     }
@@ -238,10 +234,6 @@ class _RawTouchGestureDetectorRegionState
     // Check if the position is in a blocked area when using the mouse mode.
     if (!handleTouch) {
       if (shouldBlockMouseModeEvent()) {
-        return;
-      }
-      if (_lastTapDownPositionForMouseMode != null &&
-          !ffi.cursorModel.isInRemoteRect(_lastTapDownPositionForMouseMode!)) {
         return;
       }
     }
@@ -299,9 +291,6 @@ class _RawTouchGestureDetectorRegionState
         if (shouldBlockMouseModeEvent()) {
           return;
         }
-        if (!ffi.cursorModel.isInRemoteRect(_cacheLongPressPosition)) {
-          return;
-        }
       }
       await inputModel.tap(MouseButtons.right);
     } else {
@@ -344,7 +333,7 @@ class _RawTouchGestureDetectorRegionState
     final isInRemoteRect =
         ffi.cursorModel.isInRemoteRect(_doubleFinerTapPosition);
     final isDesktopInRemoteRect = (isDesktop || isWebDesktop) && isInRemoteRect;
-    if ((isMobileMouseMode && isInRemoteRect) || isDesktopInRemoteRect) {
+    if (isMobileMouseMode || isDesktopInRemoteRect) {
       await inputModel.tap(MouseButtons.right);
     }
   }
