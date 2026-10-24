@@ -381,17 +381,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (keyboardHeight > 0) SizedBox(height: keyboardHeight),
-          BottomAppBar(
-            elevation: 10,
+          Container(
             color: MyTheme.accent,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
             child: Row(
               children: [
-                Expanded(flex: 3, child: _controlBarIcons()),
+                Expanded(flex: 3, child: _controlBarIcons(compact: true)),
                 Container(
                     width: 1,
-                    height: 30,
+                    height: 20,
                     color: Colors.white24,
-                    margin: EdgeInsets.symmetric(horizontal: 8)),
+                    margin: const EdgeInsets.symmetric(horizontal: 6)),
                 Expanded(
                     flex: 7,
                     child: KeyHelpTools(
@@ -526,24 +526,39 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlBarIcons() {
+  Widget _controlBarIcons({bool compact = false}) {
     final ffiModel = Provider.of<FfiModel>(context);
+    final double iconSize = compact ? 18.0 : 24.0;
+    final EdgeInsets padding = compact ? const EdgeInsets.all(4.0) : const EdgeInsets.all(8.0);
+    final BoxConstraints constraints = compact
+        ? const BoxConstraints(minWidth: 26, minHeight: 26)
+        : const BoxConstraints(minWidth: 48, minHeight: 48);
+
+    Widget buildBtn({required Widget icon, required VoidCallback? onPressed}) {
+      return IconButton(
+        iconSize: iconSize,
+        padding: padding,
+        constraints: constraints,
+        color: Colors.white,
+        icon: icon,
+        onPressed: onPressed,
+      );
+    }
+
     return Row(
       mainAxisSize: MainAxisSize.max,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
         Row(
             children: <Widget>[
-                  IconButton(
-                    color: Colors.white,
-                    icon: Icon(Icons.clear),
+                  buildBtn(
+                    icon: const Icon(Icons.clear),
                     onPressed: () {
                       clientClose(sessionId, gFFI);
                     },
                   ),
-                  IconButton(
-                    color: Colors.white,
-                    icon: Icon(Icons.tv),
+                  buildBtn(
+                    icon: const Icon(Icons.tv),
                     onPressed: () {
                       setState(() => _showEdit = false);
                       showOptions(context, widget.id, gFFI.dialogManager);
@@ -554,38 +569,32 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     ? []
                     : gFFI.ffiModel.isPeerAndroid
                         ? [
-                            IconButton(
-                                color: Colors.white,
-                                icon: Icon(Icons.keyboard),
+                            buildBtn(
+                                icon: const Icon(Icons.keyboard),
                                 onPressed: openKeyboard),
                             if (isAndroid)
-                              IconButton(
-                                color: Colors.white,
-                                icon: Icon(Icons.language),
+                              buildBtn(
+                                icon: const Icon(Icons.language),
                                 onPressed: () => gFFI.invokeMethod(
                                     "show_input_method_picker", null),
                               ),
-                            IconButton(
-                              color: Colors.white,
+                            buildBtn(
                               icon: const Icon(Icons.build),
                               onPressed: () => gFFI.dialogManager
                                   .toggleMobileActionsOverlay(ffi: gFFI),
                             )
                           ]
                         : [
-                            IconButton(
-                                color: Colors.white,
-                                icon: Icon(Icons.keyboard),
+                            buildBtn(
+                                icon: const Icon(Icons.keyboard),
                                 onPressed: openKeyboard),
                             if (isAndroid)
-                              IconButton(
-                                color: Colors.white,
-                                icon: Icon(Icons.language),
+                              buildBtn(
+                                icon: const Icon(Icons.language),
                                 onPressed: () => gFFI.invokeMethod(
                                     "show_input_method_picker", null),
                               ),
-                            IconButton(
-                              color: Colors.white,
+                            buildBtn(
                               icon: Icon(gFFI.ffiModel.touchMode
                                   ? Icons.touch_app
                                   : Icons.mouse),
@@ -599,13 +608,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         futureBuilder(
                             future: gFFI.invokeMethod(
                                 "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                            hasData: (isSupportVoiceCall) => IconButton(
-                                  color: Colors.white,
+                            hasData: (isSupportVoiceCall) => buildBtn(
                                   icon: isAndroid && isSupportVoiceCall
                                       ? SvgPicture.asset('assets/chat.svg',
                                           colorFilter: ColorFilter.mode(
                                               Colors.white, BlendMode.srcIn))
-                                      : Icon(Icons.message),
+                                      : const Icon(Icons.message),
                                   onPressed: () =>
                                       isAndroid && isSupportVoiceCall
                                           ? showChatOptions(widget.id)
@@ -613,18 +621,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 ))
                       ]) +
                 [
-                  IconButton(
-                    color: Colors.white,
-                    icon: Icon(Icons.more_vert),
+                  buildBtn(
+                    icon: const Icon(Icons.more_vert),
                     onPressed: () {
                       setState(() => _showEdit = false);
                       showActions(widget.id);
                     },
                   ),
                 ]),
-        Obx(() => IconButton(
-              color: Colors.white,
-              icon: Icon(Icons.expand_more),
+        Obx(() => buildBtn(
+              icon: const Icon(Icons.expand_more),
               onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
                   ? null
                   : () {
@@ -1108,22 +1114,30 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
   Widget wrap(String text, void Function() onPressed,
       {bool? active, IconData? icon}) {
+    final isCompact = widget.embedded;
     return TextButton(
         style: TextButton.styleFrom(
           minimumSize: Size(0, 0),
-          padding: EdgeInsets.symmetric(vertical: 10, horizontal: 9.75),
+          padding: EdgeInsets.symmetric(
+            vertical: isCompact ? 3.0 : 10.0,
+            horizontal: isCompact ? 6.0 : 9.75,
+          ),
           //adds padding inside the button
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           //limits the touch area to the button area
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(5.0),
+            borderRadius: BorderRadius.circular(4.0),
           ),
           backgroundColor: active == true ? MyTheme.accent80 : null,
         ),
         child: icon != null
-            ? Icon(icon, size: 14, color: Colors.white)
+            ? Icon(icon, size: isCompact ? 13 : 14, color: Colors.white)
             : Text(translate(text),
-                style: TextStyle(color: Colors.white, fontSize: 11)),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isCompact ? 10.5 : 11,
+                  height: 1.1,
+                )),
         onPressed: onPressed);
   }
 
@@ -1341,7 +1355,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         inputModel.inputKey('VK_ENTER');
       }),
     ];
-    final space = size.width > 320 ? 4.0 : 2.0;
+    final space = widget.embedded ? 2.0 : (size.width > 320 ? 4.0 : 2.0);
     // 500 ms is long enough for this widget to be built!
     Future.delayed(Duration(milliseconds: 500), () {
       _updateRect();
@@ -1349,47 +1363,50 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final isHighRes = size.width > 2560;
     final expandedWidget = Container(
         key: _key,
-        color: isHighRes ? Colors.transparent : Color(0xAA000000),
+        color: (isHighRes || widget.embedded) ? Colors.transparent : Color(0xAA000000),
         padding: EdgeInsets.only(
-            top: (isAndroid || !_keyboardVisibilityController.isVisible || isHighRes) ? 4 : 24,
-            bottom: isHighRes ? 4 : 8),
+            top: widget.embedded
+                ? 1.0
+                : ((isAndroid || !_keyboardVisibilityController.isVisible || isHighRes) ? 4 : 24),
+            bottom: widget.embedded ? 1.0 : (isHighRes ? 4 : 8)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: 6.0, bottom: 2.0),
-                child: InkWell(
-                  onTap: () {
-                    setState(() {
-                      _collapsed = true;
-                      bind.mainSetLocalOption(
-                          key: 'key_help_tools_collapsed', value: 'Y');
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0x33FFFFFF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
-                        const SizedBox(width: 4),
-                        Text(
-                          translate('Hide'),
-                          style: const TextStyle(color: Colors.white70, fontSize: 11),
-                        ),
-                      ],
+            if (!widget.embedded)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6.0, bottom: 2.0),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _collapsed = true;
+                        bind.mainSetLocalOption(
+                            key: 'key_help_tools_collapsed', value: 'Y');
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0x33FFFFFF),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
+                          const SizedBox(width: 4),
+                          Text(
+                            translate('Hide'),
+                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
             Wrap(
               spacing: space,
               runSpacing: space,
