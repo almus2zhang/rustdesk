@@ -83,6 +83,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   final TextEditingController _textController =
       TextEditingController(text: initText);
+  bool _tabletToolsExpanded = true;
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -383,13 +384,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           if (keyboardHeight > 0) SizedBox(height: keyboardHeight),
           Container(
             color: MyTheme.accent,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+            padding: EdgeInsets.symmetric(horizontal: 6, vertical: _tabletToolsExpanded ? 2 : 0),
             child: Row(
               children: [
-                Expanded(flex: 3, child: _controlBarIcons(compact: true)),
+                Expanded(flex: 3, child: _controlBarIcons(compact: !_tabletToolsExpanded)),
                 Container(
                     width: 1,
-                    height: 20,
+                    height: _tabletToolsExpanded ? 30 : 20,
                     color: Colors.white24,
                     margin: const EdgeInsets.symmetric(horizontal: 6)),
                 Expanded(
@@ -399,7 +400,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         showBar: true,
                         embedded: true,
                         keyboardIsVisible: true,
-                        showGestureHelp: false)),
+                        showGestureHelp: false,
+                        onExpandToggle: (expanded) {
+                          if (mounted) {
+                            setState(() => _tabletToolsExpanded = expanded);
+                          }
+                        })),
               ],
             ),
           ),
@@ -984,6 +990,7 @@ class KeyHelpTools extends StatefulWidget {
   final bool keyboardIsVisible;
   final bool showGestureHelp;
   final bool embedded;
+  final ValueChanged<bool>? onExpandToggle;
 
   KeyHelpTools({
     this.isTablet = false,
@@ -991,6 +998,7 @@ class KeyHelpTools extends StatefulWidget {
     required this.keyboardIsVisible,
     required this.showGestureHelp,
     this.embedded = false,
+    this.onExpandToggle,
   });
 
   @override
@@ -1017,6 +1025,11 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     super.initState();
     _collapsed =
         bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
+    if (widget.onExpandToggle != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onExpandToggle!(_more || _fn);
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         final currentOrientation = MediaQuery.of(context).orientation;
@@ -1114,13 +1127,17 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
   Widget wrap(String text, void Function() onPressed,
       {bool? active, IconData? icon}) {
-    final isCompact = widget.embedded;
+    final isMultiLine = _more || _fn;
     return TextButton(
         style: TextButton.styleFrom(
           minimumSize: Size(0, 0),
           padding: EdgeInsets.symmetric(
-            vertical: isCompact ? 3.0 : 10.0,
-            horizontal: isCompact ? 6.0 : 9.75,
+            vertical: widget.embedded
+                ? (isMultiLine ? 6.0 : 3.0)
+                : 10.0,
+            horizontal: widget.embedded
+                ? (isMultiLine ? 8.0 : 6.0)
+                : 9.75,
           ),
           //adds padding inside the button
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1131,11 +1148,11 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           backgroundColor: active == true ? MyTheme.accent80 : null,
         ),
         child: icon != null
-            ? Icon(icon, size: isCompact ? 13 : 14, color: Colors.white)
+            ? Icon(icon, size: widget.embedded ? (isMultiLine ? 14 : 13) : 14, color: Colors.white)
             : Text(translate(text),
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: isCompact ? 10.5 : 11,
+                  fontSize: widget.embedded ? (isMultiLine ? 11 : 10.5) : 11,
                   height: 1.1,
                 )),
         onPressed: onPressed);
@@ -1248,6 +1265,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                   if (_fn) {
                     _more = false;
                   }
+                  widget.onExpandToggle?.call(_more || _fn);
                 },
               ),
           active: _fn),
@@ -1296,6 +1314,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                   if (_more) {
                     _fn = false;
                   }
+                  widget.onExpandToggle?.call(_more || _fn);
                 },
               ),
           active: _more),
