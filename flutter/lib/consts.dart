@@ -128,6 +128,10 @@ const String kOptionAllowNumericOneTimePassword =
     "allow-numeric-one-time-password";
 const String kOptionCollapseToolbar = "collapse_toolbar";
 const String kOptionHideToolbar = "hide-toolbar";
+const String kOptionOneYesServerUrl = "oneyes-server-url";
+const String kOptionOneYesEmail = "oneyes-email";
+const String kOptionOneYesPassword = "oneyes-password";
+const String kOptionOneYesRemember = "oneyes-remember";
 const String kOptionShowRemoteCursor = "show_remote_cursor";
 const String kOptionFollowRemoteCursor = "follow_remote_cursor";
 const String kOptionFollowRemoteWindow = "follow_remote_window";

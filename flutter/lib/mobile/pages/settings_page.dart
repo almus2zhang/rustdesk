@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/common/widgets/oneyes_sync_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -740,6 +741,16 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
                   showServerSettings(gFFI.dialogManager, (callback) async {
                     _isUsingPublicServer = await bind.mainIsUsingPublicServer();
                     setState(callback);
+                  });
+                }),
+          if (!disabledSettings && !_hideNetwork && !_hideServer)
+            SettingsTile(
+                title: Text(translate('OneYes 云端配置同步 (66:8890)')),
+                leading: Icon(Icons.cloud_sync_outlined),
+                onPressed: (context) {
+                  showOneYesSyncDialog(onSyncSuccess: () async {
+                    _isUsingPublicServer = await bind.mainIsUsingPublicServer();
+                    setState(() {});
                   });
                 }),
           if (!_hideNetwork && !_hideProxy)

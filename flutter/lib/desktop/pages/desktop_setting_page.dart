@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/common/widgets/oneyes_sync_dialog.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -1666,6 +1667,14 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
                   icon: Icons.dns_outlined,
                   title: 'ID/Relay Server',
                   onTap: () => showServerSettings(gFFI.dialogManager, setState),
+                ),
+              if (!hideServer) divider,
+              if (!hideServer)
+                listTile(
+                  icon: Icons.cloud_sync_outlined,
+                  title: 'OneYes 云端配置同步 (66:8890)',
+                  onTap: () => showOneYesSyncDialog(
+                      onSyncSuccess: () => setState(() {})),
                 ),
               if (!hideProxy && !hideServer) divider,
               if (!hideProxy)

@@ -1,3 +1,4 @@
+import 'package:flutter_hbb/common/widgets/oneyes_sync_dialog.dart';
 import 'package:debounce_throttle/debounce_throttle.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -200,6 +201,13 @@ List<Widget> ServerConfigImportExportWidgets(
     showToast(translate('Export server configuration successfully'));
   }
 
+  syncOneYes() {
+    showOneYesSyncDialog(
+      serverControllers: controllers,
+      serverErrMsgs: errMsgs,
+    );
+  }
+
   return [
     Tooltip(
       message: translate('Import server config'),
@@ -209,7 +217,12 @@ List<Widget> ServerConfigImportExportWidgets(
     Tooltip(
         message: translate('Export Server Config'),
         child: IconButton(
-            icon: Icon(Icons.copy, color: Colors.grey), onPressed: export))
+            icon: Icon(Icons.copy, color: Colors.grey), onPressed: export)),
+    Tooltip(
+        message: translate('OneYes 云端同步与合并 (66:8890)'),
+        child: IconButton(
+            icon: Icon(Icons.cloud_sync_outlined, color: Colors.blueAccent),
+            onPressed: syncOneYes)),
   ];
 }
 
