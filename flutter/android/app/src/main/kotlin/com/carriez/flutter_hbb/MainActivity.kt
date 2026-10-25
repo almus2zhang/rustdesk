@@ -46,12 +46,16 @@ class MainActivity : FlutterActivity() {
             val action = intent?.action
             if (action == UsbManager.ACTION_USB_ACCESSORY_DETACHED) {
                 Log.i(logTag, "USB Accessory Detached")
+                aoaProxyServer?.stop()
+                aoaProxyServer = null
                 activity.runOnUiThread {
                     flutterMethodChannel?.invokeMethod("on_usb_accessory_detached", null)
                 }
             }
         }
     }
+
+        private var aoaProxyServer: AoaProxyServer? = null
 
     companion object {
         var flutterMethodChannel: MethodChannel? = null
@@ -142,6 +146,16 @@ class MainActivity : FlutterActivity() {
             val model = accessory?.model ?: "RustDeskDisplay"
             val port = intent.getStringExtra("port") ?: "21118"
             Log.i(logTag, "USB Accessory Attached: $model, target port: $port")
+
+            if (accessory != null) {
+                val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+                aoaProxyServer?.stop()
+                val targetPort = port.toIntOrNull() ?: 21118
+                aoaProxyServer = AoaProxyServer(usbManager, accessory).apply {
+                    start(targetPort)
+                }
+            }
+
             activity.runOnUiThread {
                 flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", mapOf("model" to model, "port" to port))
             }
@@ -150,6 +164,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.e(logTag, "onDestroy")
+        aoaProxyServer?.stop()
+        aoaProxyServer = null
         try {
             unregisterReceiver(usbReceiver)
         } catch (e: Exception) {

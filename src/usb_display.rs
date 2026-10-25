@@ -1,6 +1,6 @@
 // USB Secondary Display Auto-Detector and Virtual Monitor Manager
 // Detects USB connected Android tablets/devices, automatically reads direct IP access port
-// from configuration, performs reverse mapping, and triggers tablet accessory intent.
+// from configuration, performs AOA protocol switching, and triggers tablet accessory intent.
 
 use hbb_common::{config::Config, log, ResultType};
 use std::{
@@ -110,15 +110,16 @@ pub fn start_usb_display_service() {
                 log::info!("USB secondary display monitor service started");
                 let mut last_detected_device = false;
                 loop {
-                    thread::sleep(Duration::from_millis(2000));
+                    // Poll at lower interval for responsive hotplug detection
+                    thread::sleep(Duration::from_millis(1000));
                     
                     // Check if an Android USB device / tablet is attached
                     let has_device = check_android_usb_present();
                     if has_device && !last_detected_device {
-                        log::info!("Android USB device attachment detected! Initiating handshake and dynamic port map...");
+                        log::info!("Android USB device attachment detected! Initiating AOA handshake and dynamic port map...");
                         last_detected_device = true;
                         
-                        // Execute automated reverse forwarding and launch trigger
+                        // Execute AOA hardware handshake & port mapping trigger
                         trigger_usb_device_handshake();
                     } else if !has_device && last_detected_device {
                         log::info!("Android USB device detached. Cleaning up secondary display...");
