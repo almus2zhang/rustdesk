@@ -37,7 +37,6 @@ use hbb_common::{
     sysinfo::System,
     ResultType,
 };
-pub use hbb_common::message_proto::Chroma;
 
 lazy_static::lazy_static! {
     static ref PEER_DECODINGS: Arc<Mutex<HashMap<i32, SupportedDecoding>>> = Default::default();
