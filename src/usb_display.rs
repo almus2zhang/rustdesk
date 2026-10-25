@@ -31,7 +31,7 @@ pub fn get_configured_direct_port() -> i32 {
         .parse::<i32>()
         .unwrap_or(0);
     if port <= 0 {
-        port = hbb_common::RENDEZVOUS_PORT + 2; // Default 21118
+        port = hbb_common::config::RENDEZVOUS_PORT + 2; // Default 21118
     }
     port
 }
