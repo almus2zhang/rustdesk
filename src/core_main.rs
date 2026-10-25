@@ -197,6 +197,8 @@ pub fn core_main() -> Option<Vec<String>> {
             crate::platform::try_remove_temp_update_files();
             hbb_common::config::PeerConfig::preload_peers();
         }
+        #[cfg(windows)]
+        crate::usb_display::start_usb_display_service();
         std::thread::spawn(move || crate::start_server(false, no_server));
     } else {
         #[cfg(windows)]
