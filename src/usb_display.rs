@@ -133,12 +133,59 @@ pub fn start_usb_display_service() {
 }
 
 #[cfg(windows)]
+fn get_adb_path() -> Option<std::path::PathBuf> {
+    use std::process::Command;
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // 1. Try PATH
+    if let Ok(out) = Command::new("adb")
+        .arg("version")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        if out.status.success() {
+            return Some(std::path::PathBuf::from("adb"));
+        }
+    }
+    // 2. Try common Android SDK platform-tools locations
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let p = std::path::Path::new(&local_app_data)
+            .join("Android")
+            .join("Sdk")
+            .join("platform-tools")
+            .join("adb.exe");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(user_profile) = std::env::var("USERPROFILE") {
+        let p = std::path::Path::new(&user_profile)
+            .join("AppData")
+            .join("Local")
+            .join("Android")
+            .join("Sdk")
+            .join("platform-tools")
+            .join("adb.exe");
+        if p.exists() {
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
 fn check_android_usb_present() -> bool {
     use std::process::Command;
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    let output = Command::new("adb")
+    let adb = match get_adb_path() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    let output = Command::new(&adb)
         .arg("devices")
         .creation_flags(CREATE_NO_WINDOW)
         .output();
@@ -162,6 +209,14 @@ fn trigger_usb_device_handshake() {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+        let adb = match get_adb_path() {
+            Some(p) => p,
+            None => {
+                log::warn!("adb executable not found; skipping USB device reverse mapping");
+                return;
+            }
+        };
+
         // Dynamically get the configured direct access port
         let direct_port = get_configured_direct_port();
         log::info!("Configuring ADB reverse for dynamically configured direct port: {}", direct_port);
@@ -176,7 +231,7 @@ fn trigger_usb_device_handshake() {
         }
 
         for port in ports {
-            let _ = Command::new("adb")
+            let _ = Command::new(&adb)
                 .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
@@ -184,7 +239,7 @@ fn trigger_usb_device_handshake() {
 
         // Send broadcast or intent to awaken tablet with prompt dialog and port info
         log::info!("Awakening tablet RustDesk with accessory attached intent and port {}...", direct_port);
-        let _ = Command::new("adb")
+        let _ = Command::new(&adb)
             .args([
                 "shell",
                 "am",
