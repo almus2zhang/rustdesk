@@ -936,11 +936,18 @@ void androidChannelInit() {
                       isZh ? '开启副屏' : 'Start Display',
                       onPressed: () {
                         close();
+                        var targetId = "127.0.0.1";
+                        if (arguments is Map && arguments["port"] != null) {
+                          final portStr = arguments["port"].toString();
+                          if (portStr.isNotEmpty && portStr != "0") {
+                            targetId = "127.0.0.1:$portStr";
+                          }
+                        }
                         Navigator.push(
                           ctx,
                           MaterialPageRoute(
                             builder: (BuildContext context) => RemotePage(
-                              id: "127.0.0.1",
+                              id: targetId,
                               isUsbDisplay: true,
                             ),
                           ),

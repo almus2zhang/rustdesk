@@ -1,8 +1,8 @@
 // USB Secondary Display Auto-Detector and Virtual Monitor Manager
-// Detects USB connected Android tablets/devices, automatically manages
-// corresponding virtual display creation and destruction, and handles low-latency 127.0.0.1 link.
+// Detects USB connected Android tablets/devices, automatically reads direct IP access port
+// from configuration, performs reverse mapping, and triggers tablet accessory intent.
 
-use hbb_common::{log, ResultType};
+use hbb_common::{config::Config, log, ResultType};
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -23,6 +23,17 @@ lazy_static::lazy_static! {
 /// Check if USB secondary display is currently active
 pub fn is_usb_display_active() -> bool {
     USB_DISPLAY_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Read configured direct access port dynamically from config (fallback to 21118)
+pub fn get_configured_direct_port() -> i32 {
+    let mut port = Config::get_option("direct-access-port")
+        .parse::<i32>()
+        .unwrap_or(0);
+    if port <= 0 {
+        port = hbb_common::RENDEZVOUS_PORT + 2; // Default 21118
+    }
+    port
 }
 
 /// Request to plug in a virtual display specifically configured for USB tablet
@@ -104,7 +115,7 @@ pub fn start_usb_display_service() {
                     // Check if an Android USB device / tablet is attached
                     let has_device = check_android_usb_present();
                     if has_device && !last_detected_device {
-                        log::info!("Android USB device attachment detected! Initiating handshake and reverse port map...");
+                        log::info!("Android USB device attachment detected! Initiating handshake and dynamic port map...");
                         last_detected_device = true;
                         
                         // Execute automated reverse forwarding and launch trigger
@@ -150,9 +161,19 @@ fn trigger_usb_device_handshake() {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-        log::info!("Configuring ADB reverse port mapping (21118, 34567, 21116)...");
-        // Automatically map standard RustDesk ports
-        let ports = ["21118", "34567", "21116"];
+        // Dynamically get the configured direct access port
+        let direct_port = get_configured_direct_port();
+        log::info!("Configuring ADB reverse for dynamically configured direct port: {}", direct_port);
+        
+        let port_str = direct_port.to_string();
+        let mut ports = vec![port_str.as_str()];
+        if !ports.contains(&"21118") {
+            ports.push("21118");
+        }
+        if !ports.contains(&"21116") {
+            ports.push("21116");
+        }
+
         for port in ports {
             let _ = Command::new("adb")
                 .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
@@ -160,8 +181,8 @@ fn trigger_usb_device_handshake() {
                 .status();
         }
 
-        // Send broadcast or intent to awaken tablet with prompt dialog
-        log::info!("Awakening tablet RustDesk with accessory attached intent...");
+        // Send broadcast or intent to awaken tablet with prompt dialog and port info
+        log::info!("Awakening tablet RustDesk with accessory attached intent and port {}...", direct_port);
         let _ = Command::new("adb")
             .args([
                 "shell",
@@ -171,6 +192,9 @@ fn trigger_usb_device_handshake() {
                 "android.hardware.usb.action.USB_ACCESSORY_ATTACHED",
                 "-n",
                 "com.carriez.flutter_hbb/.MainActivity",
+                "--es",
+                "port",
+                &direct_port.to_string(),
             ])
             .creation_flags(CREATE_NO_WINDOW)
             .status();

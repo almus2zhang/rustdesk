@@ -140,9 +140,10 @@ class MainActivity : FlutterActivity() {
         if (action == UsbManager.ACTION_USB_ACCESSORY_ATTACHED || action == "com.rustdesk.ACTION_USB_DISPLAY") {
             val accessory = intent.getParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
             val model = accessory?.model ?: "RustDeskDisplay"
-            Log.i(logTag, "USB Accessory Attached: $model")
+            val port = intent.getStringExtra("port") ?: "21118"
+            Log.i(logTag, "USB Accessory Attached: $model, target port: $port")
             activity.runOnUiThread {
-                flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", mapOf("model" to model))
+                flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", mapOf("model" to model, "port" to port))
             }
         }
     }
