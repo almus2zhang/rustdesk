@@ -1808,6 +1808,14 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
+        if self.ip.starts_with("127.0.0.1") {
+            log::info!("Local USB display connection detected on 127.0.0.1: auto-optimizing 60 FPS, best quality, and remote cursor");
+            video_service::VIDEO_QOS.lock().unwrap().user_custom_fps(self.inner.id(), 60);
+            video_service::VIDEO_QOS.lock().unwrap().user_image_quality(self.inner.id(), 1);
+            self.show_remote_cursor = true;
+            #[cfg(windows)]
+            crate::usb_display::plug_in_usb_display(1920, 1200).ok();
+        }
         if let Some(o) = self.options_in_login.take() {
             self.update_options(&o).await;
         }
@@ -5743,6 +5751,10 @@ impl Default for PortableState {
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        if self.ip.starts_with("127.0.0.1") {
+            #[cfg(windows)]
+            crate::usb_display::plug_out_usb_display().ok();
+        }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
 

@@ -20,6 +20,8 @@ import android.os.IBinder
 import android.util.Log
 import android.hardware.usb.UsbManager
 import android.hardware.usb.UsbAccessory
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.media.MediaCodecInfo
@@ -39,6 +41,18 @@ import kotlin.concurrent.thread
 
 
 class MainActivity : FlutterActivity() {
+    private val usbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val action = intent?.action
+            if (action == UsbManager.ACTION_USB_ACCESSORY_DETACHED) {
+                Log.i(logTag, "USB Accessory Detached")
+                activity.runOnUiThread {
+                    flutterMethodChannel?.invokeMethod("on_usb_accessory_detached", null)
+                }
+            }
+        }
+    }
+
     companion object {
         var flutterMethodChannel: MethodChannel? = null
         private var _rdClipboardManager: RdClipboardManager? = null
@@ -110,6 +124,8 @@ class MainActivity : FlutterActivity() {
             FFI.setClipboardManager(_rdClipboardManager!!)
         }
         handleUsbIntent(intent)
+        val filter = IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
+        registerReceiver(usbReceiver, filter)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -133,6 +149,11 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.e(logTag, "onDestroy")
+        try {
+            unregisterReceiver(usbReceiver)
+        } catch (e: Exception) {
+            // ignore
+        }
         mainService?.let {
             unbindService(serviceConnection)
         }

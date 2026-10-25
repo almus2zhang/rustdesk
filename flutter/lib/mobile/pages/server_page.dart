@@ -909,15 +909,57 @@ void androidChannelInit() {
             debugPrint("USB Display Accessory Attached: $arguments");
             final ctx = Get.context;
             if (ctx != null) {
-              Navigator.push(
-                ctx,
-                MaterialPageRoute(
-                  builder: (BuildContext context) => RemotePage(
-                    id: "127.0.0.1",
-                    isUsbDisplay: true,
+              final isZh = localeName.startsWith('zh');
+              gFFI.dialogManager.dismissAll();
+              gFFI.dialogManager.show((setState, close, context) {
+                return CustomAlertDialog(
+                  title: Row(
+                    children: [
+                      const Icon(Icons.usb, color: Colors.blueAccent),
+                      const SizedBox(width: 8),
+                      Text(isZh ? '检测到 USB 电脑连接' : 'USB Host Connected'),
+                    ],
                   ),
-                ),
-              );
+                  content: Text(
+                    isZh
+                        ? '是否将当前平板作为电脑的扩展副屏使用？'
+                        : 'Do you want to use this tablet as a secondary display?',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  actions: [
+                    dialogButton(
+                      translate('Cancel'),
+                      onPressed: close,
+                      isOutline: true,
+                    ),
+                    dialogButton(
+                      isZh ? '开启副屏' : 'Start Display',
+                      onPressed: () {
+                        close();
+                        Navigator.push(
+                          ctx,
+                          MaterialPageRoute(
+                            builder: (BuildContext context) => RemotePage(
+                              id: "127.0.0.1",
+                              isUsbDisplay: true,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                );
+              });
+            }
+            break;
+          }
+        case "on_usb_accessory_detached":
+          {
+            debugPrint("USB Display Accessory Detached");
+            final ctx = Get.context;
+            if (ctx != null) {
+              gFFI.dialogManager.dismissAll();
+              Navigator.of(ctx).popUntil((route) => route.isFirst);
             }
             break;
           }
