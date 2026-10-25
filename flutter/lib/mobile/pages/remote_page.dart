@@ -49,13 +49,15 @@ class RemotePage extends StatefulWidget {
       required this.id,
       this.password,
       this.isSharedPassword,
-      this.forceRelay})
+      this.forceRelay,
+      this.isUsbDisplay = false})
       : super(key: key);
 
   final String id;
   final String? password;
   final bool? isSharedPassword;
   final bool? forceRelay;
+  final bool isUsbDisplay;
 
   @override
   State<RemotePage> createState() => _RemotePageState(id);
@@ -63,7 +65,7 @@ class RemotePage extends StatefulWidget {
 
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _timer;
-  bool _showBar = !isWebDesktop;
+  late bool _showBar;
   bool _showGestureHelp = false;
   String _value = '';
   Orientation? _currentOrientation;
@@ -98,6 +100,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void initState() {
+    _showBar = widget.isUsbDisplay ? false : !isWebDesktop;
+    if (widget.isUsbDisplay && !gFFI.ffiModel.touchMode) {
+      gFFI.ffiModel.toggleTouchMode();
+    }
     super.initState();
     gFFI.ffiModel.updateEventListener(sessionId, widget.id);
     gFFI.start(

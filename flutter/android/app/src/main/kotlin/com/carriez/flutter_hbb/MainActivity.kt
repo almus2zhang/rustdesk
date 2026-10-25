@@ -18,6 +18,8 @@ import android.os.Bundle
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.hardware.usb.UsbManager
+import android.hardware.usb.UsbAccessory
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.media.MediaCodecInfo
@@ -107,6 +109,26 @@ class MainActivity : FlutterActivity() {
             _rdClipboardManager = RdClipboardManager(getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             FFI.setClipboardManager(_rdClipboardManager!!)
         }
+        handleUsbIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleUsbIntent(intent)
+    }
+
+    private fun handleUsbIntent(intent: Intent?) {
+        if (intent == null) return
+        val action = intent.action
+        if (action == UsbManager.ACTION_USB_ACCESSORY_ATTACHED || action == "com.rustdesk.ACTION_USB_DISPLAY") {
+            val accessory = intent.getParcelableExtra<UsbAccessory>(UsbManager.EXTRA_ACCESSORY)
+            val model = accessory?.model ?: "RustDeskDisplay"
+            Log.i(logTag, "USB Accessory Attached: $model")
+            activity.runOnUiThread {
+                flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", mapOf("model" to model))
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -134,6 +156,16 @@ class MainActivity : FlutterActivity() {
         flutterMethodChannel.setMethodCallHandler { call, result ->
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                "get_screen_metrics" -> {
+                    val dm = DisplayMetrics()
+                    windowManager.defaultDisplay.getRealMetrics(dm)
+                    result.success(mapOf(
+                        "width" to dm.widthPixels,
+                        "height" to dm.heightPixels,
+                        "densityDpi" to dm.densityDpi
+                    ))
+                    return@setMethodCallHandler
+                }
                 "init_service" -> {
                     Intent(activity, MainService::class.java).also {
                         bindService(it, serviceConnection, Context.BIND_AUTO_CREATE)

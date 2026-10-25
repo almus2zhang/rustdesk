@@ -14,6 +14,7 @@ import '../../consts.dart';
 import '../../models/platform_model.dart';
 import '../../models/server_model.dart';
 import 'home_page.dart';
+import 'remote_page.dart';
 
 class ServerPage extends StatefulWidget implements PageShape {
   @override
@@ -903,6 +904,23 @@ void androidChannelInit() {
     debugPrint("flutter got android msg,$method,$arguments");
     try {
       switch (method) {
+        case "on_usb_accessory_attached":
+          {
+            debugPrint("USB Display Accessory Attached: $arguments");
+            final ctx = Get.context;
+            if (ctx != null) {
+              Navigator.push(
+                ctx,
+                MaterialPageRoute(
+                  builder: (BuildContext context) => RemotePage(
+                    id: "127.0.0.1",
+                    isUsbDisplay: true,
+                  ),
+                ),
+              );
+            }
+            break;
+          }
         case "start_capture":
           {
             gFFI.dialogManager.dismissAll();

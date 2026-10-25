@@ -2366,6 +2366,7 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
     "rdp",
     "terminal",
     "terminal-admin",
+    "usb-display",
   ];
   if (uri.authority.isEmpty &&
       uri.path.split('').every((char) => char == '/')) {
@@ -2465,6 +2466,16 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
       setEnvTerminalAdmin();
       connect(Get.context!, id,
           isTerminal: true, forceRelay: forceRelay, password: password);
+    } else if (command == '--usb-display') {
+      Navigator.push(
+        Get.context!,
+        MaterialPageRoute(
+          builder: (BuildContext context) => RemotePage(
+            id: id!,
+            isUsbDisplay: true,
+          ),
+        ),
+      );
     } else {
       // Default to remote desktop for '--connect', '--play', or direct connection
       connect(Get.context!, id, forceRelay: forceRelay, password: password);

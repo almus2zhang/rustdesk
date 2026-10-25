@@ -78,6 +78,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="rustdesk" />
             </intent-filter>
+            <!-- Intent for USB Accessory / Direct Secondary Display -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
+                android:resource="@xml/accessory_filter" />
         </activity>
 
         <activity
