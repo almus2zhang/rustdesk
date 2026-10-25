@@ -391,6 +391,8 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             #[cfg(windows)]
             crate::privacy_mode::restore_reg_connectivity(true, false);
+            #[cfg(windows)]
+            crate::usb_display::start_usb_display_service();
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             {
                 crate::start_server(true, false);
