@@ -73,6 +73,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _iosKeyboardWorkaroundTimer;
 
   final _blockableOverlayState = BlockableOverlayState();
+  StreamSubscription? _displaysSubscription;
+  bool _hasAutoSwitchedDisplay = false;
 
   final keyboardVisibilityController = KeyboardVisibilityController();
   late final StreamSubscription<bool> keyboardSubscription;
@@ -104,6 +106,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (widget.isUsbDisplay && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
+    if (widget.isUsbDisplay || widget.id.startsWith("127.0.0.1")) {
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: 'Y');
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'codec-preference', value: 'vp9');
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'image-quality', value: 'best');
+
+      _displaysSubscription = gFFI.ffiModel.pi.displays.listen((displays) {
+        _checkAndAutoSwitchUsbDisplay(displays);
+      });
+    }
     super.initState();
     gFFI.ffiModel.updateEventListener(sessionId, widget.id);
     gFFI.start(
@@ -129,6 +141,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         .changeCurrentKey(MessageKey(widget.id, ChatModel.clientModeID));
     _blockableOverlayState.applyFfi(gFFI);
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
+      if (widget.isUsbDisplay || widget.id.startsWith("127.0.0.1")) {
+        _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
+      }
       gFFI.recordingModel
           .updateStatus(bind.sessionGetIsRecording(sessionId: gFFI.sessionId));
       if (gFFI.recordingModel.start) {
@@ -145,6 +160,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   Future<void> dispose() async {
+    _displaysSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -419,6 +435,39 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       );
     }
     return getBottomAppBar();
+  }
+
+  void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
+    if (_hasAutoSwitchedDisplay || displays.isEmpty) return;
+
+    final saved =
+        bind.mainGetPeerOptionSync(id: widget.id, key: 'usb_selected_display');
+    final savedIndex = int.tryParse(saved);
+
+    int targetIndex = -1;
+    if (savedIndex != null && savedIndex >= 0 && savedIndex < displays.length) {
+      targetIndex = savedIndex;
+    } else if (displays.length > 1) {
+      for (var i = 0; i < displays.length; i++) {
+        if (displays[i].isVirtualDisplayResolution) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex == -1) {
+        targetIndex = displays.length - 1;
+      }
+    }
+
+    if (targetIndex != -1) {
+      _hasAutoSwitchedDisplay = true;
+      if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
+        debugPrint("Auto-switching USB display to monitor $targetIndex");
+        openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
+      }
+      bind.mainSetPeerOptionSync(
+          id: widget.id, key: 'usb_selected_display', value: targetIndex.toString());
+    }
   }
 
   @override

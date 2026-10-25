@@ -268,18 +268,25 @@ impl Encoder {
             .unwrap_or((PreferCodec::Auto.into(), 0));
         let preference = most_frequent.enum_value_or(PreferCodec::Auto);
 
-        // auto: h265 > h264 > av1/vp9/vp8
+        // auto: if prefer_i444, prefer VP9/AV1 which natively supports 4:4:4 chroma.
+        // Otherwise: h265 > h264 > av1/vp9/vp8
+        let prefer_i444 = decodings.len() > 0
+            && decodings
+                .iter()
+                .all(|d| d.1.prefer_chroma == Chroma::I444.into());
         let av1_test = Config::get_option(hbb_common::config::keys::OPTION_AV1_TEST) != "N";
         let mut auto_codec = if av1_useable && av1_test {
             CodecFormat::AV1
         } else {
             CodecFormat::VP9
         };
-        if h264_useable {
-            auto_codec = CodecFormat::H264;
-        }
-        if h265_useable {
-            auto_codec = CodecFormat::H265;
+        if !prefer_i444 {
+            if h264_useable {
+                auto_codec = CodecFormat::H264;
+            }
+            if h265_useable {
+                auto_codec = CodecFormat::H265;
+            }
         }
         if auto_codec == CodecFormat::VP9 || auto_codec == CodecFormat::AV1 {
             let mut system = System::new();
@@ -295,14 +302,14 @@ impl Encoder {
             PreferCodec::VP9 => CodecFormat::VP9,
             PreferCodec::AV1 => CodecFormat::AV1,
             PreferCodec::H264 => {
-                if h264vram_encoding || h264hw_encoding.is_some() {
+                if !prefer_i444 && (h264vram_encoding || h264hw_encoding.is_some()) {
                     CodecFormat::H264
                 } else {
                     auto_codec
                 }
             }
             PreferCodec::H265 => {
-                if h265vram_encoding || h265hw_encoding.is_some() {
+                if !prefer_i444 && (h265vram_encoding || h265hw_encoding.is_some()) {
                     CodecFormat::H265
                 } else {
                     auto_codec

@@ -3391,6 +3391,10 @@ openMonitorInTheSameTab(int i, FFI ffi, PeerInfo pi,
   );
   ffi.ffiModel.switchToNewDisplay(i, ffi.sessionId, ffi.id,
       updateCursorPos: updateCursorPos);
+  if (i != kAllDisplayValue && ffi.id.startsWith("127.0.0.1")) {
+    bind.mainSetPeerOptionSync(
+        id: ffi.id, key: 'usb_selected_display', value: i.toString());
+  }
 }
 
 // Open new tab or window to show this monitor.
