@@ -2293,7 +2293,7 @@ impl Connection {
         if let Some(o) = self.lr.clone().option.as_ref() {
             if let Some(mut q) = o.supported_decoding.clone().take() {
                 if self.ip.starts_with("127.0.0.1") {
-                    q.prefer_chroma = scrap::codec::Chroma::I444.into();
+                    q.prefer_chroma = hbb_common::message_proto::Chroma::I444.into();
                 }
                 Encoder::update(Update(self.inner.id(), q));
             } else {
@@ -4311,7 +4311,7 @@ impl Connection {
         }
         if let Some(mut q) = o.supported_decoding.clone().take() {
             if self.ip.starts_with("127.0.0.1") {
-                q.prefer_chroma = scrap::codec::Chroma::I444.into();
+                q.prefer_chroma = hbb_common::message_proto::Chroma::I444.into();
             }
             scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Update(self.inner.id(), q));
         }
