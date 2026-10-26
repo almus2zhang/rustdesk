@@ -319,3 +319,71 @@ fn trigger_usb_device_handshake() {
             .status();
     });
 }
+
+#[cfg(windows)]
+pub fn manual_wake_usb_device() -> String {
+    let adb = match get_adb_path() {
+        Some(p) => p,
+        None => {
+            return "未找到 ADB 工具。请确认 C:\\adbtool\\adb.exe 存在，或设置环境变量 ADB_PATH".to_string();
+        }
+    };
+
+    use std::process::Command;
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let output = match Command::new(&adb)
+        .arg("devices")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output() {
+            Ok(o) => o,
+            Err(e) => return format!("执行 adb devices 失败: {}", e),
+        };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut device_found = false;
+    let mut unauthorized = false;
+    for line in stdout.lines().skip(1) {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.contains("unauthorized") {
+            unauthorized = true;
+        } else if line.contains("device") && !line.contains("offline") {
+            device_found = true;
+            break;
+        }
+    }
+
+    if !device_found {
+        if unauthorized {
+            return "检测到平板设备未授权 (unauthorized)，请在平板屏幕上点击【始终允许此计算机进行调试】".to_string();
+        } else {
+            return "未检测到已连接的 Android 设备，请检查 USB 数据线并确保平板已开启【USB 调试】".to_string();
+        }
+    }
+
+    // 1. Wake screen if asleep
+    let _ = Command::new(&adb)
+        .args(["shell", "input", "keyevent", "224"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    // 2. Dismiss keyguard
+    let _ = Command::new(&adb)
+        .args(["shell", "wm", "dismiss-keyguard"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    // 3. Trigger handshake, reverse ports and launch app
+    trigger_usb_device_handshake();
+
+    "已成功向 USB 平板发送唤醒与副屏连接请求！".to_string()
+}
+
+#[cfg(not(windows))]
+pub fn manual_wake_usb_device() -> String {
+    "当前系统不支持 USB 平板唤醒".to_string()
+}
+

@@ -65,6 +65,15 @@ fn make_tray() -> hbb_common::ResultType<()> {
         None
     };
     let open_i = MenuItem::new(translate("Open".to_owned()), true, None);
+    #[cfg(target_os = "windows")]
+    let wake_usb_i = MenuItem::new(translate("Wake USB Tablet".to_owned()), true, None);
+    #[cfg(target_os = "windows")]
+    if let Some(quit_i) = &quit_i {
+        tray_menu.append_items(&[&open_i, &wake_usb_i, quit_i]).ok();
+    } else {
+        tray_menu.append_items(&[&open_i, &wake_usb_i]).ok();
+    }
+    #[cfg(not(target_os = "windows"))]
     if let Some(quit_i) = &quit_i {
         tray_menu.append_items(&[&open_i, quit_i]).ok();
     } else {
@@ -184,6 +193,11 @@ fn make_tray() -> hbb_common::ResultType<()> {
                 }
             } else if event.id == open_i.id() {
                 open_func();
+            }
+            #[cfg(target_os = "windows")]
+            if event.id == wake_usb_i.id() {
+                let msg = crate::usb_display::manual_wake_usb_device();
+                log::info!("Tray manual wake USB device: {}", msg);
             }
         }
 
