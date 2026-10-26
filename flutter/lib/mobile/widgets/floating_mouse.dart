@@ -516,7 +516,8 @@ class _FloatingMouseState extends State<FloatingMouse> {
     return rect.contains(pos);
   }
 
-  double get _maxMouseTravel => 80.0 * _mouseScale;
+  // Expanded range for Logitech style drag: up to 120.0 * scale
+  double get _maxMouseTravel => 120.0 * _mouseScale;
 
   void _handlePointerDown(PointerDownEvent event) {
     _resetCollapseTimer();
@@ -535,14 +536,17 @@ class _FloatingMouseState extends State<FloatingMouse> {
 
       _edgeHoldTimer?.cancel();
       _continuousScrollTimer?.cancel();
+      _continuousScrollTimer = null;
       _hasEdgeTriggered = false;
       _edgeHoldDirection = 0;
+
+      final initialY = (event.position.dy - center.dy).clamp(-_maxMouseTravel, _maxMouseTravel);
 
       setState(() {
         _isScrolling = true;
         _cursorModel.blockEvents = true;
         _scrollCenter = center;
-        _mouseSliderY = (event.position.dy - center.dy).clamp(-_maxMouseTravel, _maxMouseTravel);
+        _mouseSliderY = initialY;
       });
       _handleMouseSliderScrolling();
     }
@@ -568,18 +572,26 @@ class _FloatingMouseState extends State<FloatingMouse> {
     final absRatio = ratio.abs();
 
     // 1. Continuous scroll timer based on distance from center
-    _continuousScrollTimer?.cancel();
-    if (absRatio > 0.08) {
+    // Low threshold (0.04) and starts immediately!
+    if (absRatio > 0.04) {
       final direction = ratio < 0 ? 1 : -1;
-      final intervalMs = (180 - (absRatio * 155)).clamp(25.0, 180.0).round();
+      // Scroll speed: intervals from 100ms down to 10ms (super fast and responsive)
+      final intervalMs = (100 - (absRatio * 90)).clamp(10.0, 100.0).round();
+      if (_continuousScrollTimer == null) {
+        _inputModel.scroll(direction);
+      }
+      _continuousScrollTimer?.cancel();
       _continuousScrollTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
         _inputModel.scroll(direction);
       });
+    } else {
+      _continuousScrollTimer?.cancel();
+      _continuousScrollTimer = null;
     }
 
     // 2. Edge hold detection (held at top/bottom for >= 0.5s)
-    final isAtTop = ratio <= -0.96;
-    final isAtBottom = ratio >= 0.96;
+    final isAtTop = ratio <= -0.92;
+    final isAtBottom = ratio >= 0.92;
 
     if (isAtTop) {
       if (_edgeHoldDirection != -1) {
@@ -621,6 +633,7 @@ class _FloatingMouseState extends State<FloatingMouse> {
   void _tryCancelScrolling() {
     _resetCollapseTimer();
     _continuousScrollTimer?.cancel();
+    _continuousScrollTimer = null;
     _edgeHoldTimer?.cancel();
 
     if (_hasEdgeTriggered) {
@@ -1152,41 +1165,31 @@ class MouseTrackSliderPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final trackWidth = 36.0 * scale;
-    final trackHeight = (maxTravel * 2 + 50.0 * scale);
+    final trackWidth = 32.0 * scale;
+    final trackHeight = (maxTravel * 2 + 40.0 * scale);
     final trackRect = Rect.fromCenter(
       center: center,
       width: trackWidth,
       height: trackHeight,
     );
 
-    // Track background
+    // Track rail background (subtle Logitech dark pill)
     final bgPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5)
+      ..color = Colors.black.withOpacity(0.4)
       ..style = PaintingStyle.fill;
     final borderPaint = Paint()
-      ..color = (hasEdgeTriggered ? Colors.blue : Colors.white).withOpacity(0.8)
+      ..color = (hasEdgeTriggered ? Colors.blue : Colors.white).withOpacity(0.6)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.2;
 
     final rrect = RRect.fromRectAndRadius(trackRect, Radius.circular(trackWidth * 0.5));
     canvas.drawRRect(rrect, bgPaint);
     canvas.drawRRect(rrect, borderPaint);
 
-    // Center guideline
-    final linePaint = Paint()
-      ..color = Colors.white.withOpacity(0.3)
-      ..strokeWidth = 2.0;
-    canvas.drawLine(
-      Offset(center.dx, trackRect.top + 20.0 * scale),
-      Offset(center.dx, trackRect.bottom - 20.0 * scale),
-      linePaint,
-    );
-
-    // Arrow indicator dots / ticks along rail
-    final tickPaint = Paint()..color = Colors.white.withOpacity(0.5);
-    for (double dy = -maxTravel; dy <= maxTravel; dy += (maxTravel / 3)) {
-      canvas.drawCircle(Offset(center.dx, center.dy + dy), 2.0 * scale, tickPaint);
+    // Center dotted guideline
+    final tickPaint = Paint()..color = Colors.white.withOpacity(0.3);
+    for (double dy = -maxTravel; dy <= maxTravel; dy += (maxTravel / 4)) {
+      canvas.drawCircle(Offset(center.dx, center.dy + dy), 1.5 * scale, tickPaint);
     }
 
     // Top / Bottom edge highlight
@@ -1195,41 +1198,77 @@ class MouseTrackSliderPainter extends CustomPainter {
         ..color = Colors.blue
         ..style = PaintingStyle.fill;
       if (edgeHoldDirection == -1) {
-        canvas.drawCircle(Offset(center.dx, trackRect.top + 16.0 * scale), 6.0 * scale, edgePaint);
+        canvas.drawCircle(Offset(center.dx, trackRect.top + 14.0 * scale), 5.0 * scale, edgePaint);
       } else if (edgeHoldDirection == 1) {
-        canvas.drawCircle(Offset(center.dx, trackRect.bottom - 16.0 * scale), 6.0 * scale, edgePaint);
+        canvas.drawCircle(Offset(center.dx, trackRect.bottom - 14.0 * scale), 5.0 * scale, edgePaint);
       }
     }
 
-    // Movable thumb slider
-    final thumbWidth = 30.0 * scale;
-    final thumbHeight = 44.0 * scale;
-    final thumbRect = Rect.fromCenter(
-      center: Offset(center.dx, center.dy + sliderY),
-      width: thumbWidth,
-      height: thumbHeight,
-    );
-    final thumbRRect = RRect.fromRectAndRadius(thumbRect, Radius.circular(10.0 * scale));
+    // Movable thumb: Logitech circular middle button with direction arrows
+    final thumbRadius = 16.0 * scale;
+    final thumbCenter = Offset(center.dx, center.dy + sliderY);
 
     final thumbPaint = Paint()
-      ..color = hasEdgeTriggered ? Colors.blue : (sliderY.abs() > 4 ? Colors.blue.withOpacity(0.7) : Colors.grey.shade300)
+      ..color = hasEdgeTriggered
+          ? Colors.blue
+          : (sliderY.abs() > 4 ? Colors.blue.withOpacity(0.85) : Colors.black.withOpacity(0.75))
       ..style = PaintingStyle.fill;
     final thumbBorderPaint = Paint()
-      ..color = Colors.white
+      ..color = hasEdgeTriggered ? Colors.white : Colors.white.withOpacity(0.9)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
 
-    canvas.drawRRect(thumbRRect, thumbPaint);
-    canvas.drawRRect(thumbRRect, thumbBorderPaint);
+    canvas.drawCircle(thumbCenter, thumbRadius, thumbPaint);
+    canvas.drawCircle(thumbCenter, thumbRadius, thumbBorderPaint);
 
-    // Thumb grip ribs
-    final ribPaint = Paint()
-      ..color = Colors.white.withOpacity(0.9)
-      ..strokeWidth = 2.0;
-    final thumbCenterY = center.dy + sliderY;
-    canvas.drawLine(Offset(center.dx - 8 * scale, thumbCenterY - 6 * scale), Offset(center.dx + 8 * scale, thumbCenterY - 6 * scale), ribPaint);
-    canvas.drawLine(Offset(center.dx - 10 * scale, thumbCenterY), Offset(center.dx + 10 * scale, thumbCenterY), ribPaint);
-    canvas.drawLine(Offset(center.dx - 8 * scale, thumbCenterY + 6 * scale), Offset(center.dx + 8 * scale, thumbCenterY + 6 * scale), ribPaint);
+    // Draw icons inside thumb based on movement
+    final isUp = sliderY < -6 * scale;
+    final isDown = sliderY > 6 * scale;
+
+    final arrowPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0 * scale
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    if (isUp) {
+      // Draw upward pointing chevron / arrow
+      final path = Path()
+        ..moveTo(thumbCenter.dx - 6 * scale, thumbCenter.dy + 3 * scale)
+        ..lineTo(thumbCenter.dx, thumbCenter.dy - 4 * scale)
+        ..lineTo(thumbCenter.dx + 6 * scale, thumbCenter.dy + 3 * scale);
+      canvas.drawPath(path, arrowPaint);
+    } else if (isDown) {
+      // Draw downward pointing chevron / arrow
+      final path = Path()
+        ..moveTo(thumbCenter.dx - 6 * scale, thumbCenter.dy - 3 * scale)
+        ..lineTo(thumbCenter.dx, thumbCenter.dy + 4 * scale)
+        ..lineTo(thumbCenter.dx + 6 * scale, thumbCenter.dy - 3 * scale);
+      canvas.drawPath(path, arrowPaint);
+    } else {
+      // Neutral center: dot with two small triangles (Logitech middle button icon)
+      final dotPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(thumbCenter, 2.5 * scale, dotPaint);
+
+      // Top tiny triangle
+      final topTri = Path()
+        ..moveTo(thumbCenter.dx - 3 * scale, thumbCenter.dy - 5 * scale)
+        ..lineTo(thumbCenter.dx, thumbCenter.dy - 9 * scale)
+        ..lineTo(thumbCenter.dx + 3 * scale, thumbCenter.dy - 5 * scale)
+        ..close();
+      canvas.drawPath(topTri, dotPaint);
+
+      // Bottom tiny triangle
+      final botTri = Path()
+        ..moveTo(thumbCenter.dx - 3 * scale, thumbCenter.dy + 5 * scale)
+        ..lineTo(thumbCenter.dx, thumbCenter.dy + 9 * scale)
+        ..lineTo(thumbCenter.dx + 3 * scale, thumbCenter.dy + 5 * scale)
+        ..close();
+      canvas.drawPath(botTri, dotPaint);
+    }
   }
 
   @override
@@ -1241,7 +1280,6 @@ class MouseTrackSliderPainter extends CustomPainter {
   }
 }
 
-// Painter for the bottom center indentation of the drag area
 class BottomIndentPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {

@@ -257,10 +257,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
   }
 
   static const double _trackHeight = _wheelHeight; // 162
-  static const double _thumbHeight = 52.0;
-  static const double _thumbWidth = _wheelWidth - 10; // 40
-  // Maximum travel from center (up is negative, down is positive)
-  static const double _maxTravel = (_trackHeight - _thumbHeight - 16.0) / 2; // (162 - 52 - 16)/2 = 47.0
+  static const double _maxTravel = (_trackHeight - 36.0) / 2; // ~63px travel
 
   void _onSliderPointerDown(PointerDownEvent event) {
     _edgeHoldTimer?.cancel();
@@ -269,6 +266,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
     _edgeHoldDirection = 0;
     setState(() {
       _isSliderActive = true;
+      _sliderThumbY = 0.0;
     });
   }
 
@@ -288,21 +286,27 @@ class _FloatingWheelState extends State<FloatingWheel> {
     final absRatio = ratio.abs();
 
     // 1. Continuous scroll timer based on distance from center
-    _continuousScrollTimer?.cancel();
-    if (absRatio > 0.08) {
-      // ratio < 0 is upward drag -> scroll up (direction = 1 in rustdesk)
-      // ratio > 0 is downward drag -> scroll down (direction = -1 in rustdesk)
+    // Deadzone is small (0.04), and scrolls immediately!
+    if (absRatio > 0.04) {
       final direction = ratio < 0 ? 1 : -1;
-      // Interval varies from 180ms (slow near center) down to 25ms (very fast near ends)
-      final intervalMs = (180 - (absRatio * 155)).clamp(25.0, 180.0).round();
+      // Scroll speed: intervals from 100ms down to 10ms (super fast and responsive)
+      final intervalMs = (100 - (absRatio * 90)).clamp(10.0, 100.0).round();
+      // Send immediate scroll step if timer wasn't running or when direction changed
+      if (_continuousScrollTimer == null) {
+        _inputModel.scroll(direction);
+      }
+      _continuousScrollTimer?.cancel();
       _continuousScrollTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
         _inputModel.scroll(direction);
       });
+    } else {
+      _continuousScrollTimer?.cancel();
+      _continuousScrollTimer = null;
     }
 
     // 2. Edge hold detection (held at top/bottom for >= 0.5s)
-    final isAtTop = ratio <= -0.96;
-    final isAtBottom = ratio >= 0.96;
+    final isAtTop = ratio <= -0.92;
+    final isAtBottom = ratio >= 0.92;
 
     if (isAtTop) {
       if (_edgeHoldDirection != -1) {
@@ -343,15 +347,14 @@ class _FloatingWheelState extends State<FloatingWheel> {
 
   void _onSliderPointerUp(PointerUpEvent event) {
     _continuousScrollTimer?.cancel();
+    _continuousScrollTimer = null;
     _edgeHoldTimer?.cancel();
 
     // If held at top or bottom for >= 0.5s and released at the edge:
     if (_hasEdgeTriggered) {
       if (_edgeHoldDirection == -1) {
-        // Jump to top: VK_HOME
         _inputModel.inputKey('VK_HOME');
       } else if (_edgeHoldDirection == 1) {
-        // Jump to bottom: VK_END
         _inputModel.inputKey('VK_END');
       }
     }
@@ -366,6 +369,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
 
   void _onSliderPointerCancel(PointerCancelEvent event) {
     _continuousScrollTimer?.cancel();
+    _continuousScrollTimer = null;
     _edgeHoldTimer?.cancel();
     setState(() {
       _isSliderActive = false;
@@ -388,6 +392,11 @@ class _FloatingWheelState extends State<FloatingWheel> {
   }
 
   Widget _buildWidget(BuildContext context) {
+    // When idle: compact circle with up/down arrows (like Logitech middle click dot)
+    // When dragged: dynamically morphs into up or down arrow
+    final isUp = _sliderThumbY < -6;
+    final isDown = _sliderThumbY > 6;
+
     return Container(
       width: _wheelWidth,
       height: _wheelHeight,
@@ -415,16 +424,16 @@ class _FloatingWheelState extends State<FloatingWheel> {
                       size: 20,
                       color: (_hasEdgeTriggered && _edgeHoldDirection == -1)
                           ? _kTapDownColor
-                          : _kDefaultBorderColor.withOpacity(0.6),
+                          : _kDefaultBorderColor.withOpacity(0.5),
                     ),
                   ),
                   Expanded(
                     child: Center(
                       child: Container(
-                        width: 3,
+                        width: 2,
                         decoration: BoxDecoration(
-                          color: _kDefaultBorderColor.withOpacity(0.25),
-                          borderRadius: BorderRadius.circular(1.5),
+                          color: _kDefaultBorderColor.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(1),
                         ),
                       ),
                     ),
@@ -436,7 +445,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
                       size: 20,
                       color: (_hasEdgeTriggered && _edgeHoldDirection == 1)
                           ? _kTapDownColor
-                          : _kDefaultBorderColor.withOpacity(0.6),
+                          : _kDefaultBorderColor.withOpacity(0.5),
                     ),
                   ),
                 ],
@@ -444,69 +453,79 @@ class _FloatingWheelState extends State<FloatingWheel> {
             ),
           ),
 
-          // The movable wheel slider thumb
+          // The Logitech middle-button style dot/arrow slider
           Positioned(
-            top: (_trackHeight - _thumbHeight) / 2 + _sliderThumbY,
+            top: (_trackHeight - 34.0) / 2 + _sliderThumbY,
             child: Listener(
               onPointerDown: _onSliderPointerDown,
               onPointerMove: _onSliderPointerMove,
               onPointerUp: _onSliderPointerUp,
               onPointerCancel: _onSliderPointerCancel,
               behavior: HitTestBehavior.opaque,
-              child: Container(
-                width: _thumbWidth,
-                height: _thumbHeight,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 100),
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
-                  color: (_hasEdgeTriggered)
+                  shape: BoxShape.circle,
+                  color: _hasEdgeTriggered
                       ? _kTapDownColor
-                      : (_isSliderActive ? Colors.blue.withOpacity(0.5) : _kDefaultColor),
+                      : (_isSliderActive ? Colors.blue.withOpacity(0.8) : Colors.black.withOpacity(0.6)),
                   border: Border.all(
-                    color: (_hasEdgeTriggered)
+                    color: _hasEdgeTriggered
                         ? Colors.white
-                        : (_isSliderActive ? _kTapDownColor : _kDefaultBorderColor),
-                    width: 1.5,
+                        : (_isSliderActive ? Colors.white : _kDefaultBorderColor),
+                    width: 1.8,
                   ),
-                  borderRadius: BorderRadius.circular(12),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
+                      color: Colors.black.withOpacity(0.4),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     )
                   ],
                 ),
                 child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 16,
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: _kWidgetHighlightColor,
-                          borderRadius: BorderRadius.circular(1),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Container(
-                        width: 22,
-                        height: 2.5,
-                        decoration: BoxDecoration(
-                          color: _kWidgetHighlightColor,
-                          borderRadius: BorderRadius.circular(1),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Container(
-                        width: 16,
-                        height: 2,
-                        decoration: BoxDecoration(
-                          color: _kWidgetHighlightColor,
-                          borderRadius: BorderRadius.circular(1),
-                        ),
-                      ),
-                    ],
-                  ),
+                  child: Builder(builder: (context) {
+                    if (isUp) {
+                      return const Icon(
+                        Icons.keyboard_arrow_up,
+                        color: Colors.white,
+                        size: 24,
+                      );
+                    } else if (isDown) {
+                      return const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Colors.white,
+                        size: 24,
+                      );
+                    } else {
+                      // Idle: small dot with tiny up/down arrows
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.arrow_drop_up,
+                            size: 10,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white,
+                            ),
+                          ),
+                          Icon(
+                            Icons.arrow_drop_down,
+                            size: 10,
+                            color: Colors.white.withOpacity(0.9),
+                          ),
+                        ],
+                      );
+                    }
+                  }),
                 ),
               ),
             ),
