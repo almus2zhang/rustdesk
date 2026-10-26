@@ -246,77 +246,141 @@ fn check_android_usb_present() -> bool {
 }
 
 #[cfg(windows)]
+fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    // 0. Ensure adb server is running
+    let _ = Command::new(adb)
+        .arg("start-server")
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    // 1. Wait for device to be detected and online (poll up to 5 seconds)
+    let mut device_ready = false;
+    let mut unauthorized = false;
+    for _ in 0..10 {
+        if let Ok(output) = Command::new(adb)
+            .arg("devices")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            unauthorized = false;
+            for line in stdout.lines().skip(1) {
+                let line = line.trim();
+                if line.is_empty() {
+                    continue;
+                }
+                if line.contains("unauthorized") {
+                    unauthorized = true;
+                } else if line.contains("device") && !line.contains("offline") {
+                    device_ready = true;
+                    break;
+                }
+            }
+        }
+        if device_ready {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    if !device_ready {
+        if unauthorized {
+            return Err("检测到平板设备未授权 (unauthorized)，请在平板屏幕上点击【始终允许此计算机进行调试】".to_string());
+        } else {
+            return Err("未检测到已连接的 Android 设备，请检查 USB 数据线并确保平板已开启【USB 调试】".to_string());
+        }
+    }
+
+    // 2. Wake screen if asleep and dismiss keyguard
+    let _ = Command::new(adb)
+        .args(["shell", "input", "keyevent", "224"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    let _ = Command::new(adb)
+        .args(["shell", "wm", "dismiss-keyguard"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    // 3. Configure ADB reverse mappings
+    let direct_port = get_configured_direct_port();
+    log::info!("Configuring ADB reverse for direct port: {}", direct_port);
+    let port_str = direct_port.to_string();
+    let mut ports = vec![port_str.as_str()];
+    for p in ["21118", "34567", "21116"] {
+        if !ports.contains(&p) {
+            ports.push(p);
+        }
+    }
+
+    for port in ports {
+        let status = Command::new(adb)
+            .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+        match status {
+            Ok(s) if s.success() => {
+                log::info!("ADB reverse tcp:{} -> tcp:{} succeeded", port, port);
+            }
+            Ok(s) => {
+                log::warn!("ADB reverse tcp:{} returned exit code: {:?}", port, s.code());
+            }
+            Err(e) => {
+                log::error!("Failed to execute adb reverse for tcp:{}: {}", port, e);
+                return Err(format!("ADB 端口反向映射 tcp:{} 失败: {}", port, e));
+            }
+        }
+    }
+
+    // 4. Send intent to awaken tablet with prompt dialog and port info
+    log::info!("Awakening tablet RustDesk via intent with port {}...", direct_port);
+    let start_status = Command::new(adb)
+        .args([
+            "shell",
+            "am",
+            "start",
+            "-a",
+            "com.rustdesk.ACTION_USB_DISPLAY",
+            "-n",
+            "com.carriez.flutter_hbb/.MainActivity",
+            "--es",
+            "port",
+            &direct_port.to_string(),
+            "-f",
+            "0x10000000",
+            "-W",
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+
+    match start_status {
+        Ok(s) if s.success() => {
+            log::info!("Tablet activity launched successfully via ADB");
+            Ok("已成功向 USB 平板发送唤醒与副屏连接请求！".to_string())
+        }
+        Ok(s) => {
+            log::warn!("am start returned code: {:?}", s.code());
+            Ok("已发送副屏连接指令，但启动响应异常，请检查平板".to_string())
+        }
+        Err(e) => {
+            Err(format!("启动平板应用失败: {}", e))
+        }
+    }
+}
+
+#[cfg(windows)]
 fn trigger_usb_device_handshake() {
     thread::spawn(|| {
-        use std::process::Command;
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-        let adb = match get_adb_path() {
-            Some(p) => p,
-            None => {
-                log::warn!("adb executable not found; skipping USB device reverse mapping");
-                return;
+        if let Some(adb) = get_adb_path() {
+            if let Err(e) = execute_usb_handshake(&adb) {
+                log::error!("USB device handshake failed: {}", e);
             }
-        };
-
-        // Dynamically get the configured direct access port
-        let direct_port = get_configured_direct_port();
-        log::info!("Configuring ADB reverse for direct port: {}", direct_port);
-        
-        let port_str = direct_port.to_string();
-        let mut ports = vec![port_str.as_str()];
-        if !ports.contains(&"21118") {
-            ports.push("21118");
+        } else {
+            log::warn!("adb executable not found; skipping USB device handshake");
         }
-        if !ports.contains(&"34567") {
-            ports.push("34567");
-        }
-        if !ports.contains(&"21116") {
-            ports.push("21116");
-        }
-
-        for port in ports {
-            let _ = Command::new(&adb)
-                .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
-        }
-
-        // Send broadcast or intent to awaken tablet with prompt dialog and port info
-        log::info!("Awakening tablet RustDesk with accessory attached intent and port {}...", direct_port);
-        let _ = Command::new(&adb)
-            .args([
-                "shell",
-                "am",
-                "start",
-                "-a",
-                "android.hardware.usb.action.USB_ACCESSORY_ATTACHED",
-                "-n",
-                "com.carriez.flutter_hbb/.MainActivity",
-                "--es",
-                "port",
-                &direct_port.to_string(),
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
-
-        // Also trigger explicit custom action
-        let _ = Command::new(&adb)
-            .args([
-                "shell",
-                "am",
-                "start",
-                "-a",
-                "com.rustdesk.ACTION_USB_DISPLAY",
-                "-n",
-                "com.carriez.flutter_hbb/.MainActivity",
-                "--es",
-                "port",
-                &direct_port.to_string(),
-            ])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
     });
 }
 
@@ -329,57 +393,10 @@ pub fn manual_wake_usb_device() -> String {
         }
     };
 
-    use std::process::Command;
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let output = match Command::new(&adb)
-        .arg("devices")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output() {
-            Ok(o) => o,
-            Err(e) => return format!("执行 adb devices 失败: {}", e),
-        };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut device_found = false;
-    let mut unauthorized = false;
-    for line in stdout.lines().skip(1) {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        if line.contains("unauthorized") {
-            unauthorized = true;
-        } else if line.contains("device") && !line.contains("offline") {
-            device_found = true;
-            break;
-        }
+    match execute_usb_handshake(&adb) {
+        Ok(msg) => msg,
+        Err(err) => err,
     }
-
-    if !device_found {
-        if unauthorized {
-            return "检测到平板设备未授权 (unauthorized)，请在平板屏幕上点击【始终允许此计算机进行调试】".to_string();
-        } else {
-            return "未检测到已连接的 Android 设备，请检查 USB 数据线并确保平板已开启【USB 调试】".to_string();
-        }
-    }
-
-    // 1. Wake screen if asleep
-    let _ = Command::new(&adb)
-        .args(["shell", "input", "keyevent", "224"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-    // 2. Dismiss keyguard
-    let _ = Command::new(&adb)
-        .args(["shell", "wm", "dismiss-keyguard"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-
-    // 3. Trigger handshake, reverse ports and launch app
-    trigger_usb_device_handshake();
-
-    "已成功向 USB 平板发送唤醒与副屏连接请求！".to_string()
 }
 
 #[cfg(not(windows))]

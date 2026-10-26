@@ -75,6 +75,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final _blockableOverlayState = BlockableOverlayState();
   StreamSubscription? _displaysSubscription;
   bool _hasAutoSwitchedDisplay = false;
+  int _prevDisplayCount = 0;
 
   final keyboardVisibilityController = KeyboardVisibilityController();
   late final StreamSubscription<bool> keyboardSubscription;
@@ -438,35 +439,30 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
-    if (_hasAutoSwitchedDisplay || displays.isEmpty) return;
+    if (displays.isEmpty) return;
 
-    final saved =
-        bind.mainGetPeerOptionSync(id: widget.id, key: 'usb_selected_display');
-    final savedIndex = int.tryParse(saved);
+    final currentCount = displays.length;
+    // Check if a new display was dynamically added (e.g. from 1 to 2, or 2 to 3, etc.)
+    final bool isNewlyAddedDisplay =
+        _prevDisplayCount > 0 && currentCount > _prevDisplayCount;
+    _prevDisplayCount = currentCount;
 
-    int targetIndex = -1;
-    if (savedIndex != null && savedIndex >= 0 && savedIndex < displays.length) {
-      targetIndex = savedIndex;
-    } else if (displays.length > 1) {
-      for (var i = 0; i < displays.length; i++) {
-        if (displays[i].isVirtualDisplayResolution) {
-          targetIndex = i;
-          break;
+    if (currentCount > 1) {
+      if (isNewlyAddedDisplay || !_hasAutoSwitchedDisplay) {
+        _hasAutoSwitchedDisplay = true;
+        // On Windows host, the newly plugged virtual display is appended at the end
+        final targetIndex = currentCount - 1;
+        if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
+          debugPrint(
+              "Auto-switching USB display to newly added monitor $targetIndex (total $currentCount displays)");
+          openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
+          BotToast.showText(
+            text: localeName.startsWith('zh')
+                ? '\xe5\xb7\xb2\xe8\x87\xaa\xe5\x8a\xa8\xe5\x88\x87\xe6\x8d\xa2\xe8\x87\xb3\xe6\x96\xb0\xe5\xa2\x9e\xe8\x99\x9a\xe6\x8b\x9f\xe5\x89\xaf\xe5\xb1\x8f (\xe5\xb1\x8f\xe5\xb9\x95 ${targetIndex + 1})'
+                : 'Auto-switched to new secondary display (Screen ${targetIndex + 1})',
+          );
         }
       }
-      if (targetIndex == -1) {
-        targetIndex = displays.length - 1;
-      }
-    }
-
-    if (targetIndex != -1) {
-      _hasAutoSwitchedDisplay = true;
-      if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
-        debugPrint("Auto-switching USB display to monitor $targetIndex");
-        openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
-      }
-      bind.mainSetPeerOptionSync(
-          id: widget.id, key: 'usb_selected_display', value: targetIndex.toString());
     }
   }
 
