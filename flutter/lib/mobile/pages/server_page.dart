@@ -899,6 +899,64 @@ class ClientInfo extends StatelessWidget {
   }
 }
 
+void showUsbDisplayDialog(dynamic arguments) {
+  debugPrint("USB Display Accessory Attached: $arguments");
+  final ctx = Get.context;
+  if (ctx != null) {
+    final isZh = localeName.startsWith('zh');
+    gFFI.dialogManager.dismissByTag('usb-display-prompt');
+    gFFI.dialogManager.show(
+      tag: 'usb-display-prompt',
+      (setState, close, context) {
+        return CustomAlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.usb, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              Text(isZh ? '检测到 USB 电脑连接' : 'USB Host Connected'),
+            ],
+          ),
+          content: Text(
+            isZh
+                ? '是否将当前平板作为电脑的扩展副屏使用？'
+                : 'Do you want to use this tablet as a secondary display?',
+            style: const TextStyle(fontSize: 16),
+          ),
+          actions: [
+            dialogButton(
+              translate('Cancel'),
+              onPressed: close,
+              isOutline: true,
+            ),
+            dialogButton(
+              isZh ? '开启副屏' : 'Start Display',
+              onPressed: () {
+                close();
+                var targetId = "127.0.0.1";
+                if (arguments is Map && arguments["port"] != null) {
+                  final portStr = arguments["port"].toString();
+                  if (portStr.isNotEmpty && portStr != "0") {
+                    targetId = "127.0.0.1:$portStr";
+                  }
+                }
+                Navigator.push(
+                  ctx,
+                  MaterialPageRoute(
+                    builder: (BuildContext context) => RemotePage(
+                      id: targetId,
+                      isUsbDisplay: true,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 void androidChannelInit() {
   gFFI.setMethodCallHandler((method, arguments) {
     debugPrint("flutter got android msg,$method,$arguments");
@@ -906,68 +964,12 @@ void androidChannelInit() {
       switch (method) {
         case "on_usb_accessory_attached":
           {
-            debugPrint("USB Display Accessory Attached: $arguments");
-            final ctx = Get.context;
-            if (ctx != null) {
-              final isZh = localeName.startsWith('zh');
-              gFFI.dialogManager.dismissAll();
-              gFFI.dialogManager.show((setState, close, context) {
-                return CustomAlertDialog(
-                  title: Row(
-                    children: [
-                      const Icon(Icons.usb, color: Colors.blueAccent),
-                      const SizedBox(width: 8),
-                      Text(isZh ? '检测到 USB 电脑连接' : 'USB Host Connected'),
-                    ],
-                  ),
-                  content: Text(
-                    isZh
-                        ? '是否将当前平板作为电脑的扩展副屏使用？'
-                        : 'Do you want to use this tablet as a secondary display?',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  actions: [
-                    dialogButton(
-                      translate('Cancel'),
-                      onPressed: close,
-                      isOutline: true,
-                    ),
-                    dialogButton(
-                      isZh ? '开启副屏' : 'Start Display',
-                      onPressed: () {
-                        close();
-                        var targetId = "127.0.0.1";
-                        if (arguments is Map && arguments["port"] != null) {
-                          final portStr = arguments["port"].toString();
-                          if (portStr.isNotEmpty && portStr != "0") {
-                            targetId = "127.0.0.1:$portStr";
-                          }
-                        }
-                        Navigator.push(
-                          ctx,
-                          MaterialPageRoute(
-                            builder: (BuildContext context) => RemotePage(
-                              id: targetId,
-                              isUsbDisplay: true,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                );
-              });
-            }
+            showUsbDisplayDialog(arguments);
             break;
           }
         case "on_usb_accessory_detached":
           {
             debugPrint("USB Display Accessory Detached");
-            final ctx = Get.context;
-            if (ctx != null) {
-              gFFI.dialogManager.dismissAll();
-              Navigator.of(ctx).popUntil((route) => route.isFirst);
-            }
             break;
           }
         case "start_capture":
@@ -1019,6 +1021,19 @@ void androidChannelInit() {
       debugPrintStack(label: "MethodCallHandler err:$e");
     }
     return "";
+  });
+
+  // Query pending usb accessory on startup (in case app was cold-started by USB intent)
+  Future.delayed(const Duration(milliseconds: 600), () async {
+    try {
+      final res = await gFFI.invokeMethod("check_usb_accessory");
+      if (res != null) {
+        debugPrint("check_usb_accessory returned pending accessory: $res");
+        showUsbDisplayDialog(res);
+      }
+    } catch (e) {
+      debugPrint("check_usb_accessory error: $e");
+    }
   });
 }
 

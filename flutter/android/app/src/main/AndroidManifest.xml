@@ -81,6 +81,7 @@
             <!-- Intent for USB Accessory / Direct Secondary Display -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
+                <action android:name="com.rustdesk.ACTION_USB_DISPLAY" />
             </intent-filter>
             <meta-data
                 android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"

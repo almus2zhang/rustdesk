@@ -62,6 +62,7 @@ class MainActivity : FlutterActivity() {
         private var _rdClipboardManager: RdClipboardManager? = null
         val rdClipboardManager: RdClipboardManager?
             get() = _rdClipboardManager;
+        var pendingUsbAttachMap: Map<String, String>? = null
     }
 
     private val channelTag = "mChannel"
@@ -83,6 +84,13 @@ class MainActivity : FlutterActivity() {
             channelTag
         )
         initFlutterChannel(flutterMethodChannel!!)
+        pendingUsbAttachMap?.let {
+            val map = it
+            pendingUsbAttachMap = null
+            activity.runOnUiThread {
+                flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", map)
+            }
+        }
         thread {
             try {
                 setCodecInfo()
@@ -156,8 +164,13 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
-            activity.runOnUiThread {
-                flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", mapOf("model" to model, "port" to port))
+            val map = mapOf("model" to model, "port" to port)
+            if (flutterMethodChannel != null) {
+                activity.runOnUiThread {
+                    flutterMethodChannel?.invokeMethod("on_usb_accessory_attached", map)
+                }
+            } else {
+                pendingUsbAttachMap = map
             }
         }
     }
@@ -194,6 +207,12 @@ class MainActivity : FlutterActivity() {
         flutterMethodChannel.setMethodCallHandler { call, result ->
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                "check_usb_accessory" -> {
+                    val map = pendingUsbAttachMap
+                    pendingUsbAttachMap = null
+                    result.success(map)
+                    return@setMethodCallHandler
+                }
                 "get_screen_metrics" -> {
                     val dm = DisplayMetrics()
                     windowManager.defaultDisplay.getRealMetrics(dm)

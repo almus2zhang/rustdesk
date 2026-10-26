@@ -109,22 +109,28 @@ pub fn start_usb_display_service() {
             thread::spawn(|| {
                 log::info!("USB secondary display monitor service started");
                 let mut last_detected_device = false;
+                let mut missed_counts = 0;
                 loop {
-                    // Poll at lower interval for responsive hotplug detection
-                    thread::sleep(Duration::from_millis(1000));
+                    // Poll at 2-second interval to prevent adb lock contention
+                    thread::sleep(Duration::from_millis(2000));
                     
-                    // Check if an Android USB device / tablet is attached
                     let has_device = check_android_usb_present();
-                    if has_device && !last_detected_device {
-                        log::info!("Android USB device attachment detected! Initiating AOA handshake and dynamic port map...");
-                        last_detected_device = true;
-                        
-                        // Execute AOA hardware handshake & port mapping trigger
-                        trigger_usb_device_handshake();
-                    } else if !has_device && last_detected_device {
-                        log::info!("Android USB device detached. Cleaning up secondary display...");
-                        last_detected_device = false;
-                        plug_out_usb_display().ok();
+                    if has_device {
+                        missed_counts = 0;
+                        if !last_detected_device {
+                            log::info!("Android USB device attachment detected! Initiating handshake and reverse port map...");
+                            last_detected_device = true;
+                            trigger_usb_device_handshake();
+                        }
+                    } else if last_detected_device {
+                        missed_counts += 1;
+                        // Debounce disconnect: require 3 consecutive misses (6 seconds) before treating as detached
+                        if missed_counts >= 3 {
+                            log::info!("Android USB device detached. Cleaning up secondary display...");
+                            last_detected_device = false;
+                            missed_counts = 0;
+                            plug_out_usb_display().ok();
+                        }
                     }
                 }
             });
@@ -138,7 +144,43 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-    // 1. Try PATH
+    // 0. Explicit user config or environment variable
+    let cfg_adb = Config::get_option("adb-path");
+    if !cfg_adb.is_empty() {
+        let p = std::path::PathBuf::from(&cfg_adb);
+        if p.is_file() {
+            return Some(p);
+        } else if p.join("adb.exe").is_file() {
+            return Some(p.join("adb.exe"));
+        }
+    }
+    if let Ok(env_adb) = std::env::var("ADB_PATH") {
+        let p = std::path::PathBuf::from(&env_adb);
+        if p.is_file() {
+            return Some(p);
+        } else if p.join("adb.exe").is_file() {
+            return Some(p.join("adb.exe"));
+        }
+    }
+
+    // 1. Common custom directories (including user's C:\adbtool)
+    let custom_paths = [
+        "C:\\adbtool\\adb.exe",
+        "C:\\adbtools\\adb.exe",
+        "C:\\adb\\adb.exe",
+        "D:\\adbtool\\adb.exe",
+        "D:\\adbtools\\adb.exe",
+        "D:\\adb\\adb.exe",
+    ];
+    for &p in &custom_paths {
+        let path = std::path::PathBuf::from(p);
+        if path.exists() {
+            log::info!("Found adb at custom path: {}", p);
+            return Some(path);
+        }
+    }
+
+    // 2. Try PATH
     if let Ok(out) = Command::new("adb")
         .arg("version")
         .creation_flags(CREATE_NO_WINDOW)
@@ -148,7 +190,8 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
             return Some(std::path::PathBuf::from("adb"));
         }
     }
-    // 2. Try common Android SDK platform-tools locations
+
+    // 3. Try common Android SDK platform-tools locations
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
         let p = std::path::Path::new(&local_app_data)
             .join("Android")
@@ -219,12 +262,15 @@ fn trigger_usb_device_handshake() {
 
         // Dynamically get the configured direct access port
         let direct_port = get_configured_direct_port();
-        log::info!("Configuring ADB reverse for dynamically configured direct port: {}", direct_port);
+        log::info!("Configuring ADB reverse for direct port: {}", direct_port);
         
         let port_str = direct_port.to_string();
         let mut ports = vec![port_str.as_str()];
         if !ports.contains(&"21118") {
             ports.push("21118");
+        }
+        if !ports.contains(&"34567") {
+            ports.push("34567");
         }
         if !ports.contains(&"21116") {
             ports.push("21116");
@@ -246,6 +292,23 @@ fn trigger_usb_device_handshake() {
                 "start",
                 "-a",
                 "android.hardware.usb.action.USB_ACCESSORY_ATTACHED",
+                "-n",
+                "com.carriez.flutter_hbb/.MainActivity",
+                "--es",
+                "port",
+                &direct_port.to_string(),
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+
+        // Also trigger explicit custom action
+        let _ = Command::new(&adb)
+            .args([
+                "shell",
+                "am",
+                "start",
+                "-a",
+                "com.rustdesk.ACTION_USB_DISPLAY",
                 "-n",
                 "com.carriez.flutter_hbb/.MainActivity",
                 "--es",
