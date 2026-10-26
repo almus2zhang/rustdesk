@@ -2,7 +2,9 @@
 
 import 'dart:async';
 import 'dart:math';
+import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/input_model.dart';
 import 'package:flutter_hbb/models/model.dart';
@@ -205,6 +207,12 @@ class _FloatingMouseState extends State<FloatingMouse> {
   Offset? _scrollCenter;
   double _snappedPointerAngle = 0.0;
   double? _lastSnappedAngle;
+
+  double _mouseSliderY = 0.0;
+  Timer? _continuousScrollTimer;
+  Timer? _edgeHoldTimer;
+  int _edgeHoldDirection = 0;
+  bool _hasEdgeTriggered = false;
   late final _CanvasScrollState _canvasScrollState;
   Orientation? _previousOrientation;
   Timer? _collapseTimer;
@@ -508,6 +516,8 @@ class _FloatingMouseState extends State<FloatingMouse> {
     return rect.contains(pos);
   }
 
+  double get _maxMouseTravel => 80.0 * _mouseScale;
+
   void _handlePointerDown(PointerDownEvent event) {
     _resetCollapseTimer();
     if (_isScrolling) return;
@@ -518,64 +528,117 @@ class _FloatingMouseState extends State<FloatingMouse> {
       final RenderBox? mouseBox = contextMouse.findRenderObject() as RenderBox?;
       if (mouseBox == null || !mouseBox.attached) return;
 
-      // Only enter scroll mode when all RenderObjects are available.
       final Offset mouseTopLeft = mouseBox.localToGlobal(Offset.zero);
       final Size mouseSize = mouseBox.size;
       final Offset center =
           mouseTopLeft + Offset(mouseSize.width / 2, mouseSize.height / 2);
 
-      final vector = event.position - center;
-      final rawAngle = atan2(vector.dy, vector.dx);
-
-      final closestDotIndex = (rawAngle / _kDotAngle).round();
-      _lastSnappedAngle = closestDotIndex * _kDotAngle;
+      _edgeHoldTimer?.cancel();
+      _continuousScrollTimer?.cancel();
+      _hasEdgeTriggered = false;
+      _edgeHoldDirection = 0;
 
       setState(() {
         _isScrolling = true;
         _cursorModel.blockEvents = true;
         _scrollCenter = center;
-        _snappedPointerAngle = _lastSnappedAngle!;
+        _mouseSliderY = (event.position.dy - center.dy).clamp(-_maxMouseTravel, _maxMouseTravel);
       });
+      _handleMouseSliderScrolling();
     }
   }
 
   void _handlePointerMove(PointerMoveEvent event) {
     _resetCollapseTimer();
-    if (!_isScrolling || _scrollCenter == null || _lastSnappedAngle == null) {
+    if (!_isScrolling || _scrollCenter == null) {
       return;
     }
 
-    final touchPosition = event.position;
-    final vector = touchPosition - _scrollCenter!;
-    final rawCurrentAngle = atan2(vector.dy, vector.dx);
+    final newY = (event.position.dy - _scrollCenter!.dy).clamp(-_maxMouseTravel, _maxMouseTravel);
+    setState(() {
+      _mouseSliderY = newY;
+    });
+    _handleMouseSliderScrolling();
+  }
 
-    final closestDotIndex = (rawCurrentAngle / _kDotAngle).round();
-    final snappedCurrentAngle = closestDotIndex * _kDotAngle;
+  void _handleMouseSliderScrolling() {
+    final maxT = _maxMouseTravel;
+    if (maxT <= 0) return;
+    final ratio = _mouseSliderY / maxT; // -1.0 to 1.0
+    final absRatio = ratio.abs();
 
-    if (snappedCurrentAngle == _lastSnappedAngle) return;
-
-    double deltaAngle = snappedCurrentAngle - _lastSnappedAngle!;
-
-    if (deltaAngle.abs() > pi) {
-      deltaAngle = (deltaAngle > 0) ? deltaAngle - 2 * pi : deltaAngle + 2 * pi;
+    // 1. Continuous scroll timer based on distance from center
+    _continuousScrollTimer?.cancel();
+    if (absRatio > 0.08) {
+      final direction = ratio < 0 ? 1 : -1;
+      final intervalMs = (180 - (absRatio * 155)).clamp(25.0, 180.0).round();
+      _continuousScrollTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
+        _inputModel.scroll(direction);
+      });
     }
 
-    _lastSnappedAngle = snappedCurrentAngle;
+    // 2. Edge hold detection (held at top/bottom for >= 0.5s)
+    final isAtTop = ratio <= -0.96;
+    final isAtBottom = ratio >= 0.96;
 
-    setState(() {
-      _snappedPointerAngle = snappedCurrentAngle;
-      _inputModel.scroll(deltaAngle > 0 ? -1 : 1);
-    });
+    if (isAtTop) {
+      if (_edgeHoldDirection != -1) {
+        _edgeHoldTimer?.cancel();
+        _edgeHoldDirection = -1;
+        _hasEdgeTriggered = false;
+        _edgeHoldTimer = Timer(const Duration(milliseconds: 500), () {
+          if (mounted && _isScrolling && _edgeHoldDirection == -1) {
+            _hasEdgeTriggered = true;
+            BotToast.showText(
+              text: localeName.startsWith('zh') ? '松开跳转至最顶部' : 'Release to jump to Top',
+            );
+            setState(() {});
+          }
+        });
+      }
+    } else if (isAtBottom) {
+      if (_edgeHoldDirection != 1) {
+        _edgeHoldTimer?.cancel();
+        _edgeHoldDirection = 1;
+        _hasEdgeTriggered = false;
+        _edgeHoldTimer = Timer(const Duration(milliseconds: 500), () {
+          if (mounted && _isScrolling && _edgeHoldDirection == 1) {
+            _hasEdgeTriggered = true;
+            BotToast.showText(
+              text: localeName.startsWith('zh') ? '松开跳转至最底部' : 'Release to jump to Bottom',
+            );
+            setState(() {});
+          }
+        });
+      }
+    } else {
+      _edgeHoldTimer?.cancel();
+      _edgeHoldDirection = 0;
+      _hasEdgeTriggered = false;
+    }
   }
 
   void _tryCancelScrolling() {
     _resetCollapseTimer();
+    _continuousScrollTimer?.cancel();
+    _edgeHoldTimer?.cancel();
+
+    if (_hasEdgeTriggered) {
+      if (_edgeHoldDirection == -1) {
+        _inputModel.inputKey('VK_HOME');
+      } else if (_edgeHoldDirection == 1) {
+        _inputModel.inputKey('VK_END');
+      }
+    }
+
     if (!_isScrolling) return;
     setState(() {
       _isScrolling = false;
       _cursorModel.blockEvents = false;
-      _lastSnappedAngle = null;
       _scrollCenter = null;
+      _mouseSliderY = 0.0;
+      _edgeHoldDirection = 0;
+      _hasEdgeTriggered = false;
     });
   }
 
@@ -629,10 +692,13 @@ class _FloatingMouseState extends State<FloatingMouse> {
                   final Offset localCenter =
                       _scrollCenter! - customPaintTopLeft;
                   return CustomPaint(
-                    painter: DottedCirclePainter(
+                    painter: MouseTrackSliderPainter(
                       center: localCenter,
-                      pointerAngle: _snappedPointerAngle,
+                      sliderY: _mouseSliderY,
+                      maxTravel: _maxMouseTravel,
                       scale: _mouseScale,
+                      hasEdgeTriggered: _hasEdgeTriggered,
+                      edgeHoldDirection: _edgeHoldDirection,
                     ),
                   );
                 },
@@ -1067,47 +1133,111 @@ class _MouseBodyState extends State<MouseBody> {
   }
 }
 
-class DottedCirclePainter extends CustomPainter {
+class MouseTrackSliderPainter extends CustomPainter {
   final Offset center;
-  final double pointerAngle;
+  final double sliderY;
+  final double maxTravel;
   final double scale;
-  final Offset? scrollWheelCenter;
+  final bool hasEdgeTriggered;
+  final int edgeHoldDirection;
 
-  DottedCirclePainter(
-      {required this.center,
-      required this.pointerAngle,
-      required this.scale,
-      this.scrollWheelCenter});
+  MouseTrackSliderPainter({
+    required this.center,
+    required this.sliderY,
+    required this.maxTravel,
+    required this.scale,
+    required this.hasEdgeTriggered,
+    required this.edgeHoldDirection,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final radius = 48.0 * scale;
-    final circlePaint = Paint()
-      ..color = Colors.grey.shade400
-      ..style = PaintingStyle.fill;
-    final pointerPaint = Paint()
-      ..color = Colors.blue
-      ..style = PaintingStyle.fill;
+    final trackWidth = 36.0 * scale;
+    final trackHeight = (maxTravel * 2 + 50.0 * scale);
+    final trackRect = Rect.fromCenter(
+      center: center,
+      width: trackWidth,
+      height: trackHeight,
+    );
 
-    const dotRadius = 2.5;
-    for (int i = 0; i < _kDotCount; i += 3) {
-      final angle = i * _kDotAngle;
-      final dotX = center.dx + radius * cos(angle);
-      final dotY = center.dy + radius * sin(angle);
-      canvas.drawCircle(Offset(dotX, dotY), dotRadius, circlePaint);
+    // Track background
+    final bgPaint = Paint()
+      ..color = Colors.black.withOpacity(0.5)
+      ..style = PaintingStyle.fill;
+    final borderPaint = Paint()
+      ..color = (hasEdgeTriggered ? Colors.blue : Colors.white).withOpacity(0.8)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final rrect = RRect.fromRectAndRadius(trackRect, Radius.circular(trackWidth * 0.5));
+    canvas.drawRRect(rrect, bgPaint);
+    canvas.drawRRect(rrect, borderPaint);
+
+    // Center guideline
+    final linePaint = Paint()
+      ..color = Colors.white.withOpacity(0.3)
+      ..strokeWidth = 2.0;
+    canvas.drawLine(
+      Offset(center.dx, trackRect.top + 20.0 * scale),
+      Offset(center.dx, trackRect.bottom - 20.0 * scale),
+      linePaint,
+    );
+
+    // Arrow indicator dots / ticks along rail
+    final tickPaint = Paint()..color = Colors.white.withOpacity(0.5);
+    for (double dy = -maxTravel; dy <= maxTravel; dy += (maxTravel / 3)) {
+      canvas.drawCircle(Offset(center.dx, center.dy + dy), 2.0 * scale, tickPaint);
     }
 
-    final pointerX = center.dx + radius * cos(pointerAngle);
-    final pointerY = center.dy + radius * sin(pointerAngle);
-    final pointerPosition = Offset(pointerX, pointerY);
-    canvas.drawCircle(pointerPosition, 8.0, pointerPaint);
+    // Top / Bottom edge highlight
+    if (hasEdgeTriggered) {
+      final edgePaint = Paint()
+        ..color = Colors.blue
+        ..style = PaintingStyle.fill;
+      if (edgeHoldDirection == -1) {
+        canvas.drawCircle(Offset(center.dx, trackRect.top + 16.0 * scale), 6.0 * scale, edgePaint);
+      } else if (edgeHoldDirection == 1) {
+        canvas.drawCircle(Offset(center.dx, trackRect.bottom - 16.0 * scale), 6.0 * scale, edgePaint);
+      }
+    }
+
+    // Movable thumb slider
+    final thumbWidth = 30.0 * scale;
+    final thumbHeight = 44.0 * scale;
+    final thumbRect = Rect.fromCenter(
+      center: Offset(center.dx, center.dy + sliderY),
+      width: thumbWidth,
+      height: thumbHeight,
+    );
+    final thumbRRect = RRect.fromRectAndRadius(thumbRect, Radius.circular(10.0 * scale));
+
+    final thumbPaint = Paint()
+      ..color = hasEdgeTriggered ? Colors.blue : (sliderY.abs() > 4 ? Colors.blue.withOpacity(0.7) : Colors.grey.shade300)
+      ..style = PaintingStyle.fill;
+    final thumbBorderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    canvas.drawRRect(thumbRRect, thumbPaint);
+    canvas.drawRRect(thumbRRect, thumbBorderPaint);
+
+    // Thumb grip ribs
+    final ribPaint = Paint()
+      ..color = Colors.white.withOpacity(0.9)
+      ..strokeWidth = 2.0;
+    final thumbCenterY = center.dy + sliderY;
+    canvas.drawLine(Offset(center.dx - 8 * scale, thumbCenterY - 6 * scale), Offset(center.dx + 8 * scale, thumbCenterY - 6 * scale), ribPaint);
+    canvas.drawLine(Offset(center.dx - 10 * scale, thumbCenterY), Offset(center.dx + 10 * scale, thumbCenterY), ribPaint);
+    canvas.drawLine(Offset(center.dx - 8 * scale, thumbCenterY + 6 * scale), Offset(center.dx + 8 * scale, thumbCenterY + 6 * scale), ribPaint);
   }
 
   @override
-  bool shouldRepaint(covariant DottedCirclePainter oldDelegate) {
-    return oldDelegate.pointerAngle != pointerAngle ||
+  bool shouldRepaint(covariant MouseTrackSliderPainter oldDelegate) {
+    return oldDelegate.sliderY != sliderY ||
         oldDelegate.center != center ||
-        oldDelegate.scrollWheelCenter != scrollWheelCenter;
+        oldDelegate.hasEdgeTriggered != hasEdgeTriggered ||
+        oldDelegate.edgeHoldDirection != edgeHoldDirection;
   }
 }
 

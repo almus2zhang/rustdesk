@@ -257,6 +257,13 @@ fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
         .creation_flags(CREATE_NO_WINDOW)
         .status();
 
+    // 0.1 Explicitly run 'adb wait-for-device' / transport ping (similar to entering interactive shell)
+    // This activates ADB transport on USB controllers that suspend endpoints until a shell session requests it.
+    let _ = Command::new(adb)
+        .args(["wait-for-device", "shell", "echo", "rustdesk_awake"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
     // 1. Wait for device to be detected and online (poll up to 5 seconds)
     let mut device_ready = false;
     let mut unauthorized = false;

@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:bot_toast/bot_toast.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_hbb/common.dart';
@@ -117,16 +118,20 @@ class _FloatingWheelState extends State<FloatingWheel> {
   bool _isInitialized = false;
   Rect? _lastBlockedRect;
 
-  bool _isUpDown = false;
   bool _isMidDown = false;
-  bool _isDownDown = false;
 
   Orientation? _previousOrientation;
   Offset _preSavedPos = Offset.zero;
   bool _isDragging = false;
   Offset _startPointerPos = Offset.zero;
 
-  Timer? _scrollTimer;
+  // Track slider state
+  double _sliderThumbY = 0.0; // Current thumb offset from track center (-maxTravel to +maxTravel)
+  bool _isSliderActive = false;
+  Timer? _continuousScrollTimer;
+  Timer? _edgeHoldTimer;
+  int _edgeHoldDirection = 0; // -1: top, 1: bottom, 0: none
+  bool _hasEdgeTriggered = false;
 
   InputModel get _inputModel => widget.inputModel;
   CursorModel get _cursorModel => widget.cursorModel;
@@ -231,7 +236,8 @@ class _FloatingWheelState extends State<FloatingWheel> {
 
   @override
   void dispose() {
-    _scrollTimer?.cancel();
+    _continuousScrollTimer?.cancel();
+    _edgeHoldTimer?.cancel();
     if (_lastBlockedRect != null) {
       _cursorModel.removeBlockedRect(_lastBlockedRect!);
     }
@@ -250,59 +256,123 @@ class _FloatingWheelState extends State<FloatingWheel> {
     _previousOrientation = currentOrientation;
   }
 
-  Widget _buildUpDownButton(
-      void Function(PointerDownEvent) onPointerDown,
-      void Function(PointerUpEvent) onPointerUp,
-      void Function(PointerCancelEvent) onPointerCancel,
-      bool Function() flagGetter,
-      BorderRadiusGeometry borderRadius,
-      IconData iconData) {
-    Offset arrowStartPos = Offset.zero;
-    bool arrowIsDragging = false;
-    return Listener(
-      onPointerDown: (event) {
-        arrowStartPos = event.position;
-        arrowIsDragging = false;
-        onPointerDown(event);
-      },
-      onPointerMove: (event) {
-        if (!arrowIsDragging &&
-            (event.position - arrowStartPos).distance > 12.0) {
-          arrowIsDragging = true;
-          _stopScrollTimer();
-        }
-        if (arrowIsDragging) {
-          _onMoveUpdateDelta(event.delta);
-        }
-      },
-      onPointerUp: (event) {
-        if (arrowIsDragging) {
-          _trySavePosition();
-        }
-        arrowIsDragging = false;
-        onPointerUp(event);
-      },
-      onPointerCancel: (event) {
-        if (arrowIsDragging) {
-          _trySavePosition();
-        }
-        arrowIsDragging = false;
-        onPointerCancel(event);
-      },
-      child: Container(
-        width: _wheelWidth,
-        height: 55,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: _kDefaultColor,
-          border: Border.all(
-              color: flagGetter() ? _kTapDownColor : _kDefaultBorderColor,
-              width: 1),
-          borderRadius: borderRadius,
-        ),
-        child: Icon(iconData, color: _kDefaultBorderColor, size: 32),
-      ),
-    );
+  static const double _trackHeight = _wheelHeight; // 162
+  static const double _thumbHeight = 52.0;
+  static const double _thumbWidth = _wheelWidth - 10; // 40
+  // Maximum travel from center (up is negative, down is positive)
+  static const double _maxTravel = (_trackHeight - _thumbHeight - 16.0) / 2; // (162 - 52 - 16)/2 = 47.0
+
+  void _onSliderPointerDown(PointerDownEvent event) {
+    _edgeHoldTimer?.cancel();
+    _continuousScrollTimer?.cancel();
+    _hasEdgeTriggered = false;
+    _edgeHoldDirection = 0;
+    setState(() {
+      _isSliderActive = true;
+    });
+  }
+
+  void _onSliderPointerMove(PointerMoveEvent event) {
+    if (!_isSliderActive) return;
+
+    final newY = (_sliderThumbY + event.delta.dy).clamp(-_maxTravel, _maxTravel);
+    setState(() {
+      _sliderThumbY = newY;
+    });
+
+    _handleSliderScrolling();
+  }
+
+  void _handleSliderScrolling() {
+    final ratio = _sliderThumbY / _maxTravel; // -1.0 to 1.0
+    final absRatio = ratio.abs();
+
+    // 1. Continuous scroll timer based on distance from center
+    _continuousScrollTimer?.cancel();
+    if (absRatio > 0.08) {
+      // ratio < 0 is upward drag -> scroll up (direction = 1 in rustdesk)
+      // ratio > 0 is downward drag -> scroll down (direction = -1 in rustdesk)
+      final direction = ratio < 0 ? 1 : -1;
+      // Interval varies from 180ms (slow near center) down to 25ms (very fast near ends)
+      final intervalMs = (180 - (absRatio * 155)).clamp(25.0, 180.0).round();
+      _continuousScrollTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
+        _inputModel.scroll(direction);
+      });
+    }
+
+    // 2. Edge hold detection (held at top/bottom for >= 0.5s)
+    final isAtTop = ratio <= -0.96;
+    final isAtBottom = ratio >= 0.96;
+
+    if (isAtTop) {
+      if (_edgeHoldDirection != -1) {
+        _edgeHoldTimer?.cancel();
+        _edgeHoldDirection = -1;
+        _hasEdgeTriggered = false;
+        _edgeHoldTimer = Timer(const Duration(milliseconds: 500), () {
+          if (mounted && _isSliderActive && _edgeHoldDirection == -1) {
+            _hasEdgeTriggered = true;
+            BotToast.showText(
+              text: localeName.startsWith('zh') ? '松开跳转至最顶部' : 'Release to jump to Top',
+            );
+            setState(() {});
+          }
+        });
+      }
+    } else if (isAtBottom) {
+      if (_edgeHoldDirection != 1) {
+        _edgeHoldTimer?.cancel();
+        _edgeHoldDirection = 1;
+        _hasEdgeTriggered = false;
+        _edgeHoldTimer = Timer(const Duration(milliseconds: 500), () {
+          if (mounted && _isSliderActive && _edgeHoldDirection == 1) {
+            _hasEdgeTriggered = true;
+            BotToast.showText(
+              text: localeName.startsWith('zh') ? '松开跳转至最底部' : 'Release to jump to Bottom',
+            );
+            setState(() {});
+          }
+        });
+      }
+    } else {
+      _edgeHoldTimer?.cancel();
+      _edgeHoldDirection = 0;
+      _hasEdgeTriggered = false;
+    }
+  }
+
+  void _onSliderPointerUp(PointerUpEvent event) {
+    _continuousScrollTimer?.cancel();
+    _edgeHoldTimer?.cancel();
+
+    // If held at top or bottom for >= 0.5s and released at the edge:
+    if (_hasEdgeTriggered) {
+      if (_edgeHoldDirection == -1) {
+        // Jump to top: VK_HOME
+        _inputModel.inputKey('VK_HOME');
+      } else if (_edgeHoldDirection == 1) {
+        // Jump to bottom: VK_END
+        _inputModel.inputKey('VK_END');
+      }
+    }
+
+    setState(() {
+      _isSliderActive = false;
+      _sliderThumbY = 0.0; // Spring back to center
+      _edgeHoldDirection = 0;
+      _hasEdgeTriggered = false;
+    });
+  }
+
+  void _onSliderPointerCancel(PointerCancelEvent event) {
+    _continuousScrollTimer?.cancel();
+    _edgeHoldTimer?.cancel();
+    setState(() {
+      _isSliderActive = false;
+      _sliderThumbY = 0.0;
+      _edgeHoldDirection = 0;
+      _hasEdgeTriggered = false;
+    });
   }
 
   @override
@@ -321,154 +391,155 @@ class _FloatingWheelState extends State<FloatingWheel> {
     return Container(
       width: _wheelWidth,
       height: _wheelHeight,
-      child: Column(
+      decoration: BoxDecoration(
+        color: _kDefaultColor,
+        border: Border.all(
+          color: _isSliderActive ? _kTapDownColor : _kDefaultBorderColor,
+          width: 1.2,
+        ),
+        borderRadius: BorderRadius.circular(_wheelWidth * 0.5),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          _buildUpDownButton(
-            (event) {
-              setState(() {
-                _isUpDown = true;
-              });
-              _startScrollTimer(1);
-            },
-            (event) {
-              setState(() {
-                _isUpDown = false;
-              });
-              _stopScrollTimer();
-            },
-            (event) {
-              setState(() {
-                _isUpDown = false;
-              });
-              _stopScrollTimer();
-            },
-            () => _isUpDown,
-            BorderRadius.vertical(top: Radius.circular(_wheelWidth * 0.5)),
-            Icons.keyboard_arrow_up,
-          ),
-          Listener(
-            onPointerDown: (event) {
-              _startPointerPos = event.position;
-              _isDragging = false;
-              setState(() {
-                _isMidDown = true;
-              });
-            },
-            onPointerMove: (event) {
-              if (!_isDragging &&
-                  (event.position - _startPointerPos).distance > 4.0) {
-                _isDragging = true;
-              }
-              if (_isDragging) {
-                _onMoveUpdateDelta(event.delta);
-              }
-            },
-            onPointerUp: (event) {
-              setState(() {
-                _isMidDown = false;
-              });
-              if (_isDragging) {
-                _trySavePosition();
-              } else {
-                _inputModel.tapDown(MouseButtons.wheel);
-                Future.delayed(const Duration(milliseconds: 50), () {
-                  _inputModel.tapUp(MouseButtons.wheel);
-                });
-              }
-              _isDragging = false;
-            },
-            onPointerCancel: (event) {
-              setState(() {
-                _isMidDown = false;
-              });
-              if (_isDragging) {
-                _trySavePosition();
-              }
-              _isDragging = false;
-            },
-            child: Container(
-              width: _wheelWidth,
-              height: 52,
-              decoration: BoxDecoration(
-                color: _kDefaultColor,
-                border: Border.symmetric(
-                    vertical: BorderSide(
-                        color:
-                            _isMidDown ? _kTapDownColor : _kDefaultBorderColor,
-                        width: _kBorderWidth)),
-              ),
-              child: Center(
-                child: Container(
-                  width: _wheelWidth - 10,
-                  height: _wheelWidth - 10,
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 18,
-                          height: 2,
-                          color: _kDefaultBorderColor,
-                        ),
-                        SizedBox(height: 6),
-                        Container(
-                          width: 24,
-                          height: 2,
-                          color: _kDefaultBorderColor,
-                        ),
-                        SizedBox(height: 6),
-                        Container(
-                          width: 18,
-                          height: 2,
-                          color: _kDefaultBorderColor,
-                        ),
-                      ],
+          // Background track rail line and indicators
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Icon(
+                      Icons.keyboard_arrow_up,
+                      size: 20,
+                      color: (_hasEdgeTriggered && _edgeHoldDirection == -1)
+                          ? _kTapDownColor
+                          : _kDefaultBorderColor.withOpacity(0.6),
                     ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 3,
+                        decoration: BoxDecoration(
+                          color: _kDefaultBorderColor.withOpacity(0.25),
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Icon(
+                      Icons.keyboard_arrow_down,
+                      size: 20,
+                      color: (_hasEdgeTriggered && _edgeHoldDirection == 1)
+                          ? _kTapDownColor
+                          : _kDefaultBorderColor.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // The movable wheel slider thumb
+          Positioned(
+            top: (_trackHeight - _thumbHeight) / 2 + _sliderThumbY,
+            child: Listener(
+              onPointerDown: _onSliderPointerDown,
+              onPointerMove: _onSliderPointerMove,
+              onPointerUp: _onSliderPointerUp,
+              onPointerCancel: _onSliderPointerCancel,
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                width: _thumbWidth,
+                height: _thumbHeight,
+                decoration: BoxDecoration(
+                  color: (_hasEdgeTriggered)
+                      ? _kTapDownColor
+                      : (_isSliderActive ? Colors.blue.withOpacity(0.5) : _kDefaultColor),
+                  border: Border.all(
+                    color: (_hasEdgeTriggered)
+                        ? Colors.white
+                        : (_isSliderActive ? _kTapDownColor : _kDefaultBorderColor),
+                    width: 1.5,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    )
+                  ],
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 16,
+                        height: 2,
+                        decoration: BoxDecoration(
+                          color: _kWidgetHighlightColor,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Container(
+                        width: 22,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: _kWidgetHighlightColor,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Container(
+                        width: 16,
+                        height: 2,
+                        decoration: BoxDecoration(
+                          color: _kWidgetHighlightColor,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ),
-          _buildUpDownButton(
-            (event) {
-              setState(() {
-                _isDownDown = true;
-              });
-              _startScrollTimer(-1);
-            },
-            (event) {
-              setState(() {
-                _isDownDown = false;
-              });
-              _stopScrollTimer();
-            },
-            (event) {
-              setState(() {
-                _isDownDown = false;
-              });
-              _stopScrollTimer();
-            },
-            () => _isDownDown,
-            BorderRadius.vertical(bottom: Radius.circular(_wheelWidth * 0.5)),
-            Icons.keyboard_arrow_down,
+
+          // Double tap / long press on outer body to drag widget position
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: GestureDetector(
+              onPanStart: (details) {
+                _startPointerPos = details.globalPosition;
+                _isDragging = true;
+              },
+              onPanUpdate: (details) {
+                _onMoveUpdateDelta(details.delta);
+              },
+              onPanEnd: (details) {
+                _trySavePosition();
+                _isDragging = false;
+              },
+              child: Container(
+                width: 20,
+                height: 20,
+                color: Colors.transparent,
+                alignment: Alignment.center,
+                child: Icon(Icons.drag_indicator, size: 12, color: _kDefaultBorderColor.withOpacity(0.5)),
+              ),
+            ),
           ),
         ],
       ),
     );
-  }
-
-  void _startScrollTimer(int direction) {
-    _scrollTimer?.cancel();
-    _inputModel.scroll(direction);
-    _scrollTimer = Timer.periodic(
-        Duration(milliseconds: _kInputTimerIntervalMillis), (timer) {
-      _inputModel.scroll(direction);
-    });
-  }
-
-  void _stopScrollTimer() {
-    _scrollTimer?.cancel();
-    _scrollTimer = null;
   }
 }
 
