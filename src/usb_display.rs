@@ -4,6 +4,7 @@
 
 use hbb_common::{config::Config, log, ResultType};
 use std::{
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
