@@ -2843,7 +2843,10 @@ pub fn main_get_common(key: String) -> String {
     } else if key == "local-permanent-password-set" {
         return ui_interface::is_local_permanent_password_set().to_string();
     } else if key == "wake-usb-display" {
+        #[cfg(windows)]
         return crate::usb_display::manual_wake_usb_device();
+        #[cfg(not(windows))]
+        return "Not supported on this platform".to_string();
     } else {
         if key.starts_with("download-data-") {
             let id = key.replace("download-data-", "");
