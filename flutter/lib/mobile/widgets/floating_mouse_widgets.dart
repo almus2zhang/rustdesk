@@ -132,6 +132,9 @@ class _FloatingWheelState extends State<FloatingWheel> {
   Timer? _edgeHoldTimer;
   int _edgeHoldDirection = 0; // -1: top, 1: bottom, 0: none
   bool _hasEdgeTriggered = false;
+  bool _isDirectUp = false;
+  bool _isDirectDown = false;
+  Timer? _directScrollTimer;
 
   InputModel get _inputModel => widget.inputModel;
   CursorModel get _cursorModel => widget.cursorModel;
@@ -236,6 +239,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
 
   @override
   void dispose() {
+    _directScrollTimer?.cancel();
     _continuousScrollTimer?.cancel();
     _edgeHoldTimer?.cancel();
     if (_lastBlockedRect != null) {
@@ -256,11 +260,36 @@ class _FloatingWheelState extends State<FloatingWheel> {
     _previousOrientation = currentOrientation;
   }
 
+  void _startDirectScroll(int direction) {
+    _directScrollTimer?.cancel();
+    setState(() {
+      if (direction > 0) {
+        _isDirectUp = true;
+      } else {
+        _isDirectDown = true;
+      }
+    });
+    _inputModel.scroll(direction);
+    _directScrollTimer = Timer.periodic(const Duration(milliseconds: 60), (timer) {
+      _inputModel.scroll(direction);
+    });
+  }
+
+  void _stopDirectScroll() {
+    _directScrollTimer?.cancel();
+    _directScrollTimer = null;
+    setState(() {
+      _isDirectUp = false;
+      _isDirectDown = false;
+    });
+  }
+
   static const double _trackHeight = _wheelHeight; // 162
   static const double _maxTravel = (_trackHeight - 36.0) / 2; // ~63px travel
 
   void _onSliderPointerDown(PointerDownEvent event) {
     _edgeHoldTimer?.cancel();
+    _directScrollTimer?.cancel();
     _continuousScrollTimer?.cancel();
     _hasEdgeTriggered = false;
     _edgeHoldDirection = 0;
@@ -295,12 +324,14 @@ class _FloatingWheelState extends State<FloatingWheel> {
       if (_continuousScrollTimer == null) {
         _inputModel.scroll(direction);
       }
-      _continuousScrollTimer?.cancel();
+      _directScrollTimer?.cancel();
+    _continuousScrollTimer?.cancel();
       _continuousScrollTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
         _inputModel.scroll(direction);
       });
     } else {
-      _continuousScrollTimer?.cancel();
+      _directScrollTimer?.cancel();
+    _continuousScrollTimer?.cancel();
       _continuousScrollTimer = null;
     }
 
@@ -346,6 +377,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
   }
 
   void _onSliderPointerUp(PointerUpEvent event) {
+    _directScrollTimer?.cancel();
     _continuousScrollTimer?.cancel();
     _continuousScrollTimer = null;
     _edgeHoldTimer?.cancel();
@@ -368,6 +400,7 @@ class _FloatingWheelState extends State<FloatingWheel> {
   }
 
   void _onSliderPointerCancel(PointerCancelEvent event) {
+    _directScrollTimer?.cancel();
     _continuousScrollTimer?.cancel();
     _continuousScrollTimer = null;
     _edgeHoldTimer?.cancel();
@@ -411,44 +444,85 @@ class _FloatingWheelState extends State<FloatingWheel> {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Background track rail line and indicators
-          Positioned.fill(
+          // Center track guideline
+          Positioned(
+            top: 40,
+            bottom: 40,
             child: IgnorePointer(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Icon(
-                      Icons.keyboard_arrow_up,
-                      size: 20,
-                      color: (_hasEdgeTriggered && _edgeHoldDirection == -1)
-                          ? _kTapDownColor
-                          : _kDefaultBorderColor.withOpacity(0.5),
-                    ),
-                  ),
-                  Expanded(
-                    child: Center(
-                      child: Container(
-                        width: 2,
-                        decoration: BoxDecoration(
-                          color: _kDefaultBorderColor.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(1),
-                        ),
-                      ),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Icon(
-                      Icons.keyboard_arrow_down,
-                      size: 20,
-                      color: (_hasEdgeTriggered && _edgeHoldDirection == 1)
-                          ? _kTapDownColor
-                          : _kDefaultBorderColor.withOpacity(0.5),
-                    ),
-                  ),
-                ],
+              child: Container(
+                width: 2,
+                decoration: BoxDecoration(
+                  color: _kDefaultBorderColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(1),
+                ),
+              ),
+            ),
+          ),
+
+          // Clickable & holdable Up Arrow button at the top
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 44,
+            child: Listener(
+              onPointerDown: (event) {
+                _startDirectScroll(1);
+              },
+              onPointerUp: (event) {
+                _stopDirectScroll();
+              },
+              onPointerCancel: (event) {
+                _stopDirectScroll();
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _isDirectUp ? _kTapDownColor : Colors.transparent,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(_wheelWidth * 0.5)),
+                ),
+                child: Icon(
+                  Icons.keyboard_arrow_up,
+                  size: 24,
+                  color: (_hasEdgeTriggered && _edgeHoldDirection == -1)
+                      ? _kTapDownColor
+                      : (_isDirectUp ? Colors.white : _kDefaultBorderColor),
+                ),
+              ),
+            ),
+          ),
+
+          // Clickable & holdable Down Arrow button at the bottom
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 44,
+            child: Listener(
+              onPointerDown: (event) {
+                _startDirectScroll(-1);
+              },
+              onPointerUp: (event) {
+                _stopDirectScroll();
+              },
+              onPointerCancel: (event) {
+                _stopDirectScroll();
+              },
+              behavior: HitTestBehavior.opaque,
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _isDirectDown ? _kTapDownColor : Colors.transparent,
+                  borderRadius: BorderRadius.vertical(bottom: Radius.circular(_wheelWidth * 0.5)),
+                ),
+                child: Icon(
+                  Icons.keyboard_arrow_down,
+                  size: 24,
+                  color: (_hasEdgeTriggered && _edgeHoldDirection == 1)
+                      ? _kTapDownColor
+                      : (_isDirectDown ? Colors.white : _kDefaultBorderColor),
+                ),
               ),
             ),
           ),
