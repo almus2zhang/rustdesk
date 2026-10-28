@@ -1127,7 +1127,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                                       )).marginOnly(top: 6)),
                             ]
                           : <Widget>[]) +
-                      (extraWidget != null ? <Widget>[extraWidget] : <Widget>[])))),
+                      (extraWidget != null ? <Widget>[extraWidget] : <Widget>[]))),
         ),
         if (closeButton != null && closeButton == true)
           Positioned(
