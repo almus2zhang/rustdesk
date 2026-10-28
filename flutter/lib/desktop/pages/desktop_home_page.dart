@@ -93,6 +93,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       buildTip(context),
       if (!isOutgoingOnly) buildIDBoard(context),
       if (!isOutgoingOnly) buildPasswordBoard(context),
+      if (isWindows && !isOutgoingOnly) buildUsbDisplayBoard(context),
       FutureBuilder<Widget>(
         future: Future.value(
             Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
@@ -380,6 +381,315 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                     ],
                   ),
                 ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildUsbDisplayBoard(BuildContext context) {
+    final textColor = Theme.of(context).textTheme.titleLarge?.color;
+    final isZh = localeName.startsWith('zh');
+
+    return Container(
+      margin: const EdgeInsets.only(left: 20.0, right: 16, top: 2, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withOpacity(0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.usb, size: 20, color: MyTheme.accent),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isZh ? 'USB 设备投屏' : 'USB Device Display',
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  isZh
+                      ? '将物理 USB 连接的平板/手机扩展为独立副屏'
+                      : 'Extend USB tablet/phone as secondary display',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: textColor?.withOpacity(0.6),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 28,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                backgroundColor: MyTheme.accent,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                showToast(isZh ? '正在尝试唤醒设备并连接投屏...' : 'Waking up device...');
+                final msg = await bind.mainGetCommon(key: 'wake-usb-display');
+                showToast(msg);
+              },
+              icon: const Icon(Icons.cast_connected, size: 14),
+              label: Text(
+                isZh ? '投屏' : 'Cast',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          PopupMenuButton<String>(
+            tooltip: isZh ? '投屏说明与排查指引' : 'Instructions & Troubleshooting',
+            icon: Icon(
+              Icons.more_vert,
+              size: 18,
+              color: textColor?.withOpacity(0.7),
+            ),
+            splashRadius: 18,
+            padding: EdgeInsets.zero,
+            onSelected: (val) {
+              _showUsbDisplayHelpDialog(context);
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'help',
+                height: 36,
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 16),
+                    const SizedBox(width: 8),
+                    Text(isZh ? '功能说明' : 'About USB Display',
+                        style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'qos',
+                height: 36,
+                child: Row(
+                  children: [
+                    const Icon(Icons.high_quality_outlined, size: 16),
+                    const SizedBox(width: 8),
+                    Text(isZh ? '建议调整画质带宽' : 'Quality & Bandwidth',
+                        style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'troubleshoot',
+                height: 36,
+                child: Row(
+                  children: [
+                    const Icon(Icons.build_outlined, size: 16),
+                    const SizedBox(width: 8),
+                    Text(isZh ? '故障分步排查指引' : 'Step-by-step Troubleshooting',
+                        style: const TextStyle(fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUsbDisplayHelpDialog(BuildContext context) {
+    final isZh = localeName.startsWith('zh');
+    gFFI.dialogManager.show((setState, close, context) {
+      return CustomAlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.usb, color: MyTheme.accent, size: 24),
+            const SizedBox(width: 10),
+            Text(
+              isZh ? 'USB 设备投屏说明与排查' : 'USB Screen Cast Guide',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 540, maxWidth: 620, maxHeight: 480),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHelpSectionHeader(
+                  icon: Icons.info_outline,
+                  title: isZh ? '一、相关说明（功能与原理）' : '1. Overview & Architecture',
+                ),
+                _buildHelpItem(
+                  isZh
+                      ? '• 基于物理 USB 有线通道进行传输通信，具备极低延迟与 60FPS 超高帧率体验，不受局域网/Wi-Fi 丢包干扰。'
+                      : '• Direct transmission over physical USB wire with ultra-low latency and 60FPS smoothness without Wi-Fi interference.',
+                ),
+                _buildHelpItem(
+                  isZh
+                      ? '• 建立连接后，电脑会自动创建并启用一块独立的虚拟扩展副屏，不影响电脑主屏的内容与操作，手机/平板秒变高分扩展副屏。'
+                      : '• Automatically creates an independent virtual display on the Windows host, turning your tablet/phone into a second screen.',
+                ),
+                _buildHelpItem(
+                  isZh
+                      ? '• 支持在平板/手机端直接触摸控制与罗技风格滚轮拖动，并能根据所连设备 ID 自动记忆专属的分辨率与桌面摆放坐标。'
+                      : '• Supports touch input and smooth scrolling, remembering display resolution and desktop coordinates per device ID.',
+                ),
+                const SizedBox(height: 16),
+                _buildHelpSectionHeader(
+                  icon: Icons.high_quality_outlined,
+                  title: isZh ? '二、建议调整画质与带宽' : '2. Quality & Bandwidth Recommendations',
+                ),
+                _buildHelpItem(
+                  isZh
+                      ? '• 【极速画质】：物理 USB 拥有 480Mbps+ 充足传输带宽。推荐在平板/手机连接控制栏中，将【帧率】设置为 60 FPS，【画质】设置为“最佳 (Best)”，并选择 VP9 编码，可获得媲美原生显示器的清晰度与丝滑感。'
+                      : '• Recommended: In the tablet remote toolbar, set Frame Rate to 60 FPS and Quality to Best with VP9 encoding for native monitor smoothness.',
+                ),
+                _buildHelpItem(
+                  isZh
+                      ? '• 【轻载省电】：若 Windows 宿主机 CPU 或 GPU 负载较高、发热明显，可将画质切换为“平衡 (Balanced)”，帧率降低至 30 FPS，以兼顾流畅度与低功耗。'
+                      : '• Low Load: If PC CPU/GPU load is high, adjust Quality to Balanced and FPS to 30 to reduce battery drain and thermal throttling.',
+                ),
+                const SizedBox(height: 16),
+                _buildHelpSectionHeader(
+                  icon: Icons.build_outlined,
+                  title: isZh ? '三、故障分步排查指引（确保 ADB 设备在线）' : '3. Step-by-Step Troubleshooting',
+                ),
+                _buildTroubleshootStep(
+                  context: context,
+                  step: '第 1 步',
+                  title: isZh ? '开启移动设备 USB 调试' : 'Enable USB Debugging on mobile device',
+                  detail: isZh
+                      ? '使用原装或支持数据传输的 USB 线连接电脑与平板。在平板【设置 -> 关于手机/关于平板】中连续点击“版本号”7 次开启开发者选项，随后进入【开发者选项】并开启【USB 调试】。'
+                      : 'Connect with a good USB cable. Go to Settings -> About -> tap Build Number 7 times to enable Developer Options, then turn on USB Debugging.',
+                ),
+                _buildTroubleshootStep(
+                  context: context,
+                  step: '第 2 步',
+                  title: isZh ? '【核心】验证电脑识别到 ADB 设备' : 'Verify ADB Device is recognized by PC',
+                  detail: isZh
+                      ? '在电脑上打开命令提示符 (CMD)，输入 adb devices：\n'
+                          '• 若显示设备号且状态为 device：表明设备完全就绪，直接点击【投屏】即可连接！\n'
+                          '• 若状态为 unauthorized：请点亮平板屏幕，勾选【始终允许此计算机进行调试】并点击【确定】。\n'
+                          '• 若状态为 offline：请重新插拔 USB 数据线，或在平板设置中关闭后再重新打开【USB 调试】。\n'
+                          '• 若列表为空：请检查数据线是否仅支持充电（需更换支持数据线），或插到电脑后置 USB 口并确认电脑已安装 Android USB 驱动。'
+                      : 'Open CMD on PC and run "adb devices":\n'
+                          '• State "device": Ready! Click Cast to connect.\n'
+                          '• State "unauthorized": Check tablet screen and tap Allow USB Debugging.\n'
+                          '• State "offline": Replug USB cable or re-enable USB Debugging.\n'
+                          '• Empty list: Use data-capable USB cable and verify ADB drivers.',
+                ),
+                _buildTroubleshootStep(
+                  context: context,
+                  step: '第 3 步',
+                  title: isZh ? '检查端口映射与防火墙' : 'Verify Port Mapping & Firewall',
+                  detail: isZh
+                      ? '本功能使用本地 21118 等环回反向端口传输，请确保宿主机电脑没有杀毒软件或第三方防火墙拦截本地端口通信。'
+                      : 'USB cast communicates via reverse mapped ports (21118). Ensure local loopback ports are not blocked by third-party firewalls.',
+                ),
+                _buildTroubleshootStep(
+                  context: context,
+                  step: '第 4 步',
+                  title: isZh ? '点击【投屏】一键直连' : 'Click Cast to Connect',
+                  detail: isZh
+                      ? '确认 ADB 识别到设备后，点击本界面的【投屏】按钮。系统将自动激活通道并向平板发送唤醒请求，平板端弹出【开启副屏】对话框后点击即可直连！'
+                      : 'After confirming ADB device is online, click Cast. The tablet will wake up with a prompt dialog to start secondary display.',
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          dialogButton(
+            translate('Close'),
+            onPressed: close,
+          ),
+        ],
+      );
+    });
+  }
+
+  Widget _buildHelpSectionHeader({required IconData icon, required String title}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0, top: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: MyTheme.accent),
+          const SizedBox(width: 6),
+          Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHelpItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6.0, left: 4.0),
+      child: Text(
+        text,
+        style: const TextStyle(fontSize: 12.5, height: 1.45),
+      ),
+    );
+  }
+
+  Widget _buildTroubleshootStep({
+    required BuildContext context,
+    required String step,
+    required String title,
+    required String detail,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10.0, left: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: MyTheme.accent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  step,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: MyTheme.accent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 6.0, top: 4.0),
+            child: Text(
+              detail,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: Theme.of(context).textTheme.bodySmall?.color,
               ),
             ),
           ),

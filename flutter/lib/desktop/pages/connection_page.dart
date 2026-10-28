@@ -545,32 +545,6 @@ class _ConnectionPageState extends State<ConnectionPage>
             Padding(
               padding: const EdgeInsets.only(top: 13.0),
               child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                if (isWindows)
-                  Tooltip(
-                    message: localeName.startsWith('zh')
-                        ? '通过 USB 唤醒已连接的 Android 平板并请求副屏'
-                        : 'Wake connected Android tablet display via USB',
-                    child: SizedBox(
-                      height: 28.0,
-                      child: OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                        ),
-                        onPressed: () async {
-                          showToast(localeName.startsWith('zh')
-                              ? '正在尝试唤醒平板...'
-                              : 'Waking up tablet...');
-                          final msg =
-                              await bind.mainGetCommon(key: 'wake-usb-display');
-                          showToast(msg);
-                        },
-                        icon: const Icon(Icons.tablet_android, size: 15),
-                        label: Text(
-                            localeName.startsWith('zh') ? '唤醒 USB 平板' : 'Wake USB Tablet',
-                            style: const TextStyle(fontSize: 12)),
-                      ),
-                    ),
-                  ).marginOnly(right: 8),
                 SizedBox(
                   height: 28.0,
                   child: ElevatedButton(
@@ -626,8 +600,8 @@ class _ConnectionPageState extends State<ConnectionPage>
                                     if (isWindows)
                                       (
                                         localeName.startsWith('zh')
-                                            ? '唤醒 USB 平板副屏'
-                                            : 'Wake USB Tablet Display',
+                                            ? 'USB 设备投屏'
+                                            : 'USB Device Display',
                                         () async {
                                           showToast(localeName.startsWith('zh')
                                               ? '正在尝试唤醒平板...'

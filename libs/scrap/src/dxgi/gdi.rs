@@ -98,7 +98,7 @@ impl CapturerGDI {
                 self.screen_dc,
                 0,
                 0,
-                SRCCOPY | CAPTUREBLT, // CAPTUREBLT enable layered window but also make cursor blinking
+                SRCCOPY, // Avoid CAPTUREBLT to prevent physical hardware cursor blinking
             );
             if res == 0 {
                 return Err("Failed to copy screen to Windows buffer".into());
