@@ -394,116 +394,150 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     final isZh = localeName.startsWith('zh');
 
     return Container(
-      margin: const EdgeInsets.only(left: 20.0, right: 16, top: 2, bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.4),
-        ),
-      ),
+      margin: const EdgeInsets.only(left: 20, right: 11, top: 12, bottom: 4),
+      height: 60,
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
         children: [
-          Icon(Icons.usb, size: 20, color: MyTheme.accent),
-          const SizedBox(width: 8),
+          Container(
+            width: 2,
+            height: 52,
+            decoration: const BoxDecoration(color: MyTheme.accent),
+          ).marginOnly(top: 5),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  isZh ? 'USB 设备投屏' : 'USB Device Display',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  isZh
-                      ? '将物理 USB 连接的平板/手机扩展为独立副屏'
-                      : 'Extend USB tablet/phone as secondary display',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: textColor?.withOpacity(0.6),
+            child: Padding(
+              padding: const EdgeInsets.only(left: 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    height: 25,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isZh ? 'USB设备投屏' : 'USB Display',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: textColor?.withOpacity(0.5),
+                          ),
+                        ).marginOnly(top: 5),
+                        buildUsbPopupMenu(context),
+                      ],
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+                  Flexible(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.usb,
+                          size: 24,
+                          color: MyTheme.accent,
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 28,
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 14),
+                              backgroundColor: MyTheme.accent,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                            onPressed: () async {
+                              showToast(isZh ? '正在尝试唤醒设备并连接投屏...' : 'Waking up device...');
+                              final msg = await bind.mainGetCommon(key: 'wake-usb-display');
+                              showToast(msg);
+                            },
+                            icon: const Icon(Icons.cast_connected, size: 14),
+                            label: Text(
+                              isZh ? '投屏' : 'Cast',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                backgroundColor: MyTheme.accent,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                showToast(isZh ? '正在尝试唤醒设备并连接投屏...' : 'Waking up device...');
-                final msg = await bind.mainGetCommon(key: 'wake-usb-display');
-                showToast(msg);
-              },
-              icon: const Icon(Icons.cast_connected, size: 14),
-              label: Text(
-                isZh ? '投屏' : 'Cast',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          PopupMenuButton<String>(
-            tooltip: isZh ? '投屏说明与排查指引' : 'Instructions & Troubleshooting',
-            icon: Icon(
-              Icons.more_vert,
-              size: 18,
-              color: textColor?.withOpacity(0.7),
-            ),
-            splashRadius: 18,
-            padding: EdgeInsets.zero,
-            onSelected: (val) {
-              _showUsbDisplayHelpDialog(context);
-            },
-            itemBuilder: (context) => [
-              PopupMenuItem(
-                value: 'help',
-                height: 36,
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 16),
-                    const SizedBox(width: 8),
-                    Text(isZh ? '功能说明' : 'About USB Display',
-                        style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'qos',
-                height: 36,
-                child: Row(
-                  children: [
-                    const Icon(Icons.high_quality_outlined, size: 16),
-                    const SizedBox(width: 8),
-                    Text(isZh ? '建议调整画质带宽' : 'Quality & Bandwidth',
-                        style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'troubleshoot',
-                height: 36,
-                child: Row(
-                  children: [
-                    const Icon(Icons.build_outlined, size: 16),
-                    const SizedBox(width: 8),
-                    Text(isZh ? '故障分步排查指引' : 'Step-by-step Troubleshooting',
-                        style: const TextStyle(fontSize: 13)),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget buildUsbPopupMenu(BuildContext context) {
+    final textColor = Theme.of(context).textTheme.titleLarge?.color;
+    final isZh = localeName.startsWith('zh');
+    RxBool hover = false.obs;
+    return PopupMenuButton<String>(
+      tooltip: isZh ? '投屏说明与排查指引' : 'Help & Diagnostics',
+      splashRadius: 15,
+      padding: EdgeInsets.zero,
+      onSelected: (val) {
+        _showUsbDisplayHelpDialog(context);
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'help',
+          height: 36,
+          child: Row(
+            children: [
+              const Icon(Icons.info_outline, size: 16),
+              const SizedBox(width: 8),
+              Text(isZh ? '功能说明' : 'About USB Display',
+                  style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'qos',
+          height: 36,
+          child: Row(
+            children: [
+              const Icon(Icons.high_quality_outlined, size: 16),
+              const SizedBox(width: 8),
+              Text(isZh ? '建议调整画质带宽' : 'Quality & Bandwidth',
+                  style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'troubleshoot',
+          height: 36,
+          child: Row(
+            children: [
+              const Icon(Icons.build_outlined, size: 16),
+              const SizedBox(width: 8),
+              Text(isZh ? '故障分步排查指引' : 'Step-by-step Troubleshooting',
+                  style: const TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+      ],
+      child: Tooltip(
+        message: isZh ? '投屏说明与排查指引' : 'Help & Diagnostics',
+        child: Obx(
+          () => CircleAvatar(
+            radius: 15,
+            backgroundColor: hover.value
+                ? Theme.of(context).scaffoldBackgroundColor
+                : Theme.of(context).colorScheme.background,
+            child: Icon(
+              Icons.more_vert_outlined,
+              size: 20,
+              color: hover.value ? textColor : textColor?.withOpacity(0.5),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -782,6 +816,68 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     );
   }
 
+
+  Widget buildOfficialUpdateWarning() {
+    final isZh = localeName.startsWith('zh');
+    return Container(
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.yellowAccent, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.yellowAccent, size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isZh
+                      ? '此为官方版本更新，更新后会覆盖本修改版。'
+                      : 'This is an official update; upgrading will overwrite this custom edition.',
+                  style: const TextStyle(
+                    color: Colors.yellowAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isZh
+                ? '修改版支持txt:dns连接，使用方法：'
+                : 'Custom edition supports txt:dns connection. Usage:',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 2),
+          InkWell(
+            onTap: () async {
+              await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk'));
+            },
+            child: const Text(
+              'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
+              style: TextStyle(
+                color: Colors.yellowAccent,
+                fontSize: 11,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget buildHelpCards(String updateUrl) {
     if (!bind.isCustomClient() &&
         updateUrl.isNotEmpty &&
@@ -807,7 +903,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           help: isToUpdate ? 'Changelog' : null,
           link: isToUpdate
               ? 'https://github.com/rustdesk/rustdesk/releases/tag/${bind.mainGetNewVersion()}'
-              : null);
+              : null,
+          extraWidget: buildOfficialUpdateWarning());
     }
     if (systemError.isNotEmpty) {
       return buildInstallCard("", systemError, "", () {});
@@ -932,7 +1029,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       String? help,
       String? link,
       bool? closeButton,
-      String? closeOption}) {
+      String? closeOption,
+      Widget? extraWidget}) {
     if (bind.mainGetBuildinOption(key: kOptionHideHelpCards) == 'Y' &&
         content != 'install_daemon_tip') {
       return const SizedBox();
@@ -1028,7 +1126,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                                             fontSize: 12),
                                       )).marginOnly(top: 6)),
                             ]
-                          : <Widget>[]))),
+                          : <Widget>[]) +
+                      (extraWidget != null ? <Widget>[extraWidget] : <Widget>[])))),
         ),
         if (closeButton != null && closeButton == true)
           Positioned(

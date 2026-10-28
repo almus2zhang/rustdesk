@@ -150,29 +150,67 @@ class _ConnectionPageState extends State<ConnectionPage> {
   /// UI for software update.
   /// If _updateUrl] is not empty, shows a button to update the software.
   Widget _buildUpdateUI(String updateUrl) {
-    return updateUrl.isEmpty
-        ? const SizedBox(height: 0)
-        : InkWell(
+    if (updateUrl.isEmpty) return const SizedBox.shrink();
+    final isZh = localeName.startsWith('zh');
+    return Container(
+      color: Colors.pinkAccent,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+      child: Column(
+        children: [
+          InkWell(
             onTap: () async {
-              final url = 'https://rustdesk.com/download';
-              // https://pub.dev/packages/url_launcher#configuration
-              // https://developer.android.com/training/package-visibility/use-cases#open-urls-custom-tabs
-              //
-              // `await launchUrl(Uri.parse(url))` can also run if skip
-              // 1. The following check
-              // 2. `<action android:name="android.support.customtabs.action.CustomTabsService" />` in AndroidManifest.xml
-              //
-              // But it is better to add the check.
-              await launchUrl(Uri.parse(url));
+              await launchUrl(Uri.parse('https://rustdesk.com/download'));
             },
             child: Container(
-                alignment: AlignmentDirectional.center,
-                width: double.infinity,
-                color: Colors.pinkAccent,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(translate('Download new version'),
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.bold))));
+              alignment: AlignmentDirectional.center,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text(translate('Download new version'),
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(top: 6),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.yellowAccent, width: 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.yellowAccent, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        isZh ? '此为官方版本更新，更新后会覆盖本修改版。' : 'Official update will overwrite custom edition.',
+                        style: const TextStyle(color: Colors.yellowAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isZh ? '修改版支持txt:dns连接，使用方法：' : 'Modified edition supports txt:dns connection. Usage:',
+                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                ),
+                const SizedBox(height: 2),
+                InkWell(
+                  onTap: () async => await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk')),
+                  child: const Text(
+                    'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
+                    style: TextStyle(color: Colors.yellowAccent, fontSize: 11, decoration: TextDecoration.underline),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// UI for the remote ID TextField.
