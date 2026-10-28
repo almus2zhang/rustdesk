@@ -820,56 +820,26 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget buildOfficialUpdateWarning() {
     final isZh = localeName.startsWith('zh');
     return Container(
-      margin: const EdgeInsets.only(top: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.2),
+        color: Colors.black.withOpacity(0.18),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.yellowAccent, width: 1),
+        border: Border.all(color: Colors.grey.shade400.withOpacity(0.6), width: 0.8),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.yellowAccent, size: 16),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  isZh
-                      ? '此为官方版本更新，更新后会覆盖本修改版。'
-                      : 'This is an official update; upgrading will overwrite this custom edition.',
-                  style: const TextStyle(
-                    color: Colors.yellowAccent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            isZh
-                ? '修改版支持txt:dns连接，使用方法：'
-                : 'Custom edition supports txt:dns connection. Usage:',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 2),
-          InkWell(
-            onTap: () async {
-              await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk'));
-            },
-            child: const Text(
-              'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
+          Icon(Icons.info_outline, color: Colors.grey.shade300, size: 15),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              isZh
+                  ? '此为官方版本更新，更新后会覆盖本修改版。'
+                  : 'This is an official update; upgrading will overwrite this custom edition.',
               style: TextStyle(
-                color: Colors.yellowAccent,
+                color: Colors.grey.shade300,
                 fontSize: 11,
-                decoration: TextDecoration.underline,
               ),
             ),
           ),

@@ -92,13 +92,44 @@ class _ConnectionPageState extends State<ConnectionPage> {
           Icon(Icons.info_outline, color: Colors.amber[800], size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              '本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
-                height: 1.35,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '修改版支持txt:dns连接，使用方法：',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
+                        height: 1.35,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () async => await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk')),
+                      child: const Text(
+                        'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: MyTheme.accent,
+                          decoration: TextDecoration.underline,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -171,38 +202,20 @@ class _ConnectionPageState extends State<ConnectionPage> {
           ),
           Container(
             margin: const EdgeInsets.only(top: 6),
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.2),
+              color: Colors.black.withOpacity(0.18),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.yellowAccent, width: 1),
+              border: Border.all(color: Colors.grey.shade400.withOpacity(0.6), width: 0.8),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.yellowAccent, size: 16),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        isZh ? '此为官方版本更新，更新后会覆盖本修改版。' : 'Official update will overwrite custom edition.',
-                        style: const TextStyle(color: Colors.yellowAccent, fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  isZh ? '修改版支持txt:dns连接，使用方法：' : 'Modified edition supports txt:dns connection. Usage:',
-                  style: const TextStyle(color: Colors.white, fontSize: 11),
-                ),
-                const SizedBox(height: 2),
-                InkWell(
-                  onTap: () async => await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk')),
-                  child: const Text(
-                    'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
-                    style: TextStyle(color: Colors.yellowAccent, fontSize: 11, decoration: TextDecoration.underline),
+                Icon(Icons.info_outline, color: Colors.grey.shade300, size: 15),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    isZh ? '此为官方版本更新，更新后会覆盖本修改版。' : 'Official update will overwrite custom edition.',
+                    style: TextStyle(color: Colors.grey.shade300, fontSize: 11),
                   ),
                 ),
               ],

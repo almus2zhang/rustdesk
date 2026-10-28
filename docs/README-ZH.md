@@ -14,7 +14,7 @@
 
 > [!IMPORTANT]
 > **免责声明与说明:** <br>
-> 本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。
+> 本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。修改版支持txt:dns连接，使用方法：https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk
 
 与我们交流: [知乎](https://www.zhihu.com/people/rustdesk) | [Discord](https://discord.gg/nDceKgxnkV) | [Reddit](https://www.reddit.com/r/rustdesk) | [YouTube](https://www.youtube.com/@rustdesk)
 

@@ -316,13 +316,44 @@ class _ConnectionPageState extends State<ConnectionPage>
           Icon(Icons.info_outline, color: Colors.amber[800], size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              '本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
-                height: 1.35,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '本软件基于rustdesk官方源码用AI工具修改后编译而成，为个人自用，使用本软件造成的一切后果由使用者承担，如不接受请删除本软件。建议从官方拉取源码，根据功能说明自行修改编译。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '修改版支持txt:dns连接，使用方法：',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.85),
+                        height: 1.35,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () async => await launchUrl(Uri.parse('https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk')),
+                      child: const Text(
+                        'https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: MyTheme.accent,
+                          decoration: TextDecoration.underline,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
