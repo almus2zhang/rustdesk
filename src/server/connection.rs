@@ -1764,6 +1764,7 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
+            #[cfg(windows)]
             let is_usb_conn = self.ip.starts_with("127.0.0.1");
             #[cfg(windows)]
             if is_usb_conn {
