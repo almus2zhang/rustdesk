@@ -483,7 +483,43 @@ pub fn manual_wake_usb_device() -> String {
     }
 }
 
+#[cfg(windows)]
+pub fn restart_adb_service() -> String {
+    let adb = match get_adb_path() {
+        Some(p) => p,
+        None => return "未找到 ADB 工具".to_string(),
+    };
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let _ = Command::new(&adb)
+        .arg("kill-server")
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    let _ = Command::new(&adb)
+        .arg("start-server")
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    let devices = get_adb_devices(&adb);
+    if devices.is_empty() {
+        "ADB 服务已强制重启，当前未检测到已连接的设备".to_string()
+    } else {
+        let dev_summary = devices
+            .iter()
+            .map(|d| format!("{}: {}", d.serial, d.state))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("ADB 服务重启成功！在线设备: {}", dev_summary)
+    }
+}
+
 #[cfg(not(windows))]
 pub fn manual_wake_usb_device() -> String {
     "当前系统不支持 USB 平板唤醒".to_string()
+}
+
+#[cfg(not(windows))]
+pub fn restart_adb_service() -> String {
+    "当前系统不支持重启 ADB 服务".to_string()
 }

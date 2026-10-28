@@ -594,6 +594,43 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 _buildTroubleshootStep(
                   context: context,
                   step: '第 3 步',
+                  title: isZh ? '【重置】重启 ADB 服务（解决卡顿/离线）' : 'Restart ADB Service (Resolve offline/hang)',
+                  detail: isZh
+                      ? '若设备反复处于 offline、未授权或无响应，在电脑命令行（终端/CMD）中依次执行以下命令，强制 ADB 服务重新初始化：\n'
+                          '  adb kill-server\n'
+                          '  adb start-server\n'
+                          '  adb devices\n'
+                          '执行后观察设备列表，确认状态已转为 device。'
+                      : 'Run the following commands in terminal/CMD to force ADB to re-initialize:\n'
+                          '  adb kill-server\n'
+                          '  adb start-server\n'
+                          '  adb devices\n'
+                          'Verify that the device status is now "device".',
+                  actionWidget: Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: SizedBox(
+                      height: 26,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        onPressed: () async {
+                          showToast(isZh ? '正在重启 ADB 服务...' : 'Restarting ADB server...');
+                          final res = await bind.mainGetCommon(key: 'restart-adb-server');
+                          showToast(res);
+                        },
+                        icon: const Icon(Icons.restart_alt, size: 14),
+                        label: Text(
+                          isZh ? '在软件内一键重启 ADB 服务' : 'Restart ADB Service Now',
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                _buildTroubleshootStep(
+                  context: context,
+                  step: '第 4 步',
                   title: isZh ? '检查端口映射与防火墙' : 'Verify Port Mapping & Firewall',
                   detail: isZh
                       ? '本功能使用本地 21118 等环回反向端口传输，请确保宿主机电脑没有杀毒软件或第三方防火墙拦截本地端口通信。'
@@ -601,7 +638,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 ),
                 _buildTroubleshootStep(
                   context: context,
-                  step: '第 4 步',
+                  step: '第 5 步',
                   title: isZh ? '点击【投屏】一键直连' : 'Click Cast to Connect',
                   detail: isZh
                       ? '确认 ADB 识别到设备后，点击本界面的【投屏】按钮。系统将自动激活通道并向平板发送唤醒请求，平板端弹出【开启副屏】对话框后点击即可直连！'
@@ -652,6 +689,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     required String step,
     required String title,
     required String detail,
+    Widget? actionWidget,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10.0, left: 4.0),
@@ -693,6 +731,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
               ),
             ),
           ),
+          if (actionWidget != null)
+            Padding(
+              padding: const EdgeInsets.only(left: 6.0),
+              child: actionWidget,
+            ),
         ],
       ),
     );
