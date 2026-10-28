@@ -4,13 +4,13 @@
 
 use hbb_common::{config::Config, log, ResultType};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[cfg(windows)]
@@ -19,11 +19,34 @@ use crate::virtual_display_manager;
 lazy_static::lazy_static! {
     static ref USB_DISPLAY_ACTIVE: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     static ref USB_DISPLAY_INDEX: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
+    static ref USB_DISPLAY_DEVICE_NAME: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 }
 
 /// Check if USB secondary display is currently active
 pub fn is_usb_display_active() -> bool {
     USB_DISPLAY_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Get the device name (e.g. \\.\DISPLAY3) of the active USB virtual display
+pub fn get_usb_display_device_name() -> Option<String> {
+    USB_DISPLAY_DEVICE_NAME.lock().unwrap().clone()
+}
+
+/// Check whether a given monitor display name is the USB virtual display
+pub fn is_this_usb_display(name: &str) -> bool {
+    if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
+        if name == dev_name || dev_name.contains(name) || name.contains(dev_name) {
+            return true;
+        }
+    }
+    #[cfg(windows)]
+    {
+        crate::virtual_display_manager::is_virtual_display(name)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
 }
 
 /// Read configured direct access port dynamically from config (fallback to 21118)
@@ -44,6 +67,9 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
         let mut idx_lock = USB_DISPLAY_INDEX.lock().unwrap();
         if let Some(idx) = *idx_lock {
             log::info!("USB display already plugged in with index {}", idx);
+            if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
+                virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(dev_name, width, height);
+            }
             return Ok(idx);
         }
 
@@ -70,6 +96,9 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
         if let Some(&first_idx) = indices.first() {
             *idx_lock = Some(first_idx);
             USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
+            if let Some(dev_name) = virtual_display_manager::get_device_name_by_peer_index(first_idx) {
+                *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(dev_name);
+            }
             log::info!("Successfully plugged in USB secondary display (index: {})", first_idx);
             return Ok(first_idx);
         } else {
@@ -91,6 +120,7 @@ pub fn plug_out_usb_display() -> ResultType<()> {
             log::info!("Plugging out USB secondary display (index: {})", idx);
             virtual_display_manager::plug_out_monitor_indices(&[idx], false, true)?;
         }
+        USB_DISPLAY_DEVICE_NAME.lock().unwrap().take();
         USB_DISPLAY_ACTIVE.store(false, Ordering::SeqCst);
         Ok(())
     }
@@ -112,9 +142,9 @@ pub fn start_usb_display_service() {
                 let mut last_detected_device = false;
                 let mut missed_counts = 0;
                 loop {
-                    // Poll at 2-second interval to prevent adb lock contention
+                    // Poll at 2-second interval
                     thread::sleep(Duration::from_millis(2000));
-                    
+
                     let has_device = check_android_usb_present();
                     if has_device {
                         missed_counts = 0;
@@ -140,15 +170,15 @@ pub fn start_usb_display_service() {
 }
 
 #[cfg(windows)]
-fn get_adb_path() -> Option<std::path::PathBuf> {
-    use std::process::Command;
+fn get_adb_path() -> Option<PathBuf> {
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     // 0. Explicit user config or environment variable
     let cfg_adb = Config::get_option("adb-path");
     if !cfg_adb.is_empty() {
-        let p = std::path::PathBuf::from(&cfg_adb);
+        let p = PathBuf::from(&cfg_adb);
         if p.is_file() {
             return Some(p);
         } else if p.join("adb.exe").is_file() {
@@ -156,7 +186,7 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
         }
     }
     if let Ok(env_adb) = std::env::var("ADB_PATH") {
-        let p = std::path::PathBuf::from(&env_adb);
+        let p = PathBuf::from(&env_adb);
         if p.is_file() {
             return Some(p);
         } else if p.join("adb.exe").is_file() {
@@ -164,7 +194,7 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
         }
     }
 
-    // 1. Common custom directories (including user's C:\adbtool)
+    // 1. Common custom directories (including C:\adbtool)
     let custom_paths = [
         "C:\\adbtool\\adb.exe",
         "C:\\adbtools\\adb.exe",
@@ -174,7 +204,7 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
         "D:\\adb\\adb.exe",
     ];
     for &p in &custom_paths {
-        let path = std::path::PathBuf::from(p);
+        let path = PathBuf::from(p);
         if path.exists() {
             log::info!("Found adb at custom path: {}", p);
             return Some(path);
@@ -188,13 +218,13 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
         .output()
     {
         if out.status.success() {
-            return Some(std::path::PathBuf::from("adb"));
+            return Some(PathBuf::from("adb"));
         }
     }
 
     // 3. Try common Android SDK platform-tools locations
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
-        let p = std::path::Path::new(&local_app_data)
+        let p = Path::new(&local_app_data)
             .join("Android")
             .join("Sdk")
             .join("platform-tools")
@@ -204,7 +234,7 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
         }
     }
     if let Ok(user_profile) = std::env::var("USERPROFILE") {
-        let p = std::path::Path::new(&user_profile)
+        let p = Path::new(&user_profile)
             .join("AppData")
             .join("Local")
             .join("Android")
@@ -218,38 +248,58 @@ fn get_adb_path() -> Option<std::path::PathBuf> {
     None
 }
 
+#[derive(Debug, Clone)]
+struct AdbDevice {
+    serial: String,
+    state: String,
+}
+
 #[cfg(windows)]
-fn check_android_usb_present() -> bool {
-    use std::process::Command;
+fn get_adb_devices(adb: &Path) -> Vec<AdbDevice> {
     use std::os::windows::process::CommandExt;
+    use std::process::Command;
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+    let mut list = Vec::new();
+    if let Ok(out) = Command::new(adb)
+        .arg("devices")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        for line in stdout.lines().skip(1) {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                list.push(AdbDevice {
+                    serial: parts[0].to_string(),
+                    state: parts[1].to_string(),
+                });
+            }
+        }
+    }
+    list
+}
+
+#[cfg(windows)]
+fn check_android_usb_present() -> bool {
     let adb = match get_adb_path() {
         Some(p) => p,
         None => return false,
     };
-
-    let output = Command::new(&adb)
-        .arg("devices")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output();
-
-    if let Ok(out) = output {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        for line in stdout.lines().skip(1) {
-            let line = line.trim();
-            if !line.is_empty() && line.contains("device") && !line.contains("offline") {
-                return true;
-            }
-        }
-    }
-    false
+    let devices = get_adb_devices(&adb);
+    // Any attached device line in adb devices (including offline or unauthorized) indicates physical connection
+    !devices.is_empty()
 }
 
 #[cfg(windows)]
 fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
+    use std::io::Write;
     use std::os::windows::process::CommandExt;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     const CREATE_NO_WINDOW: u32 = 0x08000000;
 
     // 0. Ensure adb server is running
@@ -258,64 +308,90 @@ fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
         .creation_flags(CREATE_NO_WINDOW)
         .status();
 
-    // 0.1 Explicitly run 'adb wait-for-device' / transport ping (similar to entering interactive shell)
-    // This activates ADB transport on USB controllers that suspend endpoints until a shell session requests it.
+    // 1. Kick offline devices if any
     let _ = Command::new(adb)
-        .args(["wait-for-device", "shell", "echo", "rustdesk_awake"])
+        .args(["reconnect", "offline"])
         .creation_flags(CREATE_NO_WINDOW)
-        .output();
+        .status();
 
-    // 1. Wait for device to be detected and online (poll up to 5 seconds)
-    let mut device_ready = false;
-    let mut unauthorized = false;
-    for _ in 0..10 {
-        if let Ok(output) = Command::new(adb)
-            .arg("devices")
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-        {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            unauthorized = false;
-            for line in stdout.lines().skip(1) {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if line.contains("unauthorized") {
-                    unauthorized = true;
-                } else if line.contains("device") && !line.contains("offline") {
-                    device_ready = true;
-                    break;
-                }
+    // 2. Perform interactive shell kick (spawning adb shell with stdin writing exit\n).
+    // This is crucial: entering an adb shell requests the 'shell:' service from adbd,
+    // which prompts Android to wake the transport, negotiate auth, and transition out of offline state.
+    if let Ok(mut child) = Command::new(adb)
+        .arg("shell")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+    {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(b"echo rustdesk_awake\nexit\n");
+            let _ = stdin.flush();
+        }
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_millis(2000) {
+            if let Ok(Some(_)) = child.try_wait() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+        let _ = child.kill();
+    }
+
+    // 3. Wait for device to become online ('device' state) (up to 8 seconds)
+    let mut online_serial: Option<String> = None;
+    let mut is_unauthorized = false;
+    let mut last_devices = Vec::new();
+    let poll_start = Instant::now();
+
+    while poll_start.elapsed() < Duration::from_millis(8000) {
+        last_devices = get_adb_devices(adb);
+        for dev in &last_devices {
+            if dev.state == "device" {
+                online_serial = Some(dev.serial.clone());
+                break;
+            } else if dev.state == "unauthorized" {
+                is_unauthorized = true;
             }
         }
-        if device_ready {
+        if online_serial.is_some() {
             break;
         }
-        std::thread::sleep(Duration::from_millis(500));
+        thread::sleep(Duration::from_millis(400));
     }
 
-    if !device_ready {
-        if unauthorized {
-            return Err("检测到平板设备未授权 (unauthorized)，请在平板屏幕上点击【始终允许此计算机进行调试】".to_string());
-        } else {
-            return Err("未检测到已连接的 Android 设备，请检查 USB 数据线并确保平板已开启【USB 调试】".to_string());
+    let serial = match online_serial {
+        Some(s) => s,
+        None => {
+            if is_unauthorized {
+                return Err("检测到平板设备未授权 (unauthorized)，请在平板屏幕上勾选【始终允许此计算机进行调试】并点击【确定】".to_string());
+            } else if !last_devices.is_empty() {
+                return Err(format!("检测到设备但状态异常 ({:?})，请在平板上重新插拔 USB 或重新开启【USB 调试】", last_devices[0].state));
+            } else {
+                return Err("未检测到已连接的 Android 设备，请检查 USB 数据线并确保平板已开启【USB 调试】".to_string());
+            }
         }
-    }
+    };
 
-    // 2. Wake screen if asleep and dismiss keyguard
-    let _ = Command::new(adb)
-        .args(["shell", "input", "keyevent", "224"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
-    let _ = Command::new(adb)
-        .args(["shell", "wm", "dismiss-keyguard"])
-        .creation_flags(CREATE_NO_WINDOW)
-        .status();
+    log::info!("ADB online device confirmed: {}", serial);
 
-    // 3. Configure ADB reverse mappings
+    let run_adb = |args: &[&str]| {
+        let mut full_args = vec!["-s", &serial];
+        full_args.extend_from_slice(args);
+        Command::new(adb)
+            .args(&full_args)
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+    };
+
+    // 4. Wake screen if asleep and dismiss keyguard
+    let _ = run_adb(&["shell", "input", "keyevent", "224"]);
+    let _ = run_adb(&["shell", "wm", "dismiss-keyguard"]);
+
+    // 5. Configure ADB reverse mappings
     let direct_port = get_configured_direct_port();
-    log::info!("Configuring ADB reverse for direct port: {}", direct_port);
+    log::info!("Configuring ADB reverse on {} for direct port: {}", serial, direct_port);
     let port_str = direct_port.to_string();
     let mut ports = vec![port_str.as_str()];
     for p in ["21118", "34567", "21116"] {
@@ -325,13 +401,11 @@ fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
     }
 
     for port in ports {
-        let status = Command::new(adb)
-            .args(["reverse", &format!("tcp:{}", port), &format!("tcp:{}", port)])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status();
+        let tcp_str = format!("tcp:{}", port);
+        let status = run_adb(&["reverse", &tcp_str, &tcp_str]);
         match status {
             Ok(s) if s.success() => {
-                log::info!("ADB reverse tcp:{} -> tcp:{} succeeded", port, port);
+                log::info!("ADB reverse tcp:{} -> tcp:{} succeeded on {}", port, port, serial);
             }
             Ok(s) => {
                 log::warn!("ADB reverse tcp:{} returned exit code: {:?}", port, s.code());
@@ -343,10 +417,12 @@ fn execute_usb_handshake(adb: &PathBuf) -> Result<String, String> {
         }
     }
 
-    // 4. Send intent to awaken tablet with prompt dialog and port info
+    // 6. Send intent to awaken tablet with prompt dialog and port info
     log::info!("Awakening tablet RustDesk via intent with port {}...", direct_port);
     let start_status = Command::new(adb)
         .args([
+            "-s",
+            &serial,
             "shell",
             "am",
             "start",
@@ -411,4 +487,3 @@ pub fn manual_wake_usb_device() -> String {
 pub fn manual_wake_usb_device() -> String {
     "当前系统不支持 USB 平板唤醒".to_string()
 }
-

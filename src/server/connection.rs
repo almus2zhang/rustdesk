@@ -1764,6 +1764,20 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
+            let is_usb_conn = self.ip.starts_with("127.0.0.1");
+            #[cfg(windows)]
+            if is_usb_conn {
+                let peer_id = self.lr.my_id.clone();
+                let saved_res_str = crate::ui_interface::get_peer_option(peer_id.clone(), "usb_display_resolution".to_string());
+                let (w, h) = if let Some((w_s, h_s)) = saved_res_str.split_once('x') {
+                    (w_s.trim().parse::<u32>().unwrap_or(1920), h_s.trim().parse::<u32>().unwrap_or(1200))
+                } else {
+                    (1920, 1200)
+                };
+                log::info!("Plugging in USB secondary display for peer {} with resolution {}x{}", peer_id, w, h);
+                crate::usb_display::plug_in_usb_display(w, h).ok();
+            }
+
             try_activate_screen();
 
             match super::display_service::update_get_sync_displays_on_login().await {
@@ -1773,6 +1787,35 @@ impl Connection {
                 Ok(displays) => {
                     // For compatibility with old versions, we need to send the displays to the peer.
                     // But the displays may be updated later, before creating the video capturer.
+                    #[cfg(windows)]
+                    if is_usb_conn {
+                        let target_idx = displays.iter().position(|d| {
+                            crate::usb_display::is_this_usb_display(&d.name)
+                        }).or_else(|| {
+                            if displays.len() > 1 {
+                                Some(displays.len() - 1)
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(pos) = target_idx {
+                            log::info!("Auto-selecting virtual display index {} ({}) for USB tablet peer {}", pos, displays[pos].name, self.lr.my_id);
+                            self.display_idx = pos;
+                        }
+
+                        let peer_id = self.lr.my_id.clone();
+                        let saved_pos_str = crate::ui_interface::get_peer_option(peer_id, "usb_display_pos".to_string());
+                        if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
+                            if let (Ok(x), Ok(y)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
+                                if let Some(target_d) = displays.get(self.display_idx) {
+                                    log::info!("Restoring saved position ({}, {}) for USB display {}", x, y, target_d.name);
+                                    crate::platform::windows::set_display_position(&target_d.name, x, y).ok();
+                                }
+                            }
+                        }
+                    }
+
                     #[cfg(target_os = "macos")]
                     {
                         self.retina.set_displays(&displays);
@@ -1813,8 +1856,6 @@ impl Connection {
             video_service::VIDEO_QOS.lock().unwrap().user_custom_fps(self.inner.id(), 60);
             video_service::VIDEO_QOS.lock().unwrap().user_image_quality(self.inner.id(), 1);
             self.show_remote_cursor = true;
-            #[cfg(windows)]
-            crate::usb_display::plug_in_usb_display(1920, 1200).ok();
         }
         if let Some(o) = self.options_in_login.take() {
             self.update_options(&o).await;
@@ -4202,6 +4243,11 @@ impl Connection {
                             r.height as _,
                         )
                     {
+                        if self.ip.starts_with("127.0.0.1") || virtual_display_manager::is_virtual_display(&name) {
+                            let res_str = format!("{}x{}", r.width, r.height);
+                            log::info!("Saving USB display resolution {} for peer {}", res_str, self.lr.my_id);
+                            crate::ui_interface::set_peer_option(self.lr.my_id.clone(), "usb_display_resolution".to_string(), res_str);
+                        }
                         return;
                     }
                     #[allow(unused_mut)]
@@ -5759,7 +5805,16 @@ impl Drop for Connection {
     fn drop(&mut self) {
         if self.ip.starts_with("127.0.0.1") {
             #[cfg(windows)]
-            crate::usb_display::plug_out_usb_display().ok();
+            {
+                if let Some(dev_name) = crate::usb_display::get_usb_display_device_name() {
+                    if let Some((cur_x, cur_y)) = crate::platform::windows::get_display_position(&dev_name) {
+                        let pos_str = format!("{},{}", cur_x, cur_y);
+                        log::info!("Saving USB display position {} for peer {}", pos_str, self.lr.my_id);
+                        crate::ui_interface::set_peer_option(self.lr.my_id.clone(), "usb_display_pos".to_string(), pos_str);
+                    }
+                }
+                crate::usb_display::plug_out_usb_display().ok();
+            }
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();

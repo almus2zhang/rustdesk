@@ -33,6 +33,35 @@ pub fn is_virtual_display_supported() -> bool {
     }
 }
 
+pub fn is_virtual_display(name: &str) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        match IDD_IMPL {
+            IDD_IMPL_RUSTDESK => rustdesk_idd::is_virtual_display(name),
+            IDD_IMPL_AMYUNI => amyuni_idd::is_my_display(name),
+            _ => false,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
+pub fn get_device_name_by_peer_index(idx: u32) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        match IDD_IMPL {
+            IDD_IMPL_RUSTDESK => rustdesk_idd::get_device_name(idx),
+            _ => None,
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 pub fn plug_in_headless() -> ResultType<()> {
     match IDD_IMPL {
         IDD_IMPL_RUSTDESK => rustdesk_idd::plug_in_headless(),
@@ -332,6 +361,11 @@ pub mod rustdesk_idd {
             }
         }
         Ok(())
+    }
+
+    pub fn get_device_name(idx: u32) -> Option<String> {
+        let lock = VIRTUAL_DISPLAY_MANAGER.lock().unwrap();
+        lock.peer_index_name.get(&idx).cloned()
     }
 
     pub fn is_virtual_display(name: &str) -> bool {

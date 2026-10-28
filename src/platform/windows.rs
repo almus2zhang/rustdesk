@@ -3041,6 +3041,47 @@ pub(super) fn change_resolution_directly(
     }
 }
 
+pub fn get_display_position(name: &str) -> Option<(i32, i32)> {
+    let device_name = str_to_device_name(name);
+    unsafe {
+        let mut dm: DEVMODEW = std::mem::zeroed();
+        dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        if EnumDisplaySettingsW(device_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+            let x = dm.u1.s2().dmPosition.x;
+            let y = dm.u1.s2().dmPosition.y;
+            return Some((x, y));
+        }
+    }
+    None
+}
+
+pub fn set_display_position(name: &str, x: i32, y: i32) -> ResultType<()> {
+    let device_name = str_to_device_name(name);
+    unsafe {
+        let mut dm: DEVMODEW = std::mem::zeroed();
+        dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        if EnumDisplaySettingsW(device_name.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+            dm.dmFields = 0x00000020; // DM_POSITION
+            dm.u1.s2_mut().dmPosition.x = x as _;
+            dm.u1.s2_mut().dmPosition.y = y as _;
+            const CDS_NORESET: DWORD = 0x10000000;
+            let res = ChangeDisplaySettingsExW(
+                device_name.as_ptr(),
+                &mut dm,
+                NULL as _,
+                CDS_UPDATEREGISTRY | CDS_NORESET,
+                NULL as _,
+            );
+            if res == DISP_CHANGE_SUCCESSFUL {
+                ChangeDisplaySettingsExW(NULL as _, NULL as _, NULL as _, 0, NULL as _);
+                return Ok(());
+            }
+            bail!("ChangeDisplaySettingsExW failed to set position: {}", res);
+        }
+        bail!("EnumDisplaySettingsW failed for {}", name);
+    }
+}
+
 pub fn user_accessible_folder() -> ResultType<PathBuf> {
     let disk = std::env::var("SystemDrive").unwrap_or("C:".to_string());
     let dir1 = PathBuf::from(format!("{}\\ProgramData", disk));
