@@ -108,10 +108,21 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       gFFI.ffiModel.toggleTouchMode();
     }
     if (widget.isUsbDisplay || widget.id.startsWith("127.0.0.1")) {
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: 'Y');
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'codec-preference', value: 'vp9');
+      final savedCodec =
+          bind.mainGetPeerOptionSync(id: widget.id, key: 'codec-preference');
+      final savedI444 =
+          bind.mainGetPeerOptionSync(id: widget.id, key: 'i444');
+      // If never configured, default to low-latency (4:2:0 auto)
+      if (savedCodec.isEmpty) {
+        bind.mainSetPeerOptionSync(
+            id: widget.id, key: 'codec-preference', value: 'auto');
+      }
+      if (savedI444.isEmpty) {
+        bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: 'N');
+      }
       bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'image-quality', value: 'best');
+      bind.mainSetPeerOptionSync(
+          id: widget.id, key: 'image-quality', value: 'best');
 
       _displaysSubscription = gFFI.ffiModel.pi.displays.listen((displays) {
         _checkAndAutoSwitchUsbDisplay(displays);
@@ -1674,6 +1685,10 @@ void showOptions(
         (imageQualityRadios.isNotEmpty ? imageQualityRadios[0].groupValue : '')
             .obs;
     var codec = (codecRadios.isNotEmpty ? codecRadios[0].groupValue : '').obs;
+    final isI444Enabled = (bind.sessionGetToggleOptionSync(
+                sessionId: gFFI.sessionId, arg: 'i444') ||
+            bind.mainGetPeerOptionSync(id: id, key: 'i444') == 'Y')
+        .obs;
 
     TRadioMenu<String>? findRadio(List<TRadioMenu<String>> list, String val) {
       for (final e in list) {
@@ -1863,14 +1878,78 @@ void showOptions(
         text: label,
         selected: codec.value == val,
         enabled: enabled,
-        onTap: () {
+        onTap: () async {
           if (enabled) {
+            if (val == 'h264' || val == 'h265' || val == 'auto') {
+              if (isI444Enabled.value) {
+                isI444Enabled.value = false;
+                await bind.sessionPeerOption(
+                    sessionId: gFFI.sessionId, name: 'i444', value: 'N');
+                bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'N');
+              }
+            }
             r.onChanged?.call(val);
             codec.value = val;
           }
         },
       );
     }
+
+    final colorModeButtons = [
+      buildSectionTitle(localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
+      Obx(() {
+        final is444 = isI444Enabled.value;
+        return Row(
+          children: [
+            Expanded(
+              child: buildSegmentButton(
+                text: localeName.startsWith('zh') ? '⚡ 低延时 (4:2:0 硬解)' : '⚡ Low Latency (4:2:0)',
+                selected: !is444,
+                onTap: () async {
+                  isI444Enabled.value = false;
+                  await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId, name: 'i444', value: 'N');
+                  bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'N');
+                  if (codec.value == 'vp9' || codec.value.isEmpty) {
+                    final r = findRadio(codecRadios, 'auto');
+                    r?.onChanged?.call('auto');
+                    codec.value = 'auto';
+                  } else {
+                    bind.sessionChangePreferCodec(sessionId: gFFI.sessionId);
+                  }
+                  BotToast.showText(
+                    text: localeName.startsWith('zh')
+                        ? '已开启低延时硬解模式 (H.264/H.265)'
+                        : 'Switched to Low Latency (H.264/H.265 HW decode)',
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: buildSegmentButton(
+                text: localeName.startsWith('zh') ? '🎨 真彩 (VP9 4:4:4)' : '🎨 True Color (VP9 4:4:4)',
+                selected: is444,
+                onTap: () async {
+                  isI444Enabled.value = true;
+                  await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId, name: 'i444', value: 'Y');
+                  bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'Y');
+                  final r = findRadio(codecRadios, 'vp9');
+                  r?.onChanged?.call('vp9');
+                  codec.value = 'vp9';
+                  BotToast.showText(
+                    text: localeName.startsWith('zh')
+                        ? '已开启真彩模式 (VP9 4:4:4 软解，色彩无损)'
+                        : 'Switched to True Color (VP9 4:4:4)',
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      }),
+    ];
 
     final codecButtons = [
       buildSectionTitle(translate('Codec')),
@@ -2094,6 +2173,8 @@ void showOptions(
           ...scaleButtons,
           const SizedBox(height: 4),
           ...qualityButtons,
+          const SizedBox(height: 4),
+          ...colorModeButtons,
           const SizedBox(height: 4),
           ...codecButtons,
           const SizedBox(height: 4),
