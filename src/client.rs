@@ -2313,7 +2313,15 @@ impl LoginConfigHandler {
             msg.image_quality = q.into();
         } else if q == "custom" {
             let config = self.load_config();
-            let allow_more = !crate::using_public_server() || self.direct == Some(true) || self.id.starts_with("127.0.0.1") || self.is_lan();
+            let is_lan_ip = self.id.parse::<std::net::IpAddr>().map(|ip| match ip {
+                std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+                std::net::IpAddr::V6(v6) => v6.is_loopback(),
+            }).unwrap_or(false);
+            let allow_more = !crate::using_public_server()
+                || self.direct == Some(true)
+                || self.id.starts_with("127.0.0.1")
+                || is_lan_ip
+                || self.options.contains_key("secondary_display");
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {

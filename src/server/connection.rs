@@ -1858,7 +1858,11 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
-        if self.ip.starts_with("127.0.0.1") || is_saved_secondary {
+        let is_secondary = self.ip.starts_with("127.0.0.1") || {
+            let is_sec = crate::ui_interface::get_peer_option(self.lr.my_id.clone(), "is_secondary_display".to_string());
+            is_sec == "Y"
+        };
+        if is_secondary {
             log::info!("Secondary display connection detected: auto-optimizing 60 FPS, best quality, and remote cursor");
             video_service::VIDEO_QOS.lock().unwrap().user_custom_fps(self.inner.id(), 60);
             video_service::VIDEO_QOS.lock().unwrap().user_image_quality(self.inner.id(), 1);
