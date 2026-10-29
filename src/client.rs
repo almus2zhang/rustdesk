@@ -1991,7 +1991,11 @@ impl LoginConfigHandler {
         if v == self.get_option(&k) {
             return;
         }
-        config.options.insert(k, v);
+        if v.is_empty() {
+            config.options.remove(&k);
+        } else {
+            config.options.insert(k, v);
+        }
         self.save_config(config);
     }
 
@@ -2236,6 +2240,15 @@ impl LoginConfigHandler {
                 BoolOption::No
             }
             .into();
+        } else if name == "i444" {
+            let is_set = self.get_option(&name) == "Y";
+            if is_set {
+                self.config.options.remove(&name);
+            } else {
+                self.config.options.insert(name, "Y".to_owned());
+            }
+            self.config.store(&self.id);
+            return None;
         } else {
             let is_set = self
                 .options
@@ -2421,6 +2434,8 @@ impl LoginConfigHandler {
             self.config.follow_remote_cursor.v
         } else if name == "follow-remote-window" {
             self.config.follow_remote_window.v
+        } else if name == "i444" {
+            self.get_option(name) == "Y"
         } else {
             !self.get_option(name).is_empty()
         }

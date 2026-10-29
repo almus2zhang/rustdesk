@@ -2333,10 +2333,7 @@ impl Connection {
     fn update_codec_on_login(&self) {
         use scrap::codec::{Encoder, EncodingUpdate::*};
         if let Some(o) = self.lr.clone().option.as_ref() {
-            if let Some(mut q) = o.supported_decoding.clone().take() {
-                if self.ip.starts_with("127.0.0.1") {
-                    q.prefer_chroma = hbb_common::message_proto::Chroma::I444.into();
-                }
+            if let Some(q) = o.supported_decoding.clone().take() {
                 Encoder::update(Update(self.inner.id(), q));
             } else {
                 Encoder::update(NewOnlyVP9(self.inner.id()));
@@ -4356,10 +4353,7 @@ impl Connection {
                 .unwrap()
                 .user_custom_fps(self.inner.id(), o.custom_fps as _);
         }
-        if let Some(mut q) = o.supported_decoding.clone().take() {
-            if self.ip.starts_with("127.0.0.1") {
-                q.prefer_chroma = hbb_common::message_proto::Chroma::I444.into();
-            }
+        if let Some(q) = o.supported_decoding.clone().take() {
             scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Update(self.inner.id(), q));
         }
         if let Ok(q) = o.lock_after_session_end.enum_value() {

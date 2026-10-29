@@ -117,8 +117,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         bind.mainSetPeerOptionSync(
             id: widget.id, key: 'codec-preference', value: 'auto');
       }
-      if (savedI444.isEmpty) {
-        bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: 'N');
+      if (savedI444.isEmpty || savedI444 == 'N') {
+        bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: '');
       }
       bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
       bind.mainSetPeerOptionSync(
@@ -1685,8 +1685,8 @@ void showOptions(
         (imageQualityRadios.isNotEmpty ? imageQualityRadios[0].groupValue : '')
             .obs;
     var codec = (codecRadios.isNotEmpty ? codecRadios[0].groupValue : '').obs;
-    final isI444Enabled = (bind.sessionGetToggleOptionSync(
-                sessionId: gFFI.sessionId, arg: 'i444') ||
+    final isI444Enabled = (bind.sessionGetOptionSync(
+                sessionId: gFFI.sessionId, arg: 'i444') == 'Y' ||
             bind.mainGetPeerOptionSync(id: id, key: 'i444') == 'Y')
         .obs;
 
@@ -1884,8 +1884,8 @@ void showOptions(
               if (isI444Enabled.value) {
                 isI444Enabled.value = false;
                 await bind.sessionPeerOption(
-                    sessionId: gFFI.sessionId, name: 'i444', value: 'N');
-                bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'N');
+                    sessionId: gFFI.sessionId, name: 'i444', value: '');
+                bind.mainSetPeerOptionSync(id: id, key: 'i444', value: '');
               }
             }
             r.onChanged?.call(val);
@@ -1908,15 +1908,15 @@ void showOptions(
                 onTap: () async {
                   isI444Enabled.value = false;
                   await bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId, name: 'i444', value: 'N');
-                  bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'N');
-                  if (codec.value == 'vp9' || codec.value.isEmpty) {
-                    final r = findRadio(codecRadios, 'auto');
-                    r?.onChanged?.call('auto');
-                    codec.value = 'auto';
-                  } else {
-                    bind.sessionChangePreferCodec(sessionId: gFFI.sessionId);
-                  }
+                      sessionId: gFFI.sessionId, name: 'i444', value: '');
+                  bind.mainSetPeerOptionSync(id: id, key: 'i444', value: '');
+                  await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId, name: 'codec-preference', value: 'auto');
+                  bind.mainSetPeerOptionSync(id: id, key: 'codec-preference', value: 'auto');
+                  final r = findRadio(codecRadios, 'auto');
+                  r?.onChanged?.call('auto');
+                  codec.value = 'auto';
+                  bind.sessionChangePreferCodec(sessionId: gFFI.sessionId);
                   BotToast.showText(
                     text: localeName.startsWith('zh')
                         ? '已开启低延时硬解模式 (H.264/H.265)'
@@ -1935,9 +1935,13 @@ void showOptions(
                   await bind.sessionPeerOption(
                       sessionId: gFFI.sessionId, name: 'i444', value: 'Y');
                   bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'Y');
+                  await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId, name: 'codec-preference', value: 'vp9');
+                  bind.mainSetPeerOptionSync(id: id, key: 'codec-preference', value: 'vp9');
                   final r = findRadio(codecRadios, 'vp9');
                   r?.onChanged?.call('vp9');
                   codec.value = 'vp9';
+                  bind.sessionChangePreferCodec(sessionId: gFFI.sessionId);
                   BotToast.showText(
                     text: localeName.startsWith('zh')
                         ? '已开启真彩模式 (VP9 4:4:4 软解，色彩无损)'
