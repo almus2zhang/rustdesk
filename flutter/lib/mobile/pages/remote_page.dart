@@ -1685,8 +1685,8 @@ void showOptions(
         (imageQualityRadios.isNotEmpty ? imageQualityRadios[0].groupValue : '')
             .obs;
     var codec = (codecRadios.isNotEmpty ? codecRadios[0].groupValue : '').obs;
-    final isI444Enabled = (bind.sessionGetOptionSync(
-                sessionId: gFFI.sessionId, arg: 'i444') == 'Y' ||
+    final isI444Enabled = (bind.sessionGetToggleOptionSync(
+                sessionId: gFFI.sessionId, arg: 'i444') ||
             bind.mainGetPeerOptionSync(id: id, key: 'i444') == 'Y')
         .obs;
 

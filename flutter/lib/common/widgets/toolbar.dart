@@ -465,9 +465,8 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   onChanged(String? value) async {
     if (value == null) return;
     if (value == 'h264' || value == 'h265' || value == 'auto') {
-      final currentI444 = bind.sessionGetOptionSync(
-              sessionId: sessionId, arg: 'i444') ==
-          'Y';
+      final currentI444 = bind.sessionGetToggleOptionSync(
+          sessionId: sessionId, arg: 'i444');
       if (currentI444) {
         await bind.sessionPeerOption(
             sessionId: sessionId, name: 'i444', value: '');
