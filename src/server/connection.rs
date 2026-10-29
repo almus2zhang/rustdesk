@@ -4242,21 +4242,26 @@ impl Connection {
                     #[cfg(windows)]
                     {
                         crate::usb_display::plug_in_usb_display(w, h).ok();
-                        if let Ok(displays) = display_service::try_get_displays() {
-                            for d in &displays {
-                                if crate::usb_display::is_this_usb_display(&d.name()) {
-                                    virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
-                                    crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
+                        let target_switch = {
+                            if let Ok(displays) = display_service::try_get_displays() {
+                                for d in &displays {
+                                    if crate::usb_display::is_this_usb_display(&d.name()) {
+                                        virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
+                                        crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
+                                    }
                                 }
+                                displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name()))
+                            } else {
+                                None
                             }
-                            if let Some(pos) = displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name())) {
-                                if self.display_idx != pos {
-                                    log::info!("Switching connection to virtual secondary display idx {}", pos);
-                                    if let Some(server) = self.server.upgrade() {
-                                        self.switch_display_to(pos, server);
-                                        if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
-                                            self.send(msg_out).await;
-                                        }
+                        };
+                        if let Some(pos) = target_switch {
+                            if self.display_idx != pos {
+                                log::info!("Switching connection to virtual secondary display idx {}", pos);
+                                if let Some(server) = self.server.upgrade() {
+                                    self.switch_display_to(pos, server);
+                                    if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
+                                        self.send(msg_out).await;
                                     }
                                 }
                             }
