@@ -558,6 +558,12 @@ Widget _keepScaleBuilder(BuildContext context, Widget? child) {
 }
 
 _registerEventHandler() {
+  platformFFI.registerEventHandler('secondary_display_invite', 'secondary_display_invite', (evt) async {
+    final id = evt['id'] ?? '';
+    final hostname = evt['hostname'] ?? '';
+    final ip = evt['ip'] ?? '';
+    showSecondaryDisplayInviteDialog(id, hostname, ip);
+  });
   if (isDesktop && desktopType != DesktopType.main) {
     platformFFI.registerEventHandler('theme', 'theme', (evt) async {
       String? dark = evt['dark'];

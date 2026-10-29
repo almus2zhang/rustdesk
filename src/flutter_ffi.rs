@@ -711,6 +711,16 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             session.select_app_window(hwnd, direct);
             return;
         }
+        if name == "secondary_display" {
+            if let Some((w_s, h_s)) = value.split_once('x') {
+                let w = w_s.trim().parse::<i32>().unwrap_or(0);
+                let h = h_s.trim().parse::<i32>().unwrap_or(0);
+                if w > 0 && h > 0 {
+                    session.request_secondary_display(w, h);
+                    return;
+                }
+            }
+        }
         session.set_option(name, value);
     }
 }
@@ -987,6 +997,12 @@ pub fn main_show_option(_key: String) -> SyncReturn<bool> {
 }
 
 pub fn main_set_option(key: String, value: String) {
+    if key == "send_secondary_display_invite" {
+        std::thread::spawn(move || {
+            crate::lan::send_secondary_display_invite(&value).ok();
+        });
+        return;
+    }
     #[cfg(target_os = "android")]
     {
         let is_permission_option = key.eq(config::keys::OPTION_ENABLE_CLIPBOARD)

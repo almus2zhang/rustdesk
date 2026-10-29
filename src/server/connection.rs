@@ -1767,7 +1767,13 @@ impl Connection {
             #[cfg(windows)]
             let is_usb_conn = self.ip.starts_with("127.0.0.1");
             #[cfg(windows)]
-            if is_usb_conn {
+            let is_saved_secondary = {
+                let peer_id = self.lr.my_id.clone();
+                let is_sec = crate::ui_interface::get_peer_option(peer_id, "is_secondary_display".to_string());
+                is_usb_conn || is_sec == "Y"
+            };
+            #[cfg(windows)]
+            if is_saved_secondary {
                 let peer_id = self.lr.my_id.clone();
                 let saved_res_str = crate::ui_interface::get_peer_option(peer_id.clone(), "usb_display_resolution".to_string());
                 let (w, h) = if let Some((w_s, h_s)) = saved_res_str.split_once('x') {
@@ -1775,7 +1781,7 @@ impl Connection {
                 } else {
                     (1920, 1200)
                 };
-                log::info!("Plugging in USB secondary display for peer {} with resolution {}x{}", peer_id, w, h);
+                log::info!("Plugging in secondary display for peer {} with resolution {}x{}", peer_id, w, h);
                 crate::usb_display::plug_in_usb_display(w, h).ok();
             }
 
@@ -1789,7 +1795,7 @@ impl Connection {
                     // For compatibility with old versions, we need to send the displays to the peer.
                     // But the displays may be updated later, before creating the video capturer.
                     #[cfg(windows)]
-                    if is_usb_conn {
+                    if is_saved_secondary {
                         let target_idx = displays.iter().position(|d| {
                             crate::usb_display::is_this_usb_display(&d.name)
                         }).or_else(|| {
@@ -1801,7 +1807,7 @@ impl Connection {
                         });
 
                         if let Some(pos) = target_idx {
-                            log::info!("Auto-selecting virtual display index {} ({}) for USB tablet peer {}", pos, displays[pos].name, self.lr.my_id);
+                            log::info!("Auto-selecting virtual display index {} ({}) for secondary display peer {}", pos, displays[pos].name, self.lr.my_id);
                             self.display_idx = pos;
                         }
 
@@ -1810,7 +1816,7 @@ impl Connection {
                         if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
                             if let (Ok(x), Ok(y)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
                                 if let Some(target_d) = displays.get(self.display_idx) {
-                                    log::info!("Restoring saved position ({}, {}) for USB display {}", x, y, target_d.name);
+                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, target_d.name);
                                     crate::platform::windows::set_display_position(&target_d.name, x, y).ok();
                                 }
                             }
@@ -4217,6 +4223,31 @@ impl Connection {
                 crate::server::video_service::set_direct_window_capture(direct);
             }
             self.select_app_window(hwnd).await;
+            return;
+        }
+        if t.impl_key.starts_with("secondary_display:") {
+            let res_part = &t.impl_key["secondary_display:".len()..];
+            if let Some((w_s, h_s)) = res_part.split_once('x') {
+                if let (Ok(w), Ok(h)) = (w_s.parse::<u32>(), h_s.parse::<u32>()) {
+                    let peer_id = self.lr.my_id.clone();
+                    let res_str = format!("{}x{}", w, h);
+                    log::info!("Received secondary display request {} from peer {}", res_str, peer_id);
+                    crate::ui_interface::set_peer_option(peer_id.clone(), "usb_display_resolution".to_string(), res_str);
+                    crate::ui_interface::set_peer_option(peer_id.clone(), "is_secondary_display".to_string(), "Y".to_string());
+
+                    #[cfg(windows)]
+                    {
+                        crate::usb_display::plug_in_usb_display(w, h).ok();
+                        if let Ok(displays) = display_service::try_get_displays() {
+                            for d in &displays {
+                                if crate::usb_display::is_this_usb_display(&d.name()) {
+                                    virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             return;
         }
         if t.on {

@@ -468,6 +468,18 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
+    pub fn request_secondary_display(&self, width: i32, height: i32) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: format!("secondary_display:{}x{}", width, height),
+            on: true,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
     #[cfg(not(feature = "flutter"))]
     pub fn refresh_video(&self, _display: i32) {
         self.send(Data::Message(LoginConfigHandler::refresh()));

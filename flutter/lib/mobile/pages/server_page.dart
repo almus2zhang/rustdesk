@@ -899,6 +899,59 @@ class ClientInfo extends StatelessWidget {
   }
 }
 
+void showSecondaryDisplayInviteDialog(String hostId, String hostName, String hostIp) {
+  debugPrint("Secondary display invite received: id=$hostId, name=$hostName, ip=$hostIp");
+  final ctx = Get.context;
+  if (ctx != null) {
+    final isZh = localeName.startsWith('zh');
+    final displayName = hostName.isNotEmpty ? hostName : (hostIp.isNotEmpty ? hostIp : hostId);
+    gFFI.dialogManager.dismissByTag('secondary-display-invite');
+    gFFI.dialogManager.show(
+      tag: 'secondary-display-invite',
+      (setState, close, context) {
+        return CustomAlertDialog(
+          title: Row(
+            children: [
+              const Icon(Icons.cast_connected, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              Text(isZh ? '收到副屏扩展邀请' : 'Secondary Display Invite'),
+            ],
+          ),
+          content: Text(
+            isZh
+                ? '电脑 "$displayName" 邀请将此设备作为扩展副屏显示，是否立即连接？'
+                : 'Computer "$displayName" invites this device to act as a secondary display. Connect now?',
+            style: const TextStyle(fontSize: 16),
+          ),
+          actions: [
+            dialogButton(
+              translate('Cancel'),
+              onPressed: close,
+              isOutline: true,
+            ),
+            dialogButton(
+              isZh ? '接受并连接' : 'Accept',
+              onPressed: () {
+                close();
+                final target = hostIp.isNotEmpty ? hostIp : hostId;
+                Navigator.push(
+                  ctx,
+                  MaterialPageRoute(
+                    builder: (BuildContext context) => RemotePage(
+                      id: target,
+                      isSecondaryDisplay: true,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 void showUsbDisplayDialog(dynamic arguments) {
   debugPrint("USB Display Accessory Attached: $arguments");
   final ctx = Get.context;

@@ -966,12 +966,49 @@ class RecentPeerCard extends BasePeerCard {
   @override
   Future<List<MenuEntryBase<String>>> _buildMenuItems(
       BuildContext context) async {
-    final List<MenuEntryBase<String>> menuItems = [
+    final List<MenuEntryBase<String>> menuItems = [];
+
+    final isZh = localeName.startsWith('zh');
+
+    if (!isDesktop && peer.platform == kPeerPlatformWindows) {
+      menuItems.add(MenuEntryButton<String>(
+        childBuilder: (TextStyle? style) => Text(
+          isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
+          style: style?.copyWith(color: Colors.blueAccent, fontWeight: FontWeight.bold) ??
+              const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        ),
+        proc: () {
+          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
+          connect(context, target, isSecondaryDisplay: true);
+        },
+        padding: menuPadding,
+        dismissOnClicked: true,
+      ));
+    }
+
+    if (isDesktop && (peer.platform == kPeerPlatformAndroid || peer.platform == 'iOS')) {
+      menuItems.add(MenuEntryButton<String>(
+        childBuilder: (TextStyle? style) => Text(
+          isZh ? '📱 拓展至此设备作为副屏' : '📱 Extend to this device as secondary display',
+          style: style?.copyWith(color: Colors.blueAccent, fontWeight: FontWeight.bold) ??
+              const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        ),
+        proc: () {
+          final target = peer.ip.isNotEmpty ? '${peer.ip}|${peer.id}' : peer.id;
+          bind.mainSetOption(key: 'send_secondary_display_invite', value: target);
+          showToast(isZh ? '已发送副屏扩展邀请' : 'Secondary display invite sent');
+        },
+        padding: menuPadding,
+        dismissOnClicked: true,
+      ));
+    }
+
+    menuItems.addAll([
       _connectAction(context),
       _transferFileAction(context),
       _viewCameraAction(context),
       _terminalAction(context),
-    ];
+    ]);
 
     if (peer.platform == kPeerPlatformWindows) {
       menuItems.add(_terminalRunAsAdminAction(context));

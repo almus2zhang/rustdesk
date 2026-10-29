@@ -813,8 +813,10 @@ pub fn get_lan_peers() -> Vec<HashMap<&'static str, String>> {
         .peers
         .iter()
         .map(|peer| {
+            let ip = peer.ip_mac.keys().next().cloned().unwrap_or_default();
             HashMap::<&str, String>::from_iter([
                 ("id", peer.id.clone()),
+                ("ip", ip),
                 ("username", peer.username.clone()),
                 ("hostname", peer.hostname.clone()),
                 ("platform", peer.platform.clone()),

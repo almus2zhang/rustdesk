@@ -65,6 +65,36 @@ pub(super) fn start_listening() -> ResultType<()> {
                                 socket.send_to(&msg_out.write_to_bytes()?, addr).ok();
                             }
                         }
+                        if p.cmd == "invite_secondary_display" {
+                            let my_id = Config::get_id();
+                            if !p.mac.is_empty() && p.mac != my_id {
+                                continue;
+                            }
+                            if p.id == my_id {
+                                continue;
+                            }
+                            let host_ip = addr.ip().to_string();
+                            let host_id = p.id;
+                            let host_name = if !p.hostname.is_empty() {
+                                p.hostname
+                            } else {
+                                host_ip.clone()
+                            };
+                            log::info!("Received secondary display invite from {} ({})", host_name, host_ip);
+                            #[cfg(feature = "flutter")]
+                            {
+                                let data = HashMap::from([
+                                    ("name", "secondary_display_invite".to_string()),
+                                    ("id", host_id),
+                                    ("hostname", host_name),
+                                    ("ip", host_ip),
+                                ]);
+                                if let Ok(event_str) = serde_json::to_string(&data) {
+                                    crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, event_str);
+                                }
+                            }
+                            continue;
+                        }
                     }
                     _ => {}
                 }
@@ -340,5 +370,53 @@ async fn handle_received_peers(mut rx: UnboundedReceiver<config::DiscoveryPeer>)
     config::LanPeers::store(&peers);
     #[cfg(feature = "flutter")]
     crate::flutter_ffi::main_load_lan_peers();
+    Ok(())
+}
+
+pub fn send_secondary_display_invite(target: &str) -> ResultType<()> {
+    let sockets = create_broadcast_sockets();
+    if sockets.is_empty() {
+        bail!("Found no bindable ipv4 addresses");
+    }
+
+    let id = Config::get_id();
+    let hostname = crate::whoami_hostname();
+
+    let (target_ip, target_id) = if let Ok(ip) = target.parse::<IpAddr>() {
+        (Some(ip), "".to_string())
+    } else if let Some((ip_s, id_s)) = target.split_once('|') {
+        (ip_s.parse::<IpAddr>().ok(), id_s.to_string())
+    } else {
+        (None, target.to_string())
+    };
+
+    let mut msg_out = Message::new();
+    #[cfg(not(target_os = "ios"))]
+    let platform = whoami::platform().to_string();
+    #[cfg(target_os = "ios")]
+    let platform = "".to_string();
+
+    let peer = PeerDiscovery {
+        cmd: "invite_secondary_display".to_owned(),
+        id,
+        hostname,
+        username: crate::platform::get_active_username(),
+        platform,
+        mac: target_id,
+        ..Default::default()
+    };
+    msg_out.set_peer_discovery(peer);
+    let out = msg_out.write_to_bytes()?;
+
+    let port = get_broadcast_port();
+    let bcast_addr = SocketAddr::from(([255, 255, 255, 255], port));
+
+    for socket in &sockets {
+        allow_err!(socket.send_to(&out, bcast_addr));
+        if let Some(ip) = target_ip {
+            allow_err!(socket.send_to(&out, SocketAddr::new(ip, port)));
+        }
+    }
+    log::info!("Sent secondary display invite to target {}", target);
     Ok(())
 }

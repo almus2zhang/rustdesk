@@ -50,7 +50,8 @@ class RemotePage extends StatefulWidget {
       this.password,
       this.isSharedPassword,
       this.forceRelay,
-      this.isUsbDisplay = false})
+      this.isUsbDisplay = false,
+      this.isSecondaryDisplay = false})
       : super(key: key);
 
   final String id;
@@ -58,12 +59,44 @@ class RemotePage extends StatefulWidget {
   final bool? isSharedPassword;
   final bool? forceRelay;
   final bool isUsbDisplay;
+  final bool isSecondaryDisplay;
 
   @override
   State<RemotePage> createState() => _RemotePageState(id);
 }
 
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
+  bool get isSecondary =>
+      widget.isUsbDisplay ||
+      widget.isSecondaryDisplay ||
+      widget.id.startsWith("127.0.0.1");
+
+  void _sendPhysicalResolutionToServer() {
+    try {
+      final view = WidgetsBinding.instance.platformDispatcher.views.first;
+      final pSize = view.physicalSize;
+      if (pSize.width <= 0 || pSize.height <= 0) return;
+      final int targetW = pSize.width.round() & ~1;
+      final int targetH = pSize.height.round() & ~1;
+      debugPrint("Sending secondary display resolution to server: ${targetW}x$targetH");
+      bind.sessionPeerOption(
+        sessionId: gFFI.sessionId,
+        name: 'secondary_display',
+        value: '${targetW}x$targetH',
+      );
+    } catch (e) {
+      debugPrint("Error sending secondary display resolution: $e");
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    if (isSecondary) {
+      _sendPhysicalResolutionToServer();
+    }
+  }
+
   Timer? _timer;
   late bool _showBar;
   bool _showGestureHelp = false;
@@ -103,11 +136,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void initState() {
-    _showBar = widget.isUsbDisplay ? false : !isWebDesktop;
-    if (widget.isUsbDisplay && !gFFI.ffiModel.touchMode) {
+    _showBar = isSecondary ? false : !isWebDesktop;
+    if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
-    if (widget.isUsbDisplay || widget.id.startsWith("127.0.0.1")) {
+    if (isSecondary) {
       final savedCodec =
           bind.mainGetPeerOptionSync(id: widget.id, key: 'codec-preference');
       final savedI444 =
@@ -153,7 +186,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         .changeCurrentKey(MessageKey(widget.id, ChatModel.clientModeID));
     _blockableOverlayState.applyFfi(gFFI);
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
-      if (widget.isUsbDisplay || widget.id.startsWith("127.0.0.1")) {
+      if (isSecondary) {
+        _sendPhysicalResolutionToServer();
         _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
       }
       gFFI.recordingModel
