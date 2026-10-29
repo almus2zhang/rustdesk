@@ -1858,8 +1858,8 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
-        if self.ip.starts_with("127.0.0.1") {
-            log::info!("Local USB display connection detected on 127.0.0.1: auto-optimizing 60 FPS, best quality, and remote cursor");
+        if self.ip.starts_with("127.0.0.1") || is_saved_secondary {
+            log::info!("Secondary display connection detected: auto-optimizing 60 FPS, best quality, and remote cursor");
             video_service::VIDEO_QOS.lock().unwrap().user_custom_fps(self.inner.id(), 60);
             video_service::VIDEO_QOS.lock().unwrap().user_image_quality(self.inner.id(), 1);
             self.show_remote_cursor = true;
@@ -4242,6 +4242,18 @@ impl Connection {
                             for d in &displays {
                                 if crate::usb_display::is_this_usb_display(&d.name()) {
                                     virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
+                                    crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
+                                }
+                            }
+                            if let Some(pos) = displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name())) {
+                                if self.display_idx != pos {
+                                    log::info!("Switching connection to virtual secondary display idx {}", pos);
+                                    if let Some(server) = self.server.upgrade() {
+                                        self.switch_display_to(pos, server);
+                                        if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
+                                            self.send(msg_out).await;
+                                        }
+                                    }
                                 }
                             }
                         }

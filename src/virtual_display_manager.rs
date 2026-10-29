@@ -399,19 +399,32 @@ pub mod rustdesk_idd {
     }
 
     pub fn change_resolution_if_is_virtual_display(name: &str, w: u32, h: u32) -> Option<bool> {
-        let lock = VIRTUAL_DISPLAY_MANAGER.lock().unwrap();
-        if let Some((index, device_name)) = &lock.headless_index_name {
-            if windows::is_device_name(device_name, name) {
-                return Some(change_resolution(*index, w, h));
+        let (found, dev_name) = {
+            let lock = VIRTUAL_DISPLAY_MANAGER.lock().unwrap();
+            let mut res = None;
+            if let Some((index, device_name)) = &lock.headless_index_name {
+                if windows::is_device_name(device_name, name) || device_name == name || name.contains(device_name) || device_name.contains(name) {
+                    let ok = change_resolution(*index, w, h);
+                    res = Some((ok, device_name.clone()));
+                }
             }
-        }
 
-        for (k, v) in lock.peer_index_name.iter() {
-            if windows::is_device_name(v, name) {
-                return Some(change_resolution(*k, w, h));
+            if res.is_none() {
+                for (k, v) in lock.peer_index_name.iter() {
+                    if windows::is_device_name(v, name) || v == name || name.contains(v) || v.contains(name) {
+                        let ok = change_resolution(*k, w, h);
+                        res = Some((ok, v.clone()));
+                        break;
+                    }
+                }
             }
-        }
-        None
+            res?
+        };
+
+        log::info!("Applying Windows change_resolution for virtual display {} ({}) to {}x{}", dev_name, name, w, h);
+        crate::platform::change_resolution(&dev_name, w as usize, h as usize).ok();
+        crate::platform::change_resolution(name, w as usize, h as usize).ok();
+        Some(found)
     }
 }
 

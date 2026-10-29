@@ -2313,7 +2313,7 @@ impl LoginConfigHandler {
             msg.image_quality = q.into();
         } else if q == "custom" {
             let config = self.load_config();
-            let allow_more = !crate::using_public_server() || self.direct == Some(true);
+            let allow_more = !crate::using_public_server() || self.direct == Some(true) || self.id.starts_with("127.0.0.1") || self.is_lan();
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {
