@@ -125,6 +125,9 @@ pub fn plug_in_peer_request(modes: Vec<Vec<virtual_display::MonitorMode>>) -> Re
     match IDD_IMPL {
         IDD_IMPL_RUSTDESK => rustdesk_idd::plug_in_peer_request(modes),
         IDD_IMPL_AMYUNI => {
+            if let Some(first_mode) = modes.first().and_then(|m| m.first()) {
+                amyuni_idd::ensure_custom_resolutions(first_mode.width, first_mode.height).ok();
+            }
             amyuni_idd::plug_in_monitor()?;
             Ok(vec![0])
         }
@@ -487,6 +490,58 @@ pub mod amyuni_idd {
         work_dir2.push(0);
         Ok(Some(work_dir2))
     }
+
+    #[cfg(windows)]
+    pub fn ensure_custom_resolutions(custom_w: u32, custom_h: u32) -> ResultType<()> {
+        if custom_w == 0 || custom_h == 0 {
+            return Ok(());
+        }
+        use winreg::{enums::*, RegKey};
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let path = r#"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services\usbmmIdd\Parameters\Monitors"#;
+        let (key, _) = hklm.create_subkey(path)?;
+
+        log::info!("Registering usbmmIdd custom resolutions with target: {}x{}", custom_w, custom_h);
+        key.set_value("0", &format!("{},{}", custom_w, custom_h))?;
+
+        let common = [
+            (1920, 1080),
+            (2560, 1600),
+            (2400, 1080),
+            (1920, 1200),
+            (2800, 1840),
+            (2160, 1440),
+            (2000, 1200),
+            (1600, 1200),
+            (1280, 800),
+        ];
+        let mut idx = 1;
+        for (w, h) in common {
+            if w != custom_w || h != custom_h {
+                key.set_value(&idx.to_string(), &format!("{},{}", w, h))?;
+                idx += 1;
+                if idx > 9 {
+                    break;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    pub fn ensure_custom_resolutions(_custom_w: u32, _custom_h: u32) -> ResultType<()> {
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    pub fn cycle_monitor() {
+        log::info!("Cycling usbmmIdd virtual monitor to apply updated registry resolution modes");
+        let _ = plug_monitor_(false, Some(Duration::from_millis(500)));
+        let _ = plug_monitor_(true, Some(Duration::from_millis(1500)));
+    }
+
+    #[cfg(not(windows))]
+    pub fn cycle_monitor() {}
 
     pub fn uninstall_driver() -> ResultType<()> {
         if let Ok(Some(work_dir)) = get_deviceinstaller64_work_dir() {

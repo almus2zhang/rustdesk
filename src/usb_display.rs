@@ -68,8 +68,14 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
         if let Some(idx) = *idx_lock {
             log::info!("USB display already plugged in with index {}", idx);
             if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
+                virtual_display_manager::amyuni_idd::ensure_custom_resolutions(width, height).ok();
                 virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(dev_name, width, height);
-                crate::platform::change_resolution(dev_name, width as usize, height as usize).ok();
+                let res = crate::platform::change_resolution(dev_name, width as usize, height as usize);
+                if res.is_err() {
+                    log::warn!("change_resolution directly failed: {:?}, cycling monitor", res);
+                    virtual_display_manager::amyuni_idd::cycle_monitor();
+                    crate::platform::change_resolution(dev_name, width as usize, height as usize).ok();
+                }
             }
             return Ok(idx);
         }
@@ -100,6 +106,16 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             if let Some(dev_name) = virtual_display_manager::get_device_name_by_peer_index(first_idx) {
                 *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(dev_name.clone());
                 crate::platform::change_resolution(&dev_name, width as usize, height as usize).ok();
+            } else {
+                if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                    for d in displays {
+                        if virtual_display_manager::amyuni_idd::is_my_display(&d.name()) {
+                            *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(d.name().to_string());
+                            crate::platform::change_resolution(&d.name(), width as usize, height as usize).ok();
+                            break;
+                        }
+                    }
+                }
             }
             log::info!("Successfully plugged in USB secondary display (index: {})", first_idx);
             return Ok(first_idx);

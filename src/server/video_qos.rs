@@ -203,7 +203,10 @@ impl VideoQoS {
         }
         if let Some(user) = self.users.get_mut(&id) {
             user.custom_fps = Some(fps);
+            user.delay.fps = Some(fps);
         }
+        self.fps = fps.clamp(MIN_FPS, MAX_FPS);
+        self.adjust_fps();
     }
 
     pub fn user_auto_adjust_fps(&mut self, id: i32, fps: u32) {
@@ -510,11 +513,18 @@ impl VideoQoS {
     // Adjust fps based on network delay and user response time
     fn adjust_fps(&mut self) {
         let highest_fps = self.highest_fps();
+        let user_target_fps = |u: &UserData| {
+            if let Some(c) = u.custom_fps {
+                c
+            } else {
+                u.delay.fps.unwrap_or(INIT_FPS)
+            }
+        };
         // Get minimum fps from all users
         let mut fps = self
             .users
             .iter()
-            .map(|u| u.1.delay.fps.unwrap_or(INIT_FPS))
+            .map(|(_, u)| user_target_fps(u))
             .min()
             .unwrap_or(INIT_FPS);
 
@@ -525,7 +535,9 @@ impl VideoQoS {
         }
 
         // For new connections (within 1 second), cap fps to INIT_FPS to ensure stability
-        if self.new_user_instant.elapsed().as_secs() < 1 {
+        // unless custom_fps is explicitly set
+        let has_custom_fps = self.users.iter().any(|u| u.1.custom_fps.is_some());
+        if !has_custom_fps && self.new_user_instant.elapsed().as_secs() < 1 {
             if fps > INIT_FPS {
                 fps = INIT_FPS;
             }

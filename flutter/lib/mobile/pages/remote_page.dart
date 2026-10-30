@@ -148,7 +148,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       // If never configured, default to low-latency (4:2:0 auto)
       if (savedCodec.isEmpty) {
         bind.mainSetPeerOptionSync(
-            id: widget.id, key: 'codec-preference', value: 'auto');
+            id: widget.id, key: 'codec-preference', value: 'h264');
       }
       if (savedI444.isEmpty || savedI444 == 'N') {
         bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: '');

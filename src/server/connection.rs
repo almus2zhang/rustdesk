@@ -4241,13 +4241,19 @@ impl Connection {
 
                     #[cfg(windows)]
                     {
+                        crate::virtual_display_manager::amyuni_idd::ensure_custom_resolutions(w, h).ok();
                         crate::usb_display::plug_in_usb_display(w, h).ok();
                         let target_switch = {
                             if let Ok(displays) = display_service::try_get_displays() {
                                 for d in &displays {
                                     if crate::usb_display::is_this_usb_display(&d.name()) {
                                         virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
-                                        crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
+                                        let res = crate::platform::change_resolution(&d.name(), w as usize, h as usize);
+                                        if res.is_err() {
+                                            log::warn!("change_resolution directly failed: {:?}, cycling monitor", res);
+                                            virtual_display_manager::amyuni_idd::cycle_monitor();
+                                            crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
+                                        }
                                     }
                                 }
                                 displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name()))
@@ -4321,6 +4327,10 @@ impl Connection {
                             (r.width, r.height),
                         );
                     }
+                    #[cfg(windows)]
+                    if virtual_display_manager::amyuni_idd::is_my_display(&name) || crate::usb_display::is_this_usb_display(&name) {
+                        virtual_display_manager::amyuni_idd::ensure_custom_resolutions(r.width as _, r.height as _).ok();
+                    }
                     if let Err(e) =
                         crate::platform::change_resolution(&name, r.width as _, r.height as _)
                     {
@@ -4331,6 +4341,11 @@ impl Connection {
                             r.height,
                             e
                         );
+                        #[cfg(windows)]
+                        if virtual_display_manager::amyuni_idd::is_my_display(&name) || crate::usb_display::is_this_usb_display(&name) {
+                            virtual_display_manager::amyuni_idd::cycle_monitor();
+                            crate::platform::change_resolution(&name, r.width as _, r.height as _).ok();
+                        }
                     }
                 }
             }

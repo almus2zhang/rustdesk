@@ -2308,20 +2308,21 @@ impl LoginConfigHandler {
                 return None;
             }
         }
+        let is_lan_ip = self.id.parse::<std::net::IpAddr>().map(|ip| match ip {
+            std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+        }).unwrap_or(false);
+        let allow_more = !crate::using_public_server()
+            || self.direct == Some(true)
+            || self.id.starts_with("127.0.0.1")
+            || is_lan_ip
+            || self.options.contains_key("secondary_display");
+
         let q = self.image_quality.clone();
         if let Some(q) = self.get_image_quality_enum(&q, ignore_default) {
             msg.image_quality = q.into();
         } else if q == "custom" {
             let config = self.load_config();
-            let is_lan_ip = self.id.parse::<std::net::IpAddr>().map(|ip| match ip {
-                std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
-                std::net::IpAddr::V6(v6) => v6.is_loopback(),
-            }).unwrap_or(false);
-            let allow_more = !crate::using_public_server()
-                || self.direct == Some(true)
-                || self.id.starts_with("127.0.0.1")
-                || is_lan_ip
-                || self.options.contains_key("secondary_display");
             let quality = if config.custom_image_quality.is_empty() {
                 50
             } else {
@@ -2332,15 +2333,15 @@ impl LoginConfigHandler {
                 quality
             };
             msg.custom_image_quality = quality << 8;
-            #[cfg(feature = "flutter")]
-            if let Some(custom_fps) = self.options.get("custom-fps") {
-                let mut custom_fps = custom_fps.parse().unwrap_or(30);
-                if !allow_more && custom_fps > 30 {
-                    custom_fps = 30;
-                }
-                msg.custom_fps = custom_fps;
-                *self.custom_fps.lock().unwrap() = Some(custom_fps as _);
+        }
+        #[cfg(feature = "flutter")]
+        if let Some(custom_fps) = self.options.get("custom-fps") {
+            let mut custom_fps = custom_fps.parse().unwrap_or(30);
+            if !allow_more && custom_fps > 30 {
+                custom_fps = 30;
             }
+            msg.custom_fps = custom_fps;
+            *self.custom_fps.lock().unwrap() = Some(custom_fps as _);
         }
         let view_only = self.get_toggle_option("view-only");
         if view_only {
