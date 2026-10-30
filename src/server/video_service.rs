@@ -822,10 +822,10 @@ fn run(vs: VideoService) -> ResultType<()> {
                     send_counter += 1;
 
                     let mut fetched_conn_ids = HashSet::new();
-                    let timeout_millis = 3_000u64;
+                    let timeout_millis = 500u64;
                     let wait_begin = Instant::now();
                     while wait_begin.elapsed().as_millis() < timeout_millis as _ {
-                        frame_controller.try_wait_next(&mut fetched_conn_ids, 300);
+                        frame_controller.try_wait_next(&mut fetched_conn_ids, 30);
                         if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
                             break;
                         }
@@ -1022,13 +1022,13 @@ fn run(vs: VideoService) -> ResultType<()> {
         }
 
         let mut fetched_conn_ids = HashSet::new();
-        let timeout_millis = 3_000u64;
+        let timeout_millis = 500u64;
         let wait_begin = Instant::now();
         while wait_begin.elapsed().as_millis() < timeout_millis as _ {
             if vs.source.is_monitor() {
                 check_privacy_mode_changed(&sp, display_idx, &c)?;
             }
-            frame_controller.try_wait_next(&mut fetched_conn_ids, 300);
+            frame_controller.try_wait_next(&mut fetched_conn_ids, 30);
             // break if all connections have received current frame
             if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
                 break;

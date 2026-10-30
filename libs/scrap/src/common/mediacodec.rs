@@ -53,7 +53,7 @@ impl MediaCodecDecoder {
     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
         // take dst_stride into account please
         let dst_stride = rgb.stride();
-        match self.dequeue_input_buffer(Duration::from_millis(10))? {
+        match self.dequeue_input_buffer(Duration::from_millis(2))? {
             Some(mut input_buffer) => {
                 let mut buf = input_buffer.buffer_mut();
                 if data.len() > buf.len() {
@@ -68,7 +68,7 @@ impl MediaCodecDecoder {
             }
         };
 
-        return match self.dequeue_output_buffer(Duration::from_millis(100))? {
+        return match self.dequeue_output_buffer(Duration::from_millis(2))? {
             Some(output_buffer) => {
                 let res_format = self.output_format();
                 let w = res_format
@@ -142,6 +142,8 @@ fn create_media_codec(name: &str, direction: MediaCodecDirection) -> Option<Medi
     media_format.set_i32("width", 0);
     media_format.set_i32("height", 0);
     media_format.set_i32("color-format", 19); // COLOR_FormatYUV420Planar
+    media_format.set_i32("low-latency", 1);
+    media_format.set_i32("priority", 0);
     if let Err(e) = codec.configure(&media_format, None, direction) {
         log::error!("Failed to init decoder: {:?}", e);
         return None;

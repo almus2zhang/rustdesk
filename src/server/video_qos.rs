@@ -528,7 +528,8 @@ impl VideoQoS {
             .min()
             .unwrap_or(INIT_FPS);
 
-        if self.users.iter().any(|u| u.1.delay.response_delayed) {
+        let has_custom_fps = self.users.iter().any(|u| u.1.custom_fps.is_some());
+        if !has_custom_fps && self.users.iter().any(|u| u.1.delay.response_delayed) {
             if fps > MIN_FPS + 1 {
                 fps = MIN_FPS + 1;
             }
@@ -536,7 +537,6 @@ impl VideoQoS {
 
         // For new connections (within 1 second), cap fps to INIT_FPS to ensure stability
         // unless custom_fps is explicitly set
-        let has_custom_fps = self.users.iter().any(|u| u.1.custom_fps.is_some());
         if !has_custom_fps && self.new_user_instant.elapsed().as_secs() < 1 {
             if fps > INIT_FPS {
                 fps = INIT_FPS;

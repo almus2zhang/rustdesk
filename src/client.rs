@@ -96,7 +96,7 @@ pub mod screenshot;
 
 pub const MILLI1: Duration = Duration::from_millis(1);
 pub const SEC30: Duration = Duration::from_secs(30);
-pub const VIDEO_QUEUE_SIZE: usize = 120;
+pub const VIDEO_QUEUE_SIZE: usize = 30;
 const MAX_DECODE_FAIL_COUNTER: usize = 3;
 
 #[cfg(target_os = "linux")]
@@ -2928,26 +2928,38 @@ pub fn start_video_thread<F, T>(
             if let Ok(data) = video_receiver.recv() {
                 match data {
                     MediaData::VideoFrame(_) | MediaData::VideoQueue => {
-                        let vf = match data {
+                        let is_queue = matches!(data, MediaData::VideoQueue);
+                        let mut current_vf = match data {
                             MediaData::VideoFrame(vf) => {
                                 *discard_queue.write().unwrap() = false;
-                                *vf
+                                Some(*vf)
                             }
                             MediaData::VideoQueue => {
                                 if let Some(vf) = video_queue.read().unwrap().pop() {
                                     if discard_queue.read().unwrap().clone() {
-                                        continue;
+                                        None
+                                    } else {
+                                        Some(vf)
                                     }
-                                    vf
                                 } else {
-                                    continue;
+                                    None
                                 }
                             }
-                            _ => {
-                                // unreachable!();
-                                continue;
-                            }
+                            _ => None,
                         };
+
+                        while let Some(vf) = current_vf {
+                            let has_more = if is_queue {
+                                let q_len = video_queue.read().unwrap().len();
+                                if q_len > 0 {
+                                    let _ = video_receiver.try_recv();
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            };
                         let display = vf.display as usize;
                         let start = std::time::Instant::now();
                         let format = CodecFormat::from(&vf);
@@ -2967,12 +2979,14 @@ pub fn start_video_thread<F, T>(
                             let format_changed = handler.decoder.format() != format;
                             match handler.handle_frame(vf, &mut pixelbuffer, &mut tmp_chroma) {
                                 Ok(true) => {
-                                    video_callback(
-                                        display,
-                                        &mut handler.rgb,
-                                        handler.texture.texture,
-                                        pixelbuffer,
-                                    );
+                                    if !has_more {
+                                        video_callback(
+                                            display,
+                                            &mut handler.rgb,
+                                            handler.texture.texture,
+                                            pixelbuffer,
+                                        );
+                                    }
 
                                     // chroma
                                     if tmp_chroma.is_some() && last_chroma != tmp_chroma {
@@ -3028,6 +3042,13 @@ pub fn start_video_thread<F, T>(
                             session.send(Data::Message(
                                 session.lc.read().unwrap().update_supported_decodings(),
                             ));
+                        }
+
+                            if has_more {
+                                current_vf = video_queue.read().unwrap().pop();
+                            } else {
+                                break;
+                            }
                         }
                     }
                     MediaData::Reset => {
