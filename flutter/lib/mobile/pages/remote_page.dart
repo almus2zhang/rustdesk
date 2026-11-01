@@ -154,8 +154,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: '');
       }
       bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
-      bind.mainSetPeerOptionSync(
-          id: widget.id, key: 'image-quality', value: 'best');
+      final savedQuality =
+          bind.mainGetPeerOptionSync(id: widget.id, key: 'image-quality');
+      if (savedQuality.isEmpty) {
+        bind.mainSetPeerOptionSync(
+            id: widget.id, key: 'image-quality', value: 'balanced');
+      }
 
       _displaysSubscription = gFFI.ffiModel.pi.displays.listen((displays) {
         _checkAndAutoSwitchUsbDisplay(displays);

@@ -2045,16 +2045,28 @@ class ImageModel with ChangeNotifier {
     _webDecodingRgba = false;
   }
 
+  int _latestRgbaSeq = 0;
+
   onRgba(int display, Uint8List rgba) async {
+    final seq = ++_latestRgbaSeq;
+    bool nextCalled = false;
+    void callNextRgba() {
+      if (!nextCalled) {
+        nextCalled = true;
+        platformFFI.nextRgba(sessionId, display);
+      }
+    }
+
     try {
-      await decodeAndUpdate(display, rgba);
+      await decodeAndUpdate(display, rgba, onBufferCopied: callNextRgba, seq: seq);
     } catch (e) {
       debugPrint('onRgba error: $e');
+    } finally {
+      callNextRgba();
     }
-    platformFFI.nextRgba(sessionId, display);
   }
 
-  decodeAndUpdate(int display, Uint8List rgba) async {
+  decodeAndUpdate(int display, Uint8List rgba, {VoidCallback? onBufferCopied, int? seq}) async {
     final pid = parent.target?.id;
     final rect = parent.target?.ffiModel.pi.getDisplayRect(display);
     final image = await img.decodeImageFromPixels(
@@ -2064,8 +2076,16 @@ class ImageModel with ChangeNotifier {
       isWeb | isWindows | isLinux
           ? ui.PixelFormat.rgba8888
           : ui.PixelFormat.bgra8888,
+      onBufferCopied: onBufferCopied,
     );
-    if (parent.target?.id != pid) return;
+    if (parent.target?.id != pid) {
+      image?.dispose();
+      return;
+    }
+    if (seq != null && seq < _latestRgbaSeq) {
+      image?.dispose();
+      return;
+    }
     await update(image);
   }
 

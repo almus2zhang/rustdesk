@@ -100,8 +100,37 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun setHighRefreshRate() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val d = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    display
+                } else {
+                    @Suppress("DEPRECATION")
+                    windowManager.defaultDisplay
+                }
+                val modes = d?.supportedModes
+                if (!modes.isNullOrEmpty()) {
+                    var bestMode = modes[0]
+                    for (mode in modes) {
+                        if (mode.refreshRate > bestMode.refreshRate) {
+                            bestMode = mode
+                        }
+                    }
+                    val lp = window.attributes
+                    lp.preferredDisplayModeId = bestMode.modeId
+                    window.attributes = lp
+                    Log.i(logTag, "Set preferredDisplayModeId to ${bestMode.modeId} (${bestMode.refreshRate} Hz)")
+                }
+            } catch (e: Exception) {
+                Log.w(logTag, "Failed to set high refresh rate: $e")
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
+        setHighRefreshRate()
         val inputPer = InputService.isOpen
         activity.runOnUiThread {
             flutterMethodChannel?.invokeMethod(
@@ -127,6 +156,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setHighRefreshRate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES

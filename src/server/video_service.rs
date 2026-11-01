@@ -1047,6 +1047,13 @@ fn run(vs: VideoService) -> ResultType<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+#[link(name = "winmm")]
+extern "system" {
+    fn timeBeginPeriod(uPeriod: u32) -> u32;
+    fn timeEndPeriod(uPeriod: u32) -> u32;
+}
+
 struct Raii {
     display_idx: usize,
     name: String,
@@ -1056,6 +1063,10 @@ struct Raii {
 impl Raii {
     fn new(display_idx: usize, name: String) -> Self {
         log::info!("new video service: {}", name);
+        #[cfg(windows)]
+        unsafe {
+            timeBeginPeriod(1);
+        }
         VIDEO_QOS.lock().unwrap().new_display(name.clone());
         Raii {
             display_idx,
@@ -1068,6 +1079,10 @@ impl Raii {
 impl Drop for Raii {
     fn drop(&mut self) {
         log::info!("stop video service: {}", self.name);
+        #[cfg(windows)]
+        unsafe {
+            timeEndPeriod(1);
+        }
         #[cfg(feature = "vram")]
         if self.try_vram {
             VRamEncoder::set_not_use(self.name.clone(), false);
