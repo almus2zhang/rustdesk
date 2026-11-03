@@ -121,7 +121,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
   bool _tabletToolsExpanded = true;
-  String _touchPanMode = 'scroll';
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -139,11 +138,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _showBar = isSecondary ? false : !isWebDesktop;
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
-    }
-    _touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
-    if (_touchPanMode.isEmpty) {
-      _touchPanMode = 'scroll';
-      bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
     }
     // Set 60 FPS & balanced quality defaults for all mobile remote sessions
     final savedFps =
@@ -719,40 +713,76 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               ),
                             Obx(() {
                               final ffiModel = gFFI.ffiModel;
-                              if (!ffiModel.touchMode) {
-                                return Tooltip(
-                                  message: '鼠标模式 (点击切换为触屏模式)',
-                                  child: buildBtn(
-                                    icon: const Icon(Icons.mouse),
-                                    onPressed: () {
-                                      ffiModel.toggleTouchMode();
-                                      BotToast.showText(text: '已切换为: 触屏模式');
-                                    },
+                              final isTouch = ffiModel.touchMode;
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Tooltip(
+                                    message: isTouch
+                                        ? '触屏模式 (点击切换为鼠标模式)'
+                                        : '鼠标模式 (点击切换为触屏模式)',
+                                    child: buildBtn(
+                                      icon: Icon(isTouch
+                                          ? Icons.touch_app
+                                          : Icons.mouse),
+                                      onPressed: () {
+                                        ffiModel.toggleTouchMode();
+                                        final v = ffiModel.touchMode ? 'Y' : 'N';
+                                        bind.mainSetLocalOption(
+                                            key: kOptionTouchMode, value: v);
+                                        BotToast.showText(
+                                          text: ffiModel.touchMode
+                                              ? '已切换为: 触屏模式'
+                                              : '已切换为: 鼠标模式',
+                                        );
+                                      },
+                                    ),
                                   ),
-                                );
-                              }
-                              final isScroll = ffiModel.touchPanMode.value == 'scroll';
-                              return Tooltip(
-                                message: isScroll
-                                    ? '触屏单指滑动: 滚动屏幕 (点击切换选字，长按切鼠标)'
-                                    : '触屏单指滑动: 选择文字 (点击切换滚屏，长按切鼠标)',
-                                child: InkWell(
-                                  onLongPress: () {
-                                    ffiModel.toggleTouchMode();
-                                    BotToast.showText(text: '已切换为: 鼠标模式');
-                                  },
-                                  child: buildBtn(
-                                    icon: Icon(isScroll ? Icons.swap_vert : Icons.text_fields),
-                                    onPressed: () {
-                                      ffiModel.toggleTouchPanMode();
-                                      BotToast.showText(
-                                        text: ffiModel.touchPanMode.value == 'scroll'
-                                            ? '单指滑动: 滚动屏幕 (跟手滑动)'
-                                            : '单指滑动: 选择文字 (拖拽划词)',
-                                      );
-                                    },
-                                  ),
-                                ),
+                                  if (isTouch) ...[
+                                    Tooltip(
+                                      message: ffiModel.touchPanMode.value ==
+                                              'scroll'
+                                          ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
+                                          : '单指移动: 选择文字 (点击切换为拖动屏幕)',
+                                      child: buildBtn(
+                                        icon: Icon(ffiModel.touchPanMode.value ==
+                                                'scroll'
+                                            ? Icons.swap_vert
+                                            : Icons.text_fields),
+                                        onPressed: () {
+                                          ffiModel.toggleTouchPanMode();
+                                          BotToast.showText(
+                                            text: ffiModel.touchPanMode.value ==
+                                                    'scroll'
+                                                ? '单指移动: 拖动屏幕'
+                                                : '单指移动: 选择文字',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    Tooltip(
+                                      message: ffiModel.touchZoomMode.value ==
+                                              'canvas'
+                                          ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
+                                          : '双指缩放: 远程缩放 (点击切换为缩放画布)',
+                                      child: buildBtn(
+                                        icon: Icon(ffiModel.touchZoomMode.value ==
+                                                'canvas'
+                                            ? Icons.zoom_out_map
+                                            : Icons.zoom_in),
+                                        onPressed: () {
+                                          ffiModel.toggleTouchZoomMode();
+                                          BotToast.showText(
+                                            text: ffiModel.touchZoomMode.value ==
+                                                    'canvas'
+                                                ? '双指缩放: 缩放画布'
+                                                : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               );
                             }),
                           ]) +

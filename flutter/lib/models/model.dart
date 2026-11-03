@@ -207,10 +207,17 @@ class FfiModel with ChangeNotifier {
   }
 
   final RxString touchPanMode = 'scroll'.obs;
+  final RxString touchZoomMode = 'canvas'.obs;
 
   void toggleTouchPanMode() {
     touchPanMode.value = touchPanMode.value == 'scroll' ? 'select' : 'scroll';
     bind.mainSetLocalOption(key: 'touch_pan_mode', value: touchPanMode.value);
+    notifyListeners();
+  }
+
+  void toggleTouchZoomMode() {
+    touchZoomMode.value = touchZoomMode.value == 'canvas' ? 'remote' : 'canvas';
+    bind.mainSetLocalOption(key: 'touch_zoom_mode', value: touchZoomMode.value);
     notifyListeners();
   }
 
@@ -1508,6 +1515,13 @@ class FfiModel with ChangeNotifier {
     } else {
       touchPanMode.value = 'scroll';
       bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
+    }
+    final savedZoomMode = bind.mainGetLocalOption(key: 'touch_zoom_mode');
+    if (savedZoomMode.isNotEmpty) {
+      touchZoomMode.value = savedZoomMode;
+    } else {
+      touchZoomMode.value = 'canvas';
+      bind.mainSetLocalOption(key: 'touch_zoom_mode', value: 'canvas');
     }
     if (isMobile) {
       virtualMouseMode.loadOptions();

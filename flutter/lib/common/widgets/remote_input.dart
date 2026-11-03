@@ -552,7 +552,7 @@ class _RawTouchGestureDetectorRegionState
   }
 
   // scale + pan event
-  onTwoFingerScaleStart(ScaleStartDetails d) {
+  onTwoFingerScaleStart(ScaleStartDetails d) async {
     _lastTapDownDetails = null;
     if (isNotTouchBasedDevice()) {
       return;
@@ -565,6 +565,11 @@ class _RawTouchGestureDetectorRegionState
     _twoFingerIsZooming = false;
     _twoFingerScrollX = 0;
     _twoFingerScrollY = 0;
+
+    if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
+      final size = MediaQueryData.fromView(View.of(context)).size;
+      await ffi.cursorModel.move(size.width / 2, size.height / 2);
+    }
   }
 
   onTwoFingerScaleUpdate(ScaleUpdateDetails d) async {
@@ -578,6 +583,20 @@ class _RawTouchGestureDetectorRegionState
       final delta = d.focalPoint - _lastSpecialHoldDragFocalPoint;
       _lastSpecialHoldDragFocalPoint = d.focalPoint;
       await ffi.cursorModel.updatePan(delta * 2.0, d.focalPoint, handleTouch);
+      return;
+    }
+
+    if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
+      final scaleDelta = d.scale - _scale;
+      _scale = d.scale;
+      final scaleInt = (scaleDelta * 1200).toInt();
+      if (scaleInt != 0 && !widget.isCamera) {
+        await bind.sessionSendPointer(
+            sessionId: sessionId,
+            msg: json.encode(
+                PointerEventToRust(kPointerEventKindTouch, 'scale', scaleInt)
+                    .toJson()));
+      }
       return;
     }
 
@@ -655,19 +674,17 @@ class _RawTouchGestureDetectorRegionState
     if (isNotTouchBasedDevice()) {
       return;
     }
-    if ((isDesktop || isWebDesktop)) {
-      if (widget.isCamera) return;
-      await bind.sessionSendPointer(
-          sessionId: sessionId,
-          msg: json.encode(
-              PointerEventToRust(kPointerEventKindTouch, 'scale', 0).toJson()));
-    } else {
-      // mobile
-      _scale = 1;
-      _twoFingerIsZooming = false;
-      // No idea why we need to set the view style to "" here.
-      // bind.sessionSetViewStyle(sessionId: sessionId, value: "");
+    if ((isDesktop || isWebDesktop) ||
+        (handleTouch && ffiModel.touchZoomMode.value == 'remote')) {
+      if (!widget.isCamera) {
+        await bind.sessionSendPointer(
+            sessionId: sessionId,
+            msg: json.encode(
+                PointerEventToRust(kPointerEventKindTouch, 'scale', 0).toJson()));
+      }
     }
+    _scale = 1;
+    _twoFingerIsZooming = false;
     if (!isSpecialHoldDragActive) {
       await inputModel.sendMouse('up', MouseButtons.left);
     }
