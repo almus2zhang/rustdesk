@@ -28,10 +28,10 @@ delay:
 */
 
 // Constants
-pub const FPS: u32 = 30;
+pub const FPS: u32 = 60;
 pub const MIN_FPS: u32 = 1;
 pub const MAX_FPS: u32 = 120;
-pub const INIT_FPS: u32 = 15;
+pub const INIT_FPS: u32 = 60;
 
 // Bitrate ratio constants for different quality levels
 const BR_MAX: f32 = 40.0; // 2000 * 2 / 100
@@ -252,11 +252,11 @@ impl VideoQoS {
 
         // For bad network, small fps means quick reaction and high quality
         let (min_fps, normal_fps) = if target_ratio >= BR_BEST {
-            (8, 16)
+            (30, 60)
         } else if target_ratio >= BR_BALANCED {
-            (10, 20)
+            (30, 60)
         } else {
-            (12, 24)
+            (30, 60)
         };
 
         // Calculate minimum acceptable delay-fps product

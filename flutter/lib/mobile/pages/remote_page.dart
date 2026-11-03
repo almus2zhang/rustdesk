@@ -140,25 +140,30 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
+    // Set 60 FPS & balanced quality defaults for all mobile remote sessions
+    final savedFps =
+        bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-fps');
+    if (savedFps.isEmpty) {
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
+    }
+    final savedQuality =
+        bind.mainGetPeerOptionSync(id: widget.id, key: 'image-quality');
+    if (savedQuality.isEmpty) {
+      bind.mainSetPeerOptionSync(
+          id: widget.id, key: 'image-quality', value: 'balanced');
+    }
+
     if (isSecondary) {
       final savedCodec =
           bind.mainGetPeerOptionSync(id: widget.id, key: 'codec-preference');
       final savedI444 =
           bind.mainGetPeerOptionSync(id: widget.id, key: 'i444');
-      // If never configured, default to low-latency (4:2:0 auto)
       if (savedCodec.isEmpty) {
         bind.mainSetPeerOptionSync(
             id: widget.id, key: 'codec-preference', value: 'h264');
       }
       if (savedI444.isEmpty || savedI444 == 'N') {
         bind.mainSetPeerOptionSync(id: widget.id, key: 'i444', value: '');
-      }
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
-      final savedQuality =
-          bind.mainGetPeerOptionSync(id: widget.id, key: 'image-quality');
-      if (savedQuality.isEmpty) {
-        bind.mainSetPeerOptionSync(
-            id: widget.id, key: 'image-quality', value: 'balanced');
       }
 
       _displaysSubscription = gFFI.ffiModel.pi.displays.listen((displays) {
@@ -1933,6 +1938,58 @@ void showOptions(
       );
     }
 
+    final savedPeerFps =
+        bind.mainGetPeerOptionSync(id: id, key: 'custom-fps');
+    final currentFps = (savedPeerFps.isNotEmpty ? savedPeerFps : '60').obs;
+
+    final fpsButtons = [
+      buildSectionTitle(localeName.startsWith('zh') ? '帧率 (FPS)' : 'Framerate (FPS)'),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: '30 FPS',
+                  selected: currentFps.value == '30',
+                  onTap: () async {
+                    currentFps.value = '30';
+                    await bind.sessionPeerOption(
+                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '30');
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '30');
+                    BotToast.showText(text: '30 FPS');
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: '60 FPS',
+                  selected: currentFps.value == '60' || currentFps.value.isEmpty,
+                  onTap: () async {
+                    currentFps.value = '60';
+                    await bind.sessionPeerOption(
+                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '60');
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '60');
+                    BotToast.showText(text: '60 FPS');
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: '120 FPS',
+                  selected: currentFps.value == '120',
+                  onTap: () async {
+                    currentFps.value = '120';
+                    await bind.sessionPeerOption(
+                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '120');
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '120');
+                    BotToast.showText(text: '120 FPS');
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
     final colorModeButtons = [
       buildSectionTitle(localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
       Obx(() {
@@ -2215,6 +2272,8 @@ void showOptions(
           ...scaleButtons,
           const SizedBox(height: 4),
           ...qualityButtons,
+          const SizedBox(height: 4),
+          ...fpsButtons,
           const SizedBox(height: 4),
           ...colorModeButtons,
           const SizedBox(height: 4),
