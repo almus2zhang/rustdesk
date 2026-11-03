@@ -2772,7 +2772,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                   bind.mainSetPeerOptionSync(
                     id: id,
                     key: 'custom-resolution',
-                    value: '${w}x${h}',
+                    value: '${w}x$h',
                   );
                 },
               );
