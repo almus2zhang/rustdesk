@@ -404,7 +404,7 @@ class _RawTouchGestureDetectorRegionState
 
       _oneFingerInertiaTimer?.cancel();
       _touchModePanStarted = true;
-      final touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+      final touchPanMode = ffiModel.touchPanMode.value;
       if (touchPanMode == 'scroll') {
         _oneFingerScrollX = 0;
         _oneFingerScrollY = 0;
@@ -452,7 +452,7 @@ class _RawTouchGestureDetectorRegionState
     if (handleTouch && !_touchModePanStarted) {
       return;
     }
-    if (handleTouch && bind.mainGetLocalOption(key: 'touch_pan_mode') == 'scroll') {
+    if (handleTouch && ffiModel.touchPanMode.value == 'scroll') {
       // Android native follow-the-finger smooth drag scroll:
       // Send smooth trackpad deltas with 1:1 displacement ratio
       _oneFingerScrollX += d.delta.dx * 1.2;
@@ -480,7 +480,7 @@ class _RawTouchGestureDetectorRegionState
     if (inputModel.relativeMouseMode.value) {
       await inputModel.sendMobileRelativeMouseMove(d.delta.dx, d.delta.dy);
     } else {
-      if (handleTouch && bind.mainGetLocalOption(key: 'touch_pan_mode') == 'select') {
+      if (handleTouch && ffiModel.touchPanMode.value == 'select') {
         // In text selection mode, track the finger coordinates directly
         // so the selection stays exactly under the finger!
         await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
@@ -500,7 +500,7 @@ class _RawTouchGestureDetectorRegionState
       ffi.cursorModel.clearRemoteWindowCoords();
     }
     if (handleTouch) {
-      final touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+      final touchPanMode = ffiModel.touchPanMode.value;
       if (touchPanMode == 'scroll') {
         _oneFingerScrollX = 0;
         _oneFingerScrollY = 0;

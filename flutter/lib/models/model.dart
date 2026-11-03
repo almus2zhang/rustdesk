@@ -206,6 +206,14 @@ class FfiModel with ChangeNotifier {
     return Rect.fromLTRB(l, t, r, b);
   }
 
+  final RxString touchPanMode = 'scroll'.obs;
+
+  void toggleTouchPanMode() {
+    touchPanMode.value = touchPanMode.value == 'scroll' ? 'select' : 'scroll';
+    bind.mainSetLocalOption(key: 'touch_pan_mode', value: touchPanMode.value);
+    notifyListeners();
+  }
+
   toggleTouchMode() {
     if (!isPeerAndroid) {
       _touchMode = !_touchMode;
@@ -1493,6 +1501,13 @@ class FfiModel with ChangeNotifier {
             sessionId: sessionId, arg: kOptionTouchMode);
         _touchMode = optSession != '';
       }
+    }
+    final savedPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+    if (savedPanMode.isNotEmpty) {
+      touchPanMode.value = savedPanMode;
+    } else {
+      touchPanMode.value = 'scroll';
+      bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
     }
     if (isMobile) {
       virtualMouseMode.loadOptions();

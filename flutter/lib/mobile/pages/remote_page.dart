@@ -717,33 +717,44 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 onPressed: () => gFFI.invokeMethod(
                                     "show_input_method_picker", null),
                               ),
-                            buildBtn(
-                              icon: Icon(gFFI.ffiModel.touchMode
-                                  ? Icons.touch_app
-                                  : Icons.mouse),
-                              onPressed: () => setState(
-                                  () => _showGestureHelp = !_showGestureHelp),
-                            ),
-                            if (gFFI.ffiModel.touchMode)
-                              buildBtn(
-                                icon: Icon(_touchPanMode == 'scroll'
-                                    ? Icons.swap_vert
-                                    : Icons.text_fields),
-                                onPressed: () {
-                                  setState(() {
-                                    _touchPanMode = _touchPanMode == 'scroll'
-                                        ? 'select'
-                                        : 'scroll';
-                                    bind.mainSetLocalOption(
-                                        key: 'touch_pan_mode',
-                                        value: _touchPanMode);
-                                    BotToast.showText(
-                                        text: _touchPanMode == 'scroll'
+                            Obx(() {
+                              final ffiModel = gFFI.ffiModel;
+                              if (!ffiModel.touchMode) {
+                                return Tooltip(
+                                  message: '鼠标模式 (点击切换为触屏模式)',
+                                  child: buildBtn(
+                                    icon: const Icon(Icons.mouse),
+                                    onPressed: () {
+                                      ffiModel.toggleTouchMode();
+                                      BotToast.showText(text: '已切换为: 触屏模式');
+                                    },
+                                  ),
+                                );
+                              }
+                              final isScroll = ffiModel.touchPanMode.value == 'scroll';
+                              return Tooltip(
+                                message: isScroll
+                                    ? '触屏单指滑动: 滚动屏幕 (点击切换选字，长按切鼠标)'
+                                    : '触屏单指滑动: 选择文字 (点击切换滚屏，长按切鼠标)',
+                                child: InkWell(
+                                  onLongPress: () {
+                                    ffiModel.toggleTouchMode();
+                                    BotToast.showText(text: '已切换为: 鼠标模式');
+                                  },
+                                  child: buildBtn(
+                                    icon: Icon(isScroll ? Icons.swap_vert : Icons.text_fields),
+                                    onPressed: () {
+                                      ffiModel.toggleTouchPanMode();
+                                      BotToast.showText(
+                                        text: ffiModel.touchPanMode.value == 'scroll'
                                             ? '单指滑动: 滚动屏幕 (跟手滑动)'
-                                            : '单指滑动: 选择文字 (拖拽选词)');
-                                  });
-                                },
-                              ),
+                                            : '单指滑动: 选择文字 (拖拽划词)',
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
+                            }),
                           ]) +
                 (isWeb
                     ? []
