@@ -719,22 +719,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 children: [
                                   Tooltip(
                                     message: isTouch
-                                        ? '触屏模式 (点击切换为鼠标模式)'
-                                        : '鼠标模式 (点击切换为触屏模式)',
+                                        ? '触屏模式说明与设置 (点击打开菜单)'
+                                        : '鼠标模式说明与设置 (点击打开菜单)',
                                     child: buildBtn(
                                       icon: Icon(isTouch
                                           ? Icons.touch_app
                                           : Icons.mouse),
                                       onPressed: () {
-                                        ffiModel.toggleTouchMode();
-                                        final v = ffiModel.touchMode ? 'Y' : 'N';
-                                        bind.mainSetLocalOption(
-                                            key: kOptionTouchMode, value: v);
-                                        BotToast.showText(
-                                          text: ffiModel.touchMode
-                                              ? '已切换为: 触屏模式'
-                                              : '已切换为: 鼠标模式',
-                                        );
+                                        setState(() => _showGestureHelp =
+                                            !_showGestureHelp);
                                       },
                                     ),
                                   ),
@@ -1132,10 +1125,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             padding: EdgeInsets.symmetric(vertical: 10),
             child: GestureHelp(
               touchMode: gFFI.ffiModel.touchMode,
+              onClose: () => setState(() => _showGestureHelp = false),
               onTouchModeChange: (t) {
-                gFFI.ffiModel.toggleTouchMode();
-                final v = gFFI.ffiModel.touchMode ? 'Y' : 'N';
-                bind.mainSetLocalOption(key: kOptionTouchMode, value: v);
+                if (gFFI.ffiModel.touchMode != t) {
+                  gFFI.ffiModel.toggleTouchMode();
+                  final v = gFFI.ffiModel.touchMode ? 'Y' : 'N';
+                  bind.mainSetLocalOption(key: kOptionTouchMode, value: v);
+                }
               },
               virtualMouseMode: gFFI.ffiModel.virtualMouseMode,
               inputModel: gFFI.inputModel,

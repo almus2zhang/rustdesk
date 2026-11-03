@@ -5,6 +5,7 @@ import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
 import 'package:toggle_switch/toggle_switch.dart';
+import 'package:bot_toast/bot_toast.dart';
 
 class GestureIcons {
   static const String _family = 'gestureicons';
@@ -43,12 +44,14 @@ class GestureHelp extends StatefulWidget {
       required this.touchMode,
       required this.onTouchModeChange,
       required this.virtualMouseMode,
-      this.inputModel})
+      this.inputModel,
+      this.onClose})
       : super(key: key);
   final bool touchMode;
   final OnTouchModeChange onTouchModeChange;
   final VirtualMouseMode virtualMouseMode;
   final InputModel? inputModel;
+  final VoidCallback? onClose;
 
   @override
   State<StatefulWidget> createState() =>
@@ -61,6 +64,9 @@ class _GestureHelpState extends State<GestureHelp> {
   late String _twoFingerMode;
   final VirtualMouseMode _virtualMouseMode;
 
+  late String _touchPanMode;
+  late String _touchZoomMode;
+
   _GestureHelpState(bool touchMode, VirtualMouseMode virtualMouseMode)
       : _virtualMouseMode = virtualMouseMode {
     _touchMode = touchMode;
@@ -69,6 +75,38 @@ class _GestureHelpState extends State<GestureHelp> {
     if (_twoFingerMode.isEmpty) {
       _twoFingerMode = 'canvas';
     }
+    _touchPanMode = gFFI.ffiModel.touchPanMode.value;
+    if (_touchPanMode.isEmpty) {
+      _touchPanMode = 'scroll';
+    }
+    _touchZoomMode = gFFI.ffiModel.touchZoomMode.value;
+    if (_touchZoomMode.isEmpty) {
+      _touchZoomMode = 'canvas';
+    }
+  }
+
+  void _toggleTouchPanMode() {
+    gFFI.ffiModel.toggleTouchPanMode();
+    setState(() {
+      _touchPanMode = gFFI.ffiModel.touchPanMode.value;
+    });
+    BotToast.showText(
+      text: _touchPanMode == 'scroll'
+          ? (localeName.startsWith('zh') ? '单指移动: 滚动屏幕 (跟手滑动)' : 'One-Finger Move: Scroll Screen')
+          : (localeName.startsWith('zh') ? '单指移动: 选择文字 (拖拽划词)' : 'One-Finger Move: Select Text'),
+    );
+  }
+
+  void _toggleTouchZoomMode() {
+    gFFI.ffiModel.toggleTouchZoomMode();
+    setState(() {
+      _touchZoomMode = gFFI.ffiModel.touchZoomMode.value;
+    });
+    BotToast.showText(
+      text: _touchZoomMode == 'canvas'
+          ? (localeName.startsWith('zh') ? '双指缩放: 缩放画布' : 'Two-Finger Zoom: Canvas Zoom')
+          : (localeName.startsWith('zh') ? '双指缩放: 远程缩放 (以手机中点缩放应用)' : 'Two-Finger Zoom: Remote Zoom'),
+    );
   }
 
   void _toggleTwoFingerMode() {
@@ -108,33 +146,88 @@ class _GestureHelpState extends State<GestureHelp> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ToggleSwitch(
-                        initialLabelIndex: _selectedIndex,
-                        activeFgColor: Colors.white,
-                        inactiveFgColor: Colors.white60,
-                        activeBgColor: [MyTheme.accent],
-                        inactiveBgColor: Theme.of(context).hintColor,
-                        totalSwitches: 2,
-                        minWidth: 150,
-                        fontSize: 15,
-                        iconSize: 18,
-                        labels: [
-                          translate("Mouse mode"),
-                          translate("Touch mode")
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ToggleSwitch(
+                            initialLabelIndex: _selectedIndex,
+                            activeFgColor: Colors.white,
+                            inactiveFgColor: Colors.white60,
+                            activeBgColor: [MyTheme.accent],
+                            inactiveBgColor: Theme.of(context).hintColor,
+                            totalSwitches: 2,
+                            minWidth: 130,
+                            fontSize: 15,
+                            iconSize: 18,
+                            labels: [
+                              translate("Mouse mode"),
+                              translate("Touch mode")
+                            ],
+                            icons: [Icons.mouse, Icons.touch_app],
+                            onToggle: (index) {
+                              setState(() {
+                                if (_selectedIndex != index) {
+                                  _selectedIndex = index ?? 0;
+                                  _touchMode = index == 0 ? false : true;
+                                  widget.onTouchModeChange(_touchMode);
+                                  // Exit relative mouse mode when switching to touch mode
+                                  _exitRelativeMouseModeIf(_touchMode);
+                                }
+                              });
+                            },
+                          ),
+                          if (widget.onClose != null) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              tooltip: translate('Close'),
+                              onPressed: widget.onClose,
+                            ),
+                          ],
                         ],
-                        icons: [Icons.mouse, Icons.touch_app],
-                        onToggle: (index) {
-                          setState(() {
-                            if (_selectedIndex != index) {
-                              _selectedIndex = index ?? 0;
-                              _touchMode = index == 0 ? false : true;
-                              widget.onTouchModeChange(_touchMode);
-                              // Exit relative mouse mode when switching to touch mode
-                              _exitRelativeMouseModeIf(_touchMode);
-                            }
-                          });
-                        },
                       ),
+                      if (_touchMode) ...[
+                        Transform.translate(
+                          offset: const Offset(-10.0, 0.0),
+                          child: InkWell(
+                            onTap: _toggleTouchPanMode,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Checkbox(
+                                  value: _touchPanMode == 'scroll',
+                                  onChanged: (_) => _toggleTouchPanMode(),
+                                ),
+                                Text(
+                                  _touchPanMode == 'scroll'
+                                      ? '${translate("One-Finger Move")}: ${localeName.startsWith("zh") ? "滚动屏幕" : "Scroll Screen"} (${translate("Tap to switch")})'
+                                      : '${translate("One-Finger Move")}: ${localeName.startsWith("zh") ? "选择文字 / 拖拽" : "Select Text / Drag"} (${translate("Tap to switch")})',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Transform.translate(
+                          offset: const Offset(-10.0, -8.0),
+                          child: InkWell(
+                            onTap: _toggleTouchZoomMode,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Checkbox(
+                                  value: _touchZoomMode == 'remote',
+                                  onChanged: (_) => _toggleTouchZoomMode(),
+                                ),
+                                Text(
+                                  _touchZoomMode == 'remote'
+                                      ? '${translate("Pinch to Zoom")}: ${localeName.startsWith("zh") ? "远程缩放 (以手机中点缩放应用)" : "Remote Zoom"} (${translate("Tap to switch")})'
+                                      : '${translate("Pinch to Zoom")}: ${localeName.startsWith("zh") ? "缩放画布" : "Canvas Zoom"} (${translate("Tap to switch")})',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                       Transform.translate(
                         offset: const Offset(-10.0, 0.0),
                         child: Row(
@@ -328,9 +421,18 @@ class _GestureHelpState extends State<GestureHelp> {
                               translate("Right Mouse")),
                           GestureInfo(
                               width,
-                              GestureIcons.iconGestureFSwipeRight,
+                              _touchPanMode == 'scroll'
+                                  ? Icons.swap_vert
+                                  : Icons.text_fields,
                               translate("One-Finger Move"),
-                              translate("Mouse Drag")),
+                              _touchPanMode == 'scroll'
+                                  ? (localeName.startsWith('zh')
+                                      ? '滚动屏幕\n(点击切换)'
+                                      : 'Scroll Screen\n(Tap to switch)')
+                                  : (localeName.startsWith('zh')
+                                      ? '选择文字\n(点击切换)'
+                                      : 'Select Text\n(Tap to switch)'),
+                              onTap: _toggleTouchPanMode),
                           GestureInfo(
                               width,
                               GestureIcons.iconGestureFThreeFingers,
@@ -343,9 +445,18 @@ class _GestureHelpState extends State<GestureHelp> {
                               translate("Canvas Move")),
                           GestureInfo(
                               width,
-                              GestureIcons.iconGesturePinch,
+                              _touchZoomMode == 'canvas'
+                                  ? Icons.zoom_out_map
+                                  : Icons.zoom_in,
                               translate("Pinch to Zoom"),
-                              translate("Canvas Zoom")),
+                              _touchZoomMode == 'canvas'
+                                  ? (localeName.startsWith('zh')
+                                      ? '缩放画布\n(点击切换)'
+                                      : 'Canvas Zoom\n(Tap to switch)')
+                                  : (localeName.startsWith('zh')
+                                      ? '远程缩放\n(点击切换)'
+                                      : 'Remote Zoom\n(Tap to switch)'),
+                              onTap: _toggleTouchZoomMode),
                         ]
                       : [
                           GestureInfo(
