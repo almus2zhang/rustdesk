@@ -112,6 +112,8 @@ class _RawTouchGestureDetectorRegionState
 
   double _twoFingerScrollX = 0;
   double _twoFingerScrollY = 0;
+  double _oneFingerScrollX = 0;
+  double _oneFingerScrollY = 0;
   bool _twoFingerIsZooming = false;
 
   bool get _isHighRes {
@@ -392,6 +394,14 @@ class _RawTouchGestureDetectorRegionState
       }
 
       _touchModePanStarted = true;
+      final touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+      if (touchPanMode == 'scroll') {
+        _oneFingerScrollX = 0;
+        _oneFingerScrollY = 0;
+        await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+        return;
+      }
+
       if (isDesktop || isWebDesktop) {
         ffi.cursorModel.trySetRemoteWindowCoords();
       }
@@ -434,6 +444,37 @@ class _RawTouchGestureDetectorRegionState
     if (handleTouch && !_touchModePanStarted) {
       return;
     }
+    if (handleTouch && bind.mainGetLocalOption(key: 'touch_pan_mode') == 'scroll') {
+      _oneFingerScrollX += d.delta.dx;
+      _oneFingerScrollY += d.delta.dy;
+
+      const double threshold = 8.0;
+      int scrollX = 0;
+      int scrollY = 0;
+
+      if (_oneFingerScrollX.abs() >= threshold) {
+        scrollX = (_oneFingerScrollX / threshold).truncate();
+        _oneFingerScrollX -= scrollX * threshold;
+      }
+      if (_oneFingerScrollY.abs() >= threshold) {
+        scrollY = (_oneFingerScrollY / threshold).truncate();
+        _oneFingerScrollY -= scrollY * threshold;
+      }
+
+      if (scrollX != 0 || scrollY != 0) {
+        if (!widget.isCamera) {
+          await bind.sessionSendMouse(
+              sessionId: sessionId,
+              msg: json.encode(inputModel.modify({
+                'id': inputModel.id,
+                'type': 'wheel',
+                'x': scrollX.toString(),
+                'y': scrollY.toString(),
+              })));
+        }
+      }
+      return;
+    }
     // In relative mouse mode, send delta directly without position tracking.
     if (inputModel.relativeMouseMode.value) {
       await inputModel.sendMobileRelativeMouseMove(d.delta.dx, d.delta.dy);
@@ -451,6 +492,11 @@ class _RawTouchGestureDetectorRegionState
       ffi.cursorModel.clearRemoteWindowCoords();
     }
     if (handleTouch) {
+      if (bind.mainGetLocalOption(key: 'touch_pan_mode') == 'scroll') {
+        _oneFingerScrollX = 0;
+        _oneFingerScrollY = 0;
+        return;
+      }
       // In relative mouse mode, skip mouse up - matches the skipped mouse down in onOneFingerPanStart
       if (!inputModel.relativeMouseMode.value) {
         await inputModel.sendMouse('up', MouseButtons.left);
@@ -464,6 +510,8 @@ class _RawTouchGestureDetectorRegionState
   // double-click problem on iPad with magic mouse.
   onOneFingerPanCancel() {
     _touchModePanStarted = false;
+    _oneFingerScrollX = 0;
+    _oneFingerScrollY = 0;
   }
 
   // scale + pan event

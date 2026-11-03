@@ -143,6 +143,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
   bool _tabletToolsExpanded = true;
+  String _touchPanMode = 'scroll';
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -161,12 +162,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
+    _touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+    if (_touchPanMode.isEmpty) {
+      _touchPanMode = 'scroll';
+      bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
+    }
     // Set 60 FPS & balanced quality defaults for all mobile remote sessions
     final savedFps =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-fps');
+    final fpsVal = int.tryParse(savedFps.isNotEmpty ? savedFps : '60') ?? 60;
     if (savedFps.isEmpty) {
       bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
     }
+    bind.sessionSetCustomFps(sessionId: sessionId, fps: fpsVal);
     final savedQuality =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'image-quality');
     if (savedQuality.isEmpty) {
@@ -738,6 +746,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               onPressed: () => setState(
                                   () => _showGestureHelp = !_showGestureHelp),
                             ),
+                            if (gFFI.ffiModel.touchMode)
+                              buildBtn(
+                                icon: Icon(_touchPanMode == 'scroll'
+                                    ? Icons.swap_vert
+                                    : Icons.drag_handle),
+                                onPressed: () {
+                                  setState(() {
+                                    _touchPanMode = _touchPanMode == 'scroll'
+                                        ? 'select'
+                                        : 'scroll';
+                                    bind.mainSetLocalOption(
+                                        key: 'touch_pan_mode',
+                                        value: _touchPanMode);
+                                    BotToast.showText(
+                                        text: _touchPanMode == 'scroll'
+                                            ? '单指滑动: 滚动屏幕'
+                                            : '单指滑动: 选择文字');
+                                  });
+                                },
+                              ),
                           ]) +
                 (isWeb
                     ? []
@@ -1984,8 +2012,8 @@ void showOptions(
                   selected: currentFps.value == '30',
                   onTap: () async {
                     currentFps.value = '30';
-                    await bind.sessionPeerOption(
-                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '30');
+                    await bind.sessionSetCustomFps(
+                        sessionId: gFFI.sessionId, fps: 30);
                     bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '30');
                     BotToast.showText(text: '30 FPS');
                   },
@@ -1998,8 +2026,8 @@ void showOptions(
                   selected: currentFps.value == '60' || currentFps.value.isEmpty,
                   onTap: () async {
                     currentFps.value = '60';
-                    await bind.sessionPeerOption(
-                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '60');
+                    await bind.sessionSetCustomFps(
+                        sessionId: gFFI.sessionId, fps: 60);
                     bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '60');
                     BotToast.showText(text: '60 FPS');
                   },
@@ -2012,8 +2040,8 @@ void showOptions(
                   selected: currentFps.value == '120',
                   onTap: () async {
                     currentFps.value = '120';
-                    await bind.sessionPeerOption(
-                        sessionId: gFFI.sessionId, name: 'custom-fps', value: '120');
+                    await bind.sessionSetCustomFps(
+                        sessionId: gFFI.sessionId, fps: 120);
                     bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '120');
                     BotToast.showText(text: '120 FPS');
                   },
@@ -2022,6 +2050,39 @@ void showOptions(
             ],
           )),
     ];
+    final savedTouchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+    final currentTouchPan = (savedTouchPanMode.isNotEmpty ? savedTouchPanMode : 'scroll').obs;
+    final touchPanButtons = [
+      buildSectionTitle(localeName.startsWith('zh') ? '触屏单指手势行为' : 'Touch One-Finger Gesture'),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '滚动屏幕' : 'Scroll Screen',
+                  selected: currentTouchPan.value == 'scroll',
+                  onTap: () async {
+                    currentTouchPan.value = 'scroll';
+                    bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
+                    BotToast.showText(text: localeName.startsWith('zh') ? '触屏滑动: 滚动屏幕' : 'Touch: Scroll Screen');
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '选择文字 / 拖拽' : 'Select Text / Drag',
+                  selected: currentTouchPan.value == 'select',
+                  onTap: () async {
+                    currentTouchPan.value = 'select';
+                    bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'select');
+                    BotToast.showText(text: localeName.startsWith('zh') ? '触屏滑动: 选择文字' : 'Touch: Select Text');
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
     final colorModeButtons = [
       buildSectionTitle(localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
       Obx(() {
@@ -2306,6 +2367,8 @@ void showOptions(
           ...qualityButtons,
           const SizedBox(height: 4),
           ...fpsButtons,
+          const SizedBox(height: 4),
+          ...touchPanButtons,
           const SizedBox(height: 4),
           ...colorModeButtons,
           const SizedBox(height: 4),

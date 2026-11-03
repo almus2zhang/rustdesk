@@ -1144,19 +1144,28 @@ impl<T: InvokeUiSession> Remote<T> {
                 v.fps_control.inactive_counter = 0;
             }
         });
-        let custom_fps = self.handler.lc.read().unwrap().custom_fps.clone();
-        let custom_fps = custom_fps.lock().unwrap().clone();
-        let mut custom_fps = custom_fps.unwrap_or(30);
-        if custom_fps < 5 || custom_fps > 120 {
-            custom_fps = 30;
-        }
-        let inactive_threshold = 15;
         let max_queue_len = self
             .video_threads
             .iter()
             .map(|v| v.1.video_queue.read().unwrap().len())
             .max()
             .unwrap_or_default();
+        let custom_fps_arc = self.handler.lc.read().unwrap().custom_fps.clone();
+        let custom_fps_opt = custom_fps_arc.lock().unwrap().clone();
+        if let Some(target_fps) = custom_fps_opt {
+            if target_fps >= 30 {
+                // When custom_fps is explicitly configured, never let auto-fps downgrade
+                // the server's FPS unless there is actual decoding queue backlog (> 1)
+                if max_queue_len <= 1 {
+                    return;
+                }
+            }
+        }
+        let mut custom_fps = custom_fps_opt.unwrap_or(60);
+        if custom_fps < 5 || custom_fps > 120 {
+            custom_fps = 60;
+        }
+        let inactive_threshold = 15;
         let min_decode_fps = self
             .video_threads
             .iter()
@@ -1167,10 +1176,10 @@ impl<T: InvokeUiSession> Remote<T> {
         let Some(min_decode_fps) = min_decode_fps else {
             return;
         };
-        let mut limited_fps = if direct {
-            min_decode_fps * 9 / 10 // 30 got 27
+        let mut limited_fps = if direct || max_queue_len <= 1 {
+            min_decode_fps
         } else {
-            min_decode_fps * 4 / 5 // 30 got 24
+            min_decode_fps * 9 / 10
         };
         if limited_fps > custom_fps {
             limited_fps = custom_fps;

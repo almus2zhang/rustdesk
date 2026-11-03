@@ -721,6 +721,12 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
                 }
             }
         }
+        if name == "custom-fps" {
+            if let Ok(fps) = value.parse::<i32>() {
+                session.set_custom_fps(fps);
+                return;
+            }
+        }
         session.set_option(name, value);
     }
 }
