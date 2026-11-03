@@ -2486,7 +2486,7 @@ class CanvasModel with ChangeNotifier {
     // Apply custom scale percent when in Custom mode
     if (style == kRemoteViewStyleCustom) {
       try {
-        _scale = await getSessionCustomScale(sessionId);
+        _scale = await getSessionCustomScale(sessionId, peerId: parent.target?.id);
       } catch (e, stack) {
         debugPrint('Error in getSessionCustomScale: $e');
         debugPrintStack(stackTrace: stack);

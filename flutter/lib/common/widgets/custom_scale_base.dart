@@ -85,7 +85,8 @@ abstract class CustomScaleControls<T extends StatefulWidget> extends State<T> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       try {
-        final v = await getSessionCustomScalePercent(ffi.sessionId);
+        final peerId = ffi.ffiModel.pi.id;
+        final v = await getSessionCustomScalePercent(ffi.sessionId, peerId: peerId);
         if (mounted) {
           setState(() {
             _scaleValue = v;
@@ -109,6 +110,11 @@ abstract class CustomScaleControls<T extends StatefulWidget> extends State<T> {
           sessionId: ffi.sessionId,
           k: kCustomScalePercentKey,
           v: v.toString());
+      final peerId = ffi.ffiModel.pi.id;
+      if (peerId.isNotEmpty) {
+        bind.mainSetPeerOptionSync(
+            id: peerId, key: kCustomScalePercentKey, value: v.toString());
+      }
       final curStyle = await bind.sessionGetViewStyle(sessionId: ffi.sessionId);
       if (curStyle != kRemoteViewStyleCustom) {
         await bind.sessionSetViewStyle(

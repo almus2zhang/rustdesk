@@ -71,13 +71,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       widget.isSecondaryDisplay ||
       widget.id.startsWith("127.0.0.1");
 
-  void _sendPhysicalResolutionToServer() {
+  void _sendPhysicalResolutionToServer({bool forcePhysical = false}) {
     try {
-      final view = WidgetsBinding.instance.platformDispatcher.views.first;
-      final pSize = view.physicalSize;
-      if (pSize.width <= 0 || pSize.height <= 0) return;
-      final int targetW = pSize.width.round() & ~1;
-      final int targetH = pSize.height.round() & ~1;
+      int targetW = 0;
+      int targetH = 0;
+      if (!forcePhysical) {
+        final savedRes =
+            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-resolution');
+        if (savedRes.isNotEmpty && savedRes.contains('x')) {
+          final parts = savedRes.split('x');
+          targetW = int.tryParse(parts[0]) ?? 0;
+          targetH = int.tryParse(parts[1]) ?? 0;
+        }
+      }
+      if (targetW <= 0 || targetH <= 0) {
+        final view = WidgetsBinding.instance.platformDispatcher.views.first;
+        final pSize = view.physicalSize;
+        if (pSize.width <= 0 || pSize.height <= 0) return;
+        targetW = pSize.width.round() & ~1;
+        targetH = pSize.height.round() & ~1;
+      }
       debugPrint("Sending secondary display resolution to server: ${targetW}x$targetH");
       bind.sessionPeerOption(
         sessionId: gFFI.sessionId,
@@ -93,7 +106,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void didChangeMetrics() {
     super.didChangeMetrics();
     if (isSecondary) {
-      _sendPhysicalResolutionToServer();
+      final orientation = MediaQuery.maybeOf(context)?.orientation;
+      if (orientation != null && orientation != _currentOrientation) {
+        _currentOrientation = orientation;
+        final savedRes =
+            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-resolution');
+        if (savedRes.isEmpty) {
+          _sendPhysicalResolutionToServer();
+        }
+      }
     }
   }
 
@@ -151,6 +172,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (savedQuality.isEmpty) {
       bind.mainSetPeerOptionSync(
           id: widget.id, key: 'image-quality', value: 'balanced');
+    }
+    final savedViewStyle =
+        bind.mainGetPeerOptionSync(id: widget.id, key: 'view_style');
+    if (savedViewStyle.isNotEmpty) {
+      bind.sessionSetViewStyle(sessionId: sessionId, value: savedViewStyle);
     }
 
     if (isSecondary) {
@@ -1820,6 +1846,8 @@ void showOptions(
                         findRadio(viewStyleRadios, kRemoteViewStyleOriginal);
                     r?.onChanged?.call(kRemoteViewStyleOriginal);
                     viewStyle.value = kRemoteViewStyleOriginal;
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'view_style', value: kRemoteViewStyleOriginal);
                   },
                 ),
               ),
@@ -1833,6 +1861,8 @@ void showOptions(
                         findRadio(viewStyleRadios, kRemoteViewStyleAdaptive);
                     r?.onChanged?.call(kRemoteViewStyleAdaptive);
                     viewStyle.value = kRemoteViewStyleAdaptive;
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'view_style', value: kRemoteViewStyleAdaptive);
                   },
                 ),
               ),
@@ -1845,6 +1875,8 @@ void showOptions(
                     final r = findRadio(viewStyleRadios, kRemoteViewStyleCustom);
                     r?.onChanged?.call(kRemoteViewStyleCustom);
                     viewStyle.value = kRemoteViewStyleCustom;
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'view_style', value: kRemoteViewStyleCustom);
                   },
                 ),
               ),
@@ -2684,6 +2716,11 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                   width: e.width,
                   height: e.height,
                 );
+                bind.mainSetPeerOptionSync(
+                  id: id,
+                  key: 'custom-resolution',
+                  value: '${e.width}x${e.height}',
+                );
               },
             ),
           const Divider(color: MyTheme.border),
@@ -2703,6 +2740,11 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 display: pi.currentDisplay,
                 width: phoneRes.width,
                 height: phoneRes.height,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-resolution',
+                value: '${phoneRes.width}x${phoneRes.height}',
               );
             },
           ),
@@ -2726,6 +2768,11 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                     display: pi.currentDisplay,
                     width: w,
                     height: h,
+                  );
+                  bind.mainSetPeerOptionSync(
+                    id: id,
+                    key: 'custom-resolution',
+                    value: '${w}x${h}',
                   );
                 },
               );
