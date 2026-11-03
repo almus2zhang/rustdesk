@@ -71,35 +71,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       widget.isSecondaryDisplay ||
       widget.id.startsWith("127.0.0.1");
 
-  void _sendPhysicalResolutionToServer({bool forcePhysical = false}) {
-    try {
-      int targetW = 0;
-      int targetH = 0;
-      if (!forcePhysical) {
-        final savedRes =
-            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-resolution');
-        if (savedRes.isNotEmpty && savedRes.contains('x')) {
-          final parts = savedRes.split('x');
-          targetW = int.tryParse(parts[0]) ?? 0;
-          targetH = int.tryParse(parts[1]) ?? 0;
-        }
-      }
-      if (targetW <= 0 || targetH <= 0) {
-        final view = WidgetsBinding.instance.platformDispatcher.views.first;
-        final pSize = view.physicalSize;
-        if (pSize.width <= 0 || pSize.height <= 0) return;
-        targetW = pSize.width.round() & ~1;
-        targetH = pSize.height.round() & ~1;
-      }
-      debugPrint("Sending secondary display resolution to server: ${targetW}x$targetH");
-      bind.sessionPeerOption(
-        sessionId: gFFI.sessionId,
-        name: 'secondary_display',
-        value: '${targetW}x$targetH',
-      );
-    } catch (e) {
-      debugPrint("Error sending secondary display resolution: $e");
-    }
+  void _sendPhysicalResolutionToServer({bool forcePhysical = false, String? forcedOrientation}) {
+    sendPhysicalResolutionToServer(
+      peerId: widget.id,
+      sessionId: gFFI.sessionId,
+      forcePhysical: forcePhysical,
+      forcedOrientation: forcedOrientation,
+    );
   }
 
   @override
@@ -109,9 +87,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final orientation = MediaQuery.maybeOf(context)?.orientation;
       if (orientation != null && orientation != _currentOrientation) {
         _currentOrientation = orientation;
-        final savedRes =
-            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-resolution');
-        if (savedRes.isEmpty) {
+        final savedOrientation =
+            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-display-orientation');
+        if (savedOrientation.isEmpty || savedOrientation == 'auto') {
           _sendPhysicalResolutionToServer();
         }
       }
@@ -750,7 +728,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               buildBtn(
                                 icon: Icon(_touchPanMode == 'scroll'
                                     ? Icons.swap_vert
-                                    : Icons.select_all),
+                                    : Icons.text_fields),
                                 onPressed: () {
                                   setState(() {
                                     _touchPanMode = _touchPanMode == 'scroll'
@@ -761,8 +739,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                         value: _touchPanMode);
                                     BotToast.showText(
                                         text: _touchPanMode == 'scroll'
-                                            ? '单指滑动: 滚动屏幕'
-                                            : '单指滑动: 选择文字');
+                                            ? '单指滑动: 滚动屏幕 (跟手滑动)'
+                                            : '单指滑动: 选择文字 (拖拽选词)');
                                   });
                                 },
                               ),
@@ -2180,6 +2158,81 @@ void showOptions(
       ),
     ];
 
+    final savedOrientation =
+        bind.mainGetPeerOptionSync(id: id, key: 'custom-display-orientation');
+    final currentOrientation =
+        (savedOrientation.isNotEmpty ? savedOrientation : 'auto').obs;
+
+    final orientationButtons = [
+      buildSectionTitle(localeName.startsWith('zh') ? '屏幕方向 (自动记忆)' : 'Orientation (Memorized)'),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '自动跟随' : 'Auto',
+                  selected: currentOrientation.value == 'auto' || currentOrientation.value.isEmpty,
+                  onTap: () async {
+                    currentOrientation.value = 'auto';
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'auto');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcedOrientation: 'auto',
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已记忆屏幕方向: 自动跟随设备'
+                          : 'Orientation: Auto follow device',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '横向' : 'Landscape',
+                  selected: currentOrientation.value == 'landscape',
+                  onTap: () async {
+                    currentOrientation.value = 'landscape';
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'landscape');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcedOrientation: 'landscape',
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已记忆屏幕方向: 横向'
+                          : 'Orientation memorized: Landscape',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '纵向' : 'Portrait',
+                  selected: currentOrientation.value == 'portrait',
+                  onTap: () async {
+                    currentOrientation.value = 'portrait';
+                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'portrait');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcedOrientation: 'portrait',
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已记忆屏幕方向: 纵向'
+                          : 'Orientation memorized: Portrait',
+                    );
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
     final isSingleApp = gFFI.canvasModel.isSingleAppMode.obs;
     final appModeButtons = [
       buildSectionTitle(translate('Program selection')),
@@ -2341,6 +2394,8 @@ void showOptions(
           const SizedBox(height: 4),
           ...resolutionButtons,
           const SizedBox(height: 4),
+          ...orientationButtons,
+          const SizedBox(height: 4),
           ...appModeButtons,
           const SizedBox(height: 4),
           ...keyboardLayoutButtons,
@@ -2374,6 +2429,82 @@ Resolution _getPhonePortraitDimensions(BuildContext context) {
     debugPrint('Failed to get phone portrait dimensions: $e');
   }
   return Resolution(1080, 2400);
+}
+
+void sendPhysicalResolutionToServer({
+  required String peerId,
+  required SessionID sessionId,
+  bool forcePhysical = false,
+  String? forcedOrientation,
+}) {
+  try {
+    int targetW = 0;
+    int targetH = 0;
+    if (!forcePhysical) {
+      final savedRes =
+          bind.mainGetPeerOptionSync(id: peerId, key: 'custom-resolution');
+      if (savedRes.isNotEmpty && savedRes.contains('x')) {
+        final parts = savedRes.split('x');
+        targetW = int.tryParse(parts[0]) ?? 0;
+        targetH = int.tryParse(parts[1]) ?? 0;
+      }
+    }
+    if (targetW <= 0 || targetH <= 0) {
+      if (WidgetsBinding.instance.platformDispatcher.views.isNotEmpty) {
+        final view = WidgetsBinding.instance.platformDispatcher.views.first;
+        final pSize = view.physicalSize;
+        if (pSize.width > 0 && pSize.height > 0) {
+          targetW = pSize.width.round() & ~1;
+          targetH = pSize.height.round() & ~1;
+        }
+      }
+    }
+    if (targetW <= 0 || targetH <= 0) return;
+
+    final orientationMode = forcedOrientation ??
+        bind.mainGetPeerOptionSync(id: peerId, key: 'custom-display-orientation');
+    final minDim = min(targetW, targetH);
+    final maxDim = max(targetW, targetH);
+
+    if (orientationMode == 'landscape') {
+      targetW = maxDim;
+      targetH = minDim;
+    } else if (orientationMode == 'portrait') {
+      targetW = minDim;
+      targetH = maxDim;
+    } else {
+      bool isPortrait = false;
+      if (WidgetsBinding.instance.platformDispatcher.views.isNotEmpty) {
+        final view = WidgetsBinding.instance.platformDispatcher.views.first;
+        isPortrait = view.physicalSize.aspectRatio < 1.0;
+      }
+      if (isPortrait) {
+        targetW = minDim;
+        targetH = maxDim;
+      } else {
+        targetW = maxDim;
+        targetH = minDim;
+      }
+    }
+
+    debugPrint("Sending secondary display resolution to server: ${targetW}x$targetH (orientation: $orientationMode)");
+    bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'secondary_display',
+      value: '${targetW}x$targetH',
+    );
+    final pi = gFFI.ffiModel.pi;
+    if (pi.displays.isNotEmpty) {
+      bind.sessionChangeResolution(
+        sessionId: sessionId,
+        display: pi.currentDisplay,
+        width: targetW,
+        height: targetH,
+      );
+    }
+  } catch (e) {
+    debugPrint("Error sending secondary display resolution: $e");
+  }
 }
 
 Future<void> setupPhonePortraitVirtualDisplay({
@@ -2429,6 +2560,16 @@ Future<void> setupPhonePortraitVirtualDisplay({
     display: targetDisplayIndex,
     width: w,
     height: h,
+  );
+  bind.mainSetPeerOptionSync(
+    id: ffi.id,
+    key: 'custom-resolution',
+    value: '${w}x$h',
+  );
+  bind.mainSetPeerOptionSync(
+    id: ffi.id,
+    key: 'custom-display-orientation',
+    value: 'portrait',
   );
 
   if (pi.currentDisplay != targetDisplayIndex &&

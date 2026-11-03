@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -114,6 +115,7 @@ class _RawTouchGestureDetectorRegionState
   double _twoFingerScrollY = 0;
   double _oneFingerScrollX = 0;
   double _oneFingerScrollY = 0;
+  Timer? _oneFingerInertiaTimer;
   bool _twoFingerIsZooming = false;
 
   bool get _isHighRes {
@@ -126,6 +128,12 @@ class _RawTouchGestureDetectorRegionState
   InputModel get inputModel => widget.inputModel;
   bool get handleTouch => (isDesktop || isWebDesktop) || ffiModel.touchMode;
   SessionID get sessionId => ffi.sessionId;
+
+  @override
+  void dispose() {
+    _oneFingerInertiaTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +156,7 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onTapDown(TapDownDetails d) async {
+    _oneFingerInertiaTimer?.cancel();
     lastDeviceKind = d.kind;
     _lastTapDownGlobalPosition = d.globalPosition;
     if (isNotTouchBasedDevice()) {
@@ -393,6 +402,7 @@ class _RawTouchGestureDetectorRegionState
         return;
       }
 
+      _oneFingerInertiaTimer?.cancel();
       _touchModePanStarted = true;
       final touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
       if (touchPanMode == 'scroll') {
@@ -406,21 +416,19 @@ class _RawTouchGestureDetectorRegionState
         ffi.cursorModel.trySetRemoteWindowCoords();
       }
 
-      // Workaround for the issue that the first pan event is sent a long time after the start event.
-      // If the time interval between the start event and the first pan event is less than 500ms,
-      // we consider to use the long press position as the start position.
-      //
-      // TODO: We should find a better way to send the first pan event as soon as possible.
+      // In 'select' mode (Text selection / left drag):
+      // Move to initial position first, then send mouse down.
       if (DateTime.now().millisecondsSinceEpoch - _cacheLongPressPositionTs <
           500) {
         await ffi.cursorModel
             .move(_cacheLongPressPosition.dx, _cacheLongPressPosition.dy);
+      } else {
+        await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
       }
       // In relative mouse mode, skip mouse down - only send movement via sendMobileRelativeMouseMove
       if (!inputModel.relativeMouseMode.value) {
         await inputModel.sendMouse('down', MouseButtons.left);
       }
-      await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
     } else {
       final offset = ffi.cursorModel.offset;
       final cursorX = offset.dx;
@@ -445,31 +453,24 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch && bind.mainGetLocalOption(key: 'touch_pan_mode') == 'scroll') {
-      _oneFingerScrollX += d.delta.dx;
-      _oneFingerScrollY += d.delta.dy;
+      // Android native follow-the-finger smooth drag scroll:
+      // Send smooth trackpad deltas with 1:1 displacement ratio
+      _oneFingerScrollX += d.delta.dx * 1.2;
+      _oneFingerScrollY += d.delta.dy * 1.2;
 
-      const double threshold = 8.0;
-      int scrollX = 0;
-      int scrollY = 0;
-
-      if (_oneFingerScrollX.abs() >= threshold) {
-        scrollX = (_oneFingerScrollX / threshold).truncate();
-        _oneFingerScrollX -= scrollX * threshold;
-      }
-      if (_oneFingerScrollY.abs() >= threshold) {
-        scrollY = (_oneFingerScrollY / threshold).truncate();
-        _oneFingerScrollY -= scrollY * threshold;
-      }
-
-      if (scrollX != 0 || scrollY != 0) {
+      final sendX = _oneFingerScrollX.truncate();
+      final sendY = _oneFingerScrollY.truncate();
+      if (sendX != 0 || sendY != 0) {
+        _oneFingerScrollX -= sendX;
+        _oneFingerScrollY -= sendY;
         if (!widget.isCamera) {
           await bind.sessionSendMouse(
               sessionId: sessionId,
               msg: json.encode(inputModel.modify({
                 'id': inputModel.id,
-                'type': 'wheel',
-                'x': scrollX.toString(),
-                'y': scrollY.toString(),
+                'type': 'trackpad',
+                'x': sendX.toString(),
+                'y': sendY.toString(),
               })));
         }
       }
@@ -479,12 +480,19 @@ class _RawTouchGestureDetectorRegionState
     if (inputModel.relativeMouseMode.value) {
       await inputModel.sendMobileRelativeMouseMove(d.delta.dx, d.delta.dy);
     } else {
-      await ffi.cursorModel.updatePan(d.delta, d.localPosition, handleTouch);
+      if (handleTouch && bind.mainGetLocalOption(key: 'touch_pan_mode') == 'select') {
+        // In text selection mode, track the finger coordinates directly
+        // so the selection stays exactly under the finger!
+        await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      } else {
+        await ffi.cursorModel.updatePan(d.delta, d.localPosition, handleTouch);
+      }
     }
   }
 
   onOneFingerPanEnd(DragEndDetails d) async {
     _touchModePanStarted = false;
+    _oneFingerInertiaTimer?.cancel();
     if (isNotTouchBasedDevice()) {
       return;
     }
@@ -492,9 +500,37 @@ class _RawTouchGestureDetectorRegionState
       ffi.cursorModel.clearRemoteWindowCoords();
     }
     if (handleTouch) {
-      if (bind.mainGetLocalOption(key: 'touch_pan_mode') == 'scroll') {
+      final touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
+      if (touchPanMode == 'scroll') {
         _oneFingerScrollX = 0;
         _oneFingerScrollY = 0;
+        // Inertia fling for native Android dragging feel
+        final vy = d.velocity.pixelsPerSecond.dy;
+        final vx = d.velocity.pixelsPerSecond.dx;
+        if (vy.abs() > 150 || vx.abs() > 150) {
+          double curVx = vx * 0.016 * 1.2;
+          double curVy = vy * 0.016 * 1.2;
+          _oneFingerInertiaTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
+            curVx *= 0.92;
+            curVy *= 0.92;
+            final sendX = curVx.round();
+            final sendY = curVy.round();
+            if (sendX.abs() <= 0 && sendY.abs() <= 0) {
+              timer.cancel();
+              return;
+            }
+            if (!widget.isCamera) {
+              await bind.sessionSendMouse(
+                  sessionId: sessionId,
+                  msg: json.encode(inputModel.modify({
+                    'id': inputModel.id,
+                    'type': 'trackpad',
+                    'x': sendX.toString(),
+                    'y': sendY.toString(),
+                  })));
+            }
+          });
+        }
         return;
       }
       // In relative mouse mode, skip mouse up - matches the skipped mouse down in onOneFingerPanStart
@@ -510,6 +546,7 @@ class _RawTouchGestureDetectorRegionState
   // double-click problem on iPad with magic mouse.
   onOneFingerPanCancel() {
     _touchModePanStarted = false;
+    _oneFingerInertiaTimer?.cancel();
     _oneFingerScrollX = 0;
     _oneFingerScrollY = 0;
   }
