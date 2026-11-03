@@ -59,7 +59,6 @@ class _GestureHelpState extends State<GestureHelp> {
   late int _selectedIndex;
   late bool _touchMode;
   late String _twoFingerMode;
-  late String _touchPanMode;
   final VirtualMouseMode _virtualMouseMode;
 
   _GestureHelpState(bool touchMode, VirtualMouseMode virtualMouseMode)
@@ -70,18 +69,6 @@ class _GestureHelpState extends State<GestureHelp> {
     if (_twoFingerMode.isEmpty) {
       _twoFingerMode = 'canvas';
     }
-    _touchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
-    if (_touchPanMode.isEmpty) {
-      _touchPanMode = 'scroll';
-    }
-  }
-
-  void _toggleTouchPanMode() {
-    final newMode = _touchPanMode == 'scroll' ? 'select' : 'scroll';
-    setState(() {
-      _touchPanMode = newMode;
-      bind.mainSetLocalOption(key: 'touch_pan_mode', value: newMode);
-    });
   }
 
   void _toggleTwoFingerMode() {
@@ -148,47 +135,6 @@ class _GestureHelpState extends State<GestureHelp> {
                           });
                         },
                       ),
-                      if (_touchMode)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10.0, bottom: 4.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                translate('One-finger gesture'),
-                                style: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 6),
-                              ToggleSwitch(
-                                initialLabelIndex:
-                                    _touchPanMode == 'scroll' ? 1 : 0,
-                                activeFgColor: Colors.white,
-                                inactiveFgColor: Colors.white60,
-                                activeBgColor: [MyTheme.accent],
-                                inactiveBgColor: Theme.of(context).hintColor,
-                                totalSwitches: 2,
-                                minWidth: 150,
-                                fontSize: 13,
-                                iconSize: 16,
-                                labels: [
-                                  translate('Select text / Drag'),
-                                  translate('Scroll screen')
-                                ],
-                                icons: const [Icons.drag_handle, Icons.swap_vert],
-                                onToggle: (index) {
-                                  setState(() {
-                                    _touchPanMode =
-                                        index == 1 ? 'scroll' : 'select';
-                                    bind.mainSetLocalOption(
-                                        key: 'touch_pan_mode',
-                                        value: _touchPanMode);
-                                  });
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
                       Transform.translate(
                         offset: const Offset(-10.0, 0.0),
                         child: Row(
@@ -382,14 +328,9 @@ class _GestureHelpState extends State<GestureHelp> {
                               translate("Right Mouse")),
                           GestureInfo(
                               width,
-                              _touchPanMode == 'scroll'
-                                  ? GestureIcons.iconGestureFThreeFingers
-                                  : GestureIcons.iconGestureFSwipeRight,
+                              GestureIcons.iconGestureFSwipeRight,
                               translate("One-Finger Move"),
-                              _touchPanMode == 'scroll'
-                                  ? '${translate("Scroll screen")} (${translate("Tap to switch")})'
-                                  : '${translate("Select text / Drag")} (${translate("Tap to switch")})',
-                              onTap: _toggleTouchPanMode),
+                              translate("Mouse Drag")),
                           GestureInfo(
                               width,
                               GestureIcons.iconGestureFThreeFingers,

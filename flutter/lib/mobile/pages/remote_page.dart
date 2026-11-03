@@ -750,7 +750,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               buildBtn(
                                 icon: Icon(_touchPanMode == 'scroll'
                                     ? Icons.swap_vert
-                                    : Icons.drag_handle),
+                                    : Icons.select_all),
                                 onPressed: () {
                                   setState(() {
                                     _touchPanMode = _touchPanMode == 'scroll'
@@ -2050,39 +2050,6 @@ void showOptions(
             ],
           )),
     ];
-    final savedTouchPanMode = bind.mainGetLocalOption(key: 'touch_pan_mode');
-    final currentTouchPan = (savedTouchPanMode.isNotEmpty ? savedTouchPanMode : 'scroll').obs;
-    final touchPanButtons = [
-      buildSectionTitle(localeName.startsWith('zh') ? '触屏单指手势行为' : 'Touch One-Finger Gesture'),
-      Obx(() => Row(
-            children: [
-              Expanded(
-                child: buildSegmentButton(
-                  text: localeName.startsWith('zh') ? '滚动屏幕' : 'Scroll Screen',
-                  selected: currentTouchPan.value == 'scroll',
-                  onTap: () async {
-                    currentTouchPan.value = 'scroll';
-                    bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
-                    BotToast.showText(text: localeName.startsWith('zh') ? '触屏滑动: 滚动屏幕' : 'Touch: Scroll Screen');
-                  },
-                ),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: buildSegmentButton(
-                  text: localeName.startsWith('zh') ? '选择文字 / 拖拽' : 'Select Text / Drag',
-                  selected: currentTouchPan.value == 'select',
-                  onTap: () async {
-                    currentTouchPan.value = 'select';
-                    bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'select');
-                    BotToast.showText(text: localeName.startsWith('zh') ? '触屏滑动: 选择文字' : 'Touch: Select Text');
-                  },
-                ),
-              ),
-            ],
-          )),
-    ];
-
     final colorModeButtons = [
       buildSectionTitle(localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
       Obx(() {
@@ -2367,8 +2334,6 @@ void showOptions(
           ...qualityButtons,
           const SizedBox(height: 4),
           ...fpsButtons,
-          const SizedBox(height: 4),
-          ...touchPanButtons,
           const SizedBox(height: 4),
           ...colorModeButtons,
           const SizedBox(height: 4),
