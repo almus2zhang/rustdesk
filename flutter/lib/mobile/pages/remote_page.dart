@@ -120,12 +120,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   final TextEditingController _textController =
       TextEditingController(text: initText);
-  bool _tabletToolsExpanded = true;
 
-  bool get _isHighRes {
-    final media = MediaQuery.of(context);
-    return (media.size.width * media.devicePixelRatio) >= 2560;
-  }
 
   _RemotePageState(String id) {
     initSharedStates(id);
@@ -459,42 +454,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (_showGestureHelp) return getGestureHelp();
     if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return Offstage();
 
-    if (_isHighRes) {
-      final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (keyboardHeight > 0) SizedBox(height: keyboardHeight),
-          Container(
-            color: MyTheme.accent,
-            padding: EdgeInsets.symmetric(horizontal: 6, vertical: _tabletToolsExpanded ? 2 : 0),
-            child: Row(
-              children: [
-                Expanded(flex: 3, child: _controlBarIcons(compact: !_tabletToolsExpanded)),
-                Container(
-                    width: 1,
-                    height: _tabletToolsExpanded ? 30 : 20,
-                    color: Colors.white24,
-                    margin: const EdgeInsets.symmetric(horizontal: 6)),
-                Expanded(
-                    flex: 7,
-                    child: KeyHelpTools(
-                        isTablet: true,
-                        showBar: true,
-                        embedded: true,
-                        keyboardIsVisible: true,
-                        showGestureHelp: false,
-                        onExpandToggle: (expanded) {
-                          if (mounted) {
-                            setState(() => _tabletToolsExpanded = expanded);
-                          }
-                        })),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
     return getBottomAppBar();
   }
 
@@ -666,8 +625,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       mainAxisSize: MainAxisSize.max,
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: <Widget>[
-        Row(
-            children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
                   buildBtn(
                     icon: const Icon(Icons.clear),
                     onPressed: () {
@@ -805,7 +768,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       showActions(widget.id);
                     },
                   ),
-                ]),
+                ],
+              ),
+            ),
+          ),
         Obx(() => buildBtn(
               icon: const Icon(Icons.expand_more),
               onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
@@ -832,9 +798,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       !gFFI.inputModel.relativeMouseMode.value;
 
   Widget _buildKeyHelpTools(bool isTablet, bool keyboardIsVisible) {
-    if (isTablet && _isHighRes) {
-      return const Offstage();
-    }
     return KeyHelpTools(
         isTablet: isTablet,
         showBar: _showBar,
