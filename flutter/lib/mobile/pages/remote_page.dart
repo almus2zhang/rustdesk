@@ -2845,19 +2845,22 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
     String? tooltip,
     Color? color,
   }) {
-    Widget btn = InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(19),
-      child: Container(
-        width: 38,
-        height: 38,
-        alignment: Alignment.center,
-        child: IconTheme(
-          data: IconThemeData(
-            color: color ?? Colors.white,
-            size: 20,
+    Widget btn = Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(19),
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          child: IconTheme(
+            data: IconThemeData(
+              color: color ?? const Color(0xD9FFFFFF),
+              size: 20,
+            ),
+            child: icon,
           ),
-          child: icon,
         ),
       ),
     );
@@ -2969,49 +2972,68 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
     final isLandscape = orientation == Orientation.landscape;
 
     Widget toggleBtn = GestureDetector(
-      onPanStart: (details) {
-        _dragStart = details.globalPosition;
-        _isDragging = false;
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() {
+          _expanded = !_expanded;
+        });
       },
-      onPanUpdate: (details) {
-        if (!_isDragging && (details.globalPosition - _dragStart).distance > 4.0) {
-          _isDragging = true;
-        }
-        if (_isDragging) {
-          setState(() {
-            _position = Offset(
-              (_position!.dx + details.delta.dx).clamp(8.0, size.width - kButtonSize - 8.0),
-              (_position!.dy + details.delta.dy).clamp(8.0, size.height - kButtonSize - 8.0),
-            );
-          });
-        }
-      },
-      onPanEnd: (details) {
-        if (_isDragging) {
-          _savePosition(orientation);
-        } else {
-          setState(() {
-            _expanded = !_expanded;
-          });
-        }
-      },
+      onPanStart: _expanded
+          ? null
+          : (details) {
+              _dragStart = details.globalPosition;
+              _isDragging = false;
+            },
+      onPanUpdate: _expanded
+          ? null
+          : (details) {
+              if (!_isDragging && (details.globalPosition - _dragStart).distance > 8.0) {
+                _isDragging = true;
+              }
+              if (_isDragging) {
+                final maxX = max(8.0, size.width - kButtonSize - 8.0);
+                final maxY = max(8.0, size.height - kButtonSize - 8.0);
+                setState(() {
+                  _position = Offset(
+                    (_position!.dx + details.delta.dx).clamp(8.0, maxX),
+                    (_position!.dy + details.delta.dy).clamp(8.0, maxY),
+                  );
+                });
+              }
+            },
+      onPanEnd: _expanded
+          ? null
+          : (details) {
+              if (_isDragging) {
+                _savePosition(orientation);
+                _isDragging = false;
+              }
+            },
       child: Container(
         width: kButtonSize,
         height: kButtonSize,
         decoration: BoxDecoration(
-          color: MyTheme.accent,
+          color: _expanded
+              ? const Color(0x604E5360)
+              : const Color(0x803E424B),
           shape: BoxShape.circle,
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black45,
-              blurRadius: 6,
-              offset: Offset(0, 2),
-            ),
-          ],
+          border: Border.all(
+            color: _expanded ? Colors.white24 : const Color(0x60FFFFFF),
+            width: 1.2,
+          ),
+          boxShadow: _expanded
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
         ),
         child: Icon(
           _expanded ? Icons.close : Icons.tune,
-          color: Colors.white,
+          color: const Color(0xD9FFFFFF),
           size: 22,
         ),
       ),
@@ -3069,12 +3091,12 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
           decoration: BoxDecoration(
-            color: const Color(0xEE1E222B),
+            color: const Color(0xCC20232A),
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(color: const Color(0x33FFFFFF)),
             boxShadow: const [
               BoxShadow(
-                color: Colors.black54,
+                color: Color(0x40000000),
                 blurRadius: 10,
                 spreadRadius: 1,
               ),
@@ -3124,12 +3146,12 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
           decoration: BoxDecoration(
-            color: const Color(0xEE1E222B),
+            color: const Color(0xCC20232A),
             borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: Colors.white12),
+            border: Border.all(color: const Color(0x33FFFFFF)),
             boxShadow: const [
               BoxShadow(
-                color: Colors.black54,
+                color: Color(0x40000000),
                 blurRadius: 10,
                 spreadRadius: 1,
               ),
