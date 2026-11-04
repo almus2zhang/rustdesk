@@ -71,7 +71,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       widget.isSecondaryDisplay ||
       widget.id.startsWith("127.0.0.1");
 
-  void _sendPhysicalResolutionToServer({bool forcePhysical = false, String? forcedOrientation}) {
+  void _sendPhysicalResolutionToServer(
+      {bool forcePhysical = false, String? forcedOrientation}) {
     sendPhysicalResolutionToServer(
       peerId: widget.id,
       sessionId: gFFI.sessionId,
@@ -87,8 +88,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final orientation = MediaQuery.maybeOf(context)?.orientation;
       if (orientation != null && orientation != _currentOrientation) {
         _currentOrientation = orientation;
-        final savedOrientation =
-            bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-display-orientation');
+        final savedOrientation = bind.mainGetPeerOptionSync(
+            id: widget.id, key: 'custom-display-orientation');
         if (savedOrientation.isEmpty || savedOrientation == 'auto') {
           _sendPhysicalResolutionToServer();
         }
@@ -126,7 +127,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   bool _isFabDragging = false;
   Offset _fabDragStart = Offset.zero;
 
-  Offset _getFabPosition(Orientation orientation, Size size, EdgeInsets padding) {
+  Offset _getFabPosition(
+      Orientation orientation, Size size, EdgeInsets padding) {
     if (orientation == Orientation.landscape) {
       if (_fabLandscapePos != null) return _fabLandscapePos!;
       final saved = bind.getLocalFlutterOption(k: 'float_ctrl_l_pos');
@@ -143,8 +145,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           }
         } catch (_) {}
       }
-      final defaultX = max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
-      final defaultY = max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
+      final defaultX =
+          max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
+      final defaultY =
+          max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
       _fabLandscapePos = Offset(defaultX, defaultY);
       return _fabLandscapePos!;
     } else {
@@ -163,8 +167,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           }
         } catch (_) {}
       }
-      final defaultX = max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
-      final defaultY = max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
+      final defaultX =
+          max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
+      final defaultY =
+          max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
       _fabPortraitPos = Offset(defaultX, defaultY);
       return _fabPortraitPos!;
     }
@@ -173,7 +179,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void _updateFabPosition(Orientation orientation, Offset newPos, Size size) {
     final maxX = max(8.0, size.width - 48.0 - 8.0);
     final maxY = max(8.0, size.height - 48.0 - 8.0);
-    final clamped = Offset(newPos.dx.clamp(8.0, maxX), newPos.dy.clamp(8.0, maxY));
+    final clamped =
+        Offset(newPos.dx.clamp(8.0, maxX), newPos.dy.clamp(8.0, maxY));
     if (orientation == Orientation.landscape) {
       _fabLandscapePos = clamped;
     } else {
@@ -182,12 +189,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   void _saveFabPosition(Orientation orientation) {
-    final pos = orientation == Orientation.landscape ? _fabLandscapePos : _fabPortraitPos;
+    final pos = orientation == Orientation.landscape
+        ? _fabLandscapePos
+        : _fabPortraitPos;
     if (pos == null) return;
-    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
+    final key = orientation == Orientation.landscape
+        ? 'float_ctrl_l_pos'
+        : 'float_ctrl_p_pos';
     bind.setLocalFlutterOption(k: key, v: '${pos.dx},${pos.dy}');
   }
-
 
   _RemotePageState(String id) {
     initSharedStates(id);
@@ -197,7 +207,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void initState() {
-    _showBar.value = isSecondary ? false : !isWebDesktop;
+    _showBar.value = false;
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
@@ -224,8 +234,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (isSecondary) {
       final savedCodec =
           bind.mainGetPeerOptionSync(id: widget.id, key: 'codec-preference');
-      final savedI444 =
-          bind.mainGetPeerOptionSync(id: widget.id, key: 'i444');
+      final savedI444 = bind.mainGetPeerOptionSync(id: widget.id, key: 'i444');
       if (savedCodec.isEmpty) {
         bind.mainSetPeerOptionSync(
             id: widget.id, key: 'codec-preference', value: 'h264');
@@ -348,7 +357,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           gFFI.ffiModel.pi.version.isNotEmpty) {
         gFFI.invokeMethod("enable_soft_keyboard", false);
       }
-      
+
       _showEdit = false;
       _mobileFocusNode.unfocus();
       if (isAndroid) {
@@ -519,8 +528,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget _bottomWidget() {
     if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty) return const Offstage();
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty)
+      return const Offstage();
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
     if (isLandscape) return const Offstage();
 
     return getBottomAppBar();
@@ -564,27 +575,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         return false;
       },
       child: Scaffold(
-          extendBody: true,
-          extendBodyBehindAppBar: true,
+          extendBody: false,
+          extendBodyBehindAppBar: false,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           floatingActionButtonLocation: null,
           floatingActionButton: null,
           bottomNavigationBar: Obx(() {
-            final isLandscape =
-                MediaQuery.of(context).orientation == Orientation.landscape;
-            if (isLandscape) {
-              return const SizedBox.shrink();
-            }
             if (_showGestureHelp) {
               return getGestureHelp();
             }
-            if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty) {
-              return const SizedBox.shrink();
-            }
-            return getBottomAppBar();
+            return const SizedBox.shrink();
           }),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
+              key: _blockableOverlayState.key,
               initialEntries: [
                 OverlayEntry(builder: (context) {
                   return Container(
@@ -596,11 +600,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             bottom: !isAndroid,
                             child:
                                 OrientationBuilder(builder: (ctx, orientation) {
-                              if (_currentOrientation != orientation) {
+                              if (_currentOrientation == null) {
+                                _currentOrientation = orientation;
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
+                                  gFFI.canvasModel.updateViewStyle();
+                                });
+                              } else if (_currentOrientation != orientation) {
+                                _currentOrientation = orientation;
                                 Timer(const Duration(milliseconds: 200), () {
                                   gFFI.dialogManager
                                       .resetMobileActionsOverlay(ffi: gFFI);
-                                  _currentOrientation = orientation;
                                   gFFI.canvasModel.updateViewStyle();
                                 });
                               }
@@ -637,291 +647,190 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlBarIcons({bool compact = false, bool vertical = false}) {
+  List<Widget> _buildControlBarActionWidgets() {
     final ffiModel = Provider.of<FfiModel>(context);
-    final double iconSize = compact ? 18.0 : 24.0;
-    final EdgeInsets padding = compact ? const EdgeInsets.all(4.0) : const EdgeInsets.all(8.0);
-    final BoxConstraints constraints = compact
-        ? const BoxConstraints(minWidth: 26, minHeight: 26)
-        : const BoxConstraints(minWidth: 48, minHeight: 48);
+    const double iconSize = 22.0;
+    const EdgeInsets btnPadding = EdgeInsets.all(8.0);
+    const BoxConstraints constraints =
+        BoxConstraints(minWidth: 42, minHeight: 42);
 
-    Widget buildBtn({required Widget icon, required VoidCallback? onPressed}) {
-      return IconButton(
+    Widget buildBtn(
+        {required Widget icon,
+        required VoidCallback? onPressed,
+        String? tooltip}) {
+      final btn = IconButton(
         iconSize: iconSize,
-        padding: padding,
+        padding: btnPadding,
         constraints: constraints,
         color: Colors.white,
         icon: icon,
         onPressed: onPressed,
       );
+      if (tooltip != null) {
+        return Tooltip(message: tooltip, child: btn);
+      }
+      return btn;
     }
 
-    final actionItems = <Widget>[
+    return <Widget>[
+      // 1. Disconnect / Close
       buildBtn(
         icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      clientClose(sessionId, gFFI);
-                    },
-                  ),
-                  buildBtn(
-                    icon: const Icon(Icons.tv),
-                    onPressed: () {
-                      setState(() => _showEdit = false);
-                      showOptions(context, widget.id, gFFI.dialogManager);
-                    },
+        tooltip: translate('Close'),
+        onPressed: () {
+          clientClose(sessionId, gFFI);
+        },
+      ),
+      // 2. Display / Monitor
+      buildBtn(
+        icon: const Icon(Icons.tv),
+        tooltip: translate('Display'),
+        onPressed: () {
+          setState(() => _showEdit = false);
+          showOptions(context, widget.id, gFFI.dialogManager);
+        },
+      ),
+      // 3. Soft Keyboard
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.keyboard),
+          tooltip: translate('Keyboard'),
+          onPressed: openKeyboard,
+        ),
+      // 4. Input Method Picker (Android)
+      if (isAndroid && !isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.language),
+          tooltip: translate('Input Method'),
+          onPressed: () => gFFI.invokeMethod("show_input_method_picker", null),
+        ),
+      // Peer Android Actions
+      if (gFFI.ffiModel.isPeerAndroid &&
+          !isWebDesktop &&
+          !ffiModel.viewOnly &&
+          ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.build),
+          tooltip: 'Android Actions',
+          onPressed: () =>
+              gFFI.dialogManager.toggleMobileActionsOverlay(ffi: gFFI),
+        ),
+      // 5. Touch / Mouse Mode toggle & Gesture settings
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        Obx(() {
+          final isTouch = gFFI.ffiModel.touchMode;
+          return buildBtn(
+            icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
+            tooltip: isTouch ? '触屏模式 (点击打开设置与说明)' : '鼠标模式 (点击打开设置与说明)',
+            onPressed: () {
+              setState(() => _showGestureHelp = !_showGestureHelp);
+            },
+          );
+        }),
+      // 6. Chat
+      if (!isWeb)
+        futureBuilder(
+          future: gFFI.invokeMethod("get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
+          hasData: (isSupportVoiceCall) => buildBtn(
+            icon: isAndroid && isSupportVoiceCall
+                ? SvgPicture.asset(
+                    'assets/chat.svg',
+                    width: 22,
+                    height: 22,
+                    colorFilter:
+                        const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                   )
-                ] +
-                (isWebDesktop || ffiModel.viewOnly || !ffiModel.keyboard
-                    ? []
-                    : gFFI.ffiModel.isPeerAndroid
-                        ? [
-                            buildBtn(
-                                icon: const Icon(Icons.keyboard),
-                                onPressed: openKeyboard),
-                            if (isAndroid)
-                              buildBtn(
-                                icon: const Icon(Icons.language),
-                                onPressed: () => gFFI.invokeMethod(
-                                    "show_input_method_picker", null),
-                              ),
-                            buildBtn(
-                              icon: const Icon(Icons.build),
-                              onPressed: () => gFFI.dialogManager
-                                  .toggleMobileActionsOverlay(ffi: gFFI),
-                            )
-                          ]
-                        : [
-                            buildBtn(
-                                icon: const Icon(Icons.keyboard),
-                                onPressed: openKeyboard),
-                            if (isAndroid)
-                              buildBtn(
-                                icon: const Icon(Icons.language),
-                                onPressed: () => gFFI.invokeMethod(
-                                    "show_input_method_picker", null),
-                              ),
-                            Obx(() {
-                              final ffiModel = gFFI.ffiModel;
-                              final isTouch = ffiModel.touchMode;
-                              return vertical
-                                  ? Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Tooltip(
-                                          message: isTouch
-                                              ? '触屏模式说明与设置 (点击打开菜单)'
-                                              : '鼠标模式说明与设置 (点击打开菜单)',
-                                          child: buildBtn(
-                                            icon: Icon(isTouch
-                                                ? Icons.touch_app
-                                                : Icons.mouse),
-                                            onPressed: () {
-                                              setState(() => _showGestureHelp =
-                                                  !_showGestureHelp);
-                                            },
-                                          ),
-                                        ),
-                                        if (isTouch) ...[
-                                          Tooltip(
-                                            message: ffiModel.touchPanMode.value ==
-                                                    'scroll'
-                                                ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
-                                                : '单指移动: 选择文字 (点击切换为拖动屏幕)',
-                                            child: buildBtn(
-                                              icon: Icon(ffiModel.touchPanMode.value ==
-                                                      'scroll'
-                                                  ? Icons.swap_vert
-                                                  : Icons.text_fields),
-                                              onPressed: () {
-                                                ffiModel.toggleTouchPanMode();
-                                                BotToast.showText(
-                                                  text: ffiModel.touchPanMode.value ==
-                                                          'scroll'
-                                                      ? '单指移动: 拖动屏幕'
-                                                      : '单指移动: 选择文字',
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          Tooltip(
-                                            message: ffiModel.touchZoomMode.value ==
-                                                    'canvas'
-                                                ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
-                                                : '双指缩放: 远程缩放 (点击切换为缩放画布)',
-                                            child: buildBtn(
-                                              icon: Icon(ffiModel.touchZoomMode.value ==
-                                                      'canvas'
-                                                  ? Icons.zoom_out_map
-                                                  : Icons.zoom_in),
-                                              onPressed: () {
-                                                ffiModel.toggleTouchZoomMode();
-                                                BotToast.showText(
-                                                  text: ffiModel.touchZoomMode.value ==
-                                                          'canvas'
-                                                      ? '双指缩放: 缩放画布'
-                                                      : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    )
-                                  : Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Tooltip(
-                                    message: isTouch
-                                        ? '触屏模式说明与设置 (点击打开菜单)'
-                                        : '鼠标模式说明与设置 (点击打开菜单)',
-                                    child: buildBtn(
-                                      icon: Icon(isTouch
-                                          ? Icons.touch_app
-                                          : Icons.mouse),
-                                      onPressed: () {
-                                        setState(() => _showGestureHelp =
-                                            !_showGestureHelp);
-                                      },
-                                    ),
-                                  ),
-                                  if (isTouch) ...[
-                                    Tooltip(
-                                      message: ffiModel.touchPanMode.value ==
-                                              'scroll'
-                                          ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
-                                          : '单指移动: 选择文字 (点击切换为拖动屏幕)',
-                                      child: buildBtn(
-                                        icon: Icon(ffiModel.touchPanMode.value ==
-                                                'scroll'
-                                            ? Icons.swap_vert
-                                            : Icons.text_fields),
-                                        onPressed: () {
-                                          ffiModel.toggleTouchPanMode();
-                                          BotToast.showText(
-                                            text: ffiModel.touchPanMode.value ==
-                                                    'scroll'
-                                                ? '单指移动: 拖动屏幕'
-                                                : '单指移动: 选择文字',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                    Tooltip(
-                                      message: ffiModel.touchZoomMode.value ==
-                                              'canvas'
-                                          ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
-                                          : '双指缩放: 远程缩放 (点击切换为缩放画布)',
-                                      child: buildBtn(
-                                        icon: Icon(ffiModel.touchZoomMode.value ==
-                                                'canvas'
-                                            ? Icons.zoom_out_map
-                                            : Icons.zoom_in),
-                                        onPressed: () {
-                                          ffiModel.toggleTouchZoomMode();
-                                          BotToast.showText(
-                                            text: ffiModel.touchZoomMode.value ==
-                                                    'canvas'
-                                                ? '双指缩放: 缩放画布'
-                                                : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            }),
-                          ]) +
-                (isWeb
-                    ? []
-                    : <Widget>[
-                        futureBuilder(
-                            future: gFFI.invokeMethod(
-                                "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                            hasData: (isSupportVoiceCall) => buildBtn(
-                                  icon: isAndroid && isSupportVoiceCall
-                                      ? SvgPicture.asset('assets/chat.svg',
-                                          colorFilter: ColorFilter.mode(
-                                              Colors.white, BlendMode.srcIn))
-                                      : const Icon(Icons.message),
-                                  onPressed: () =>
-                                      isAndroid && isSupportVoiceCall
-                                          ? showChatOptions(widget.id)
-                                          : onPressedTextChat(widget.id),
-                                ))
-                      ]) +
-                [
-                  buildBtn(
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () {
-                      setState(() => _showEdit = false);
-                      showActions(widget.id);
-                    },
-                  ),
-                ];
-
-    if (vertical) {
-      return Column(
-        mainAxisSize: MainAxisSize.max,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: actionItems,
-              ),
-            ),
+                : const Icon(Icons.message),
+            tooltip: translate('Chat'),
+            onPressed: () => isAndroid && isSupportVoiceCall
+                ? showChatOptions(widget.id)
+                : onPressedTextChat(widget.id),
           ),
-          Obx(() => buildBtn(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                    ? null
-                    : () {
-                        _showBar.value = false;
-                        if (mounted) setState(() {});
-                      },
-              )),
-        ],
-      );
-    } else {
-      return Row(
-        mainAxisSize: MainAxisSize.max,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: actionItems,
-              ),
-            ),
-          ),
-          Obx(() => buildBtn(
-                icon: const Icon(Icons.expand_more),
-                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                    ? null
-                    : () {
-                        _showBar.value = false;
-                        if (mounted) setState(() {});
-                      },
-              )),
-        ],
-      );
-    }
+        ),
+      // 7. More Actions
+      buildBtn(
+        icon: const Icon(Icons.more_vert),
+        tooltip: translate('Actions'),
+        onPressed: () {
+          setState(() => _showEdit = false);
+          showActions(widget.id);
+        },
+      ),
+      // 8. Collapse Chevron
+      buildBtn(
+        icon: const Icon(Icons.expand_more),
+        tooltip: translate('Collapse'),
+        onPressed: () {
+          _showBar.value = false;
+          if (mounted) setState(() {});
+        },
+      ),
+    ];
   }
 
-  Widget getBottomAppBar() {
-    final padding = MediaQuery.of(context).padding;
-    return Container(
-      color: MyTheme.accent,
-      height: 48.0 + padding.bottom,
-      padding: EdgeInsets.only(bottom: padding.bottom),
-      child: SizedBox(
-        height: 48.0,
-        child: _controlBarIcons(vertical: false),
+  Widget _buildFloatingControlBar(
+      Orientation orientation, Size size, EdgeInsets padding, Offset fabPos) {
+    const double barHeight = 48.0;
+    final double maxBarWidth = min(
+        420.0, max(240.0, size.width - padding.left - padding.right - 16.0));
+    const double fabSize = 48.0;
+
+    // Decide Y position: pop above if in bottom half, pop below if in top half
+    double barY;
+    if (fabPos.dy > size.height / 2) {
+      barY = fabPos.dy - barHeight - 10.0;
+    } else {
+      barY = fabPos.dy + fabSize + 10.0;
+    }
+
+    // Decide X position: align with FAB horizontally
+    double barX;
+    if (fabPos.dx > size.width / 2) {
+      barX = fabPos.dx + fabSize - maxBarWidth;
+    } else {
+      barX = fabPos.dx;
+    }
+
+    // Clamp within safe area so it NEVER overflows the screen
+    final minLeft = padding.left + 8.0;
+    final maxLeft =
+        max(minLeft, size.width - padding.right - maxBarWidth - 8.0);
+    final minTop = padding.top + 8.0;
+    final maxTop = max(minTop, size.height - padding.bottom - barHeight - 8.0);
+
+    final clampedX = barX.clamp(minLeft, maxLeft);
+    final clampedY = barY.clamp(minTop, maxTop);
+
+    return Positioned(
+      left: clampedX,
+      top: clampedY,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 8.0,
+        borderRadius: BorderRadius.circular(24.0),
+        child: Container(
+          height: barHeight,
+          constraints: BoxConstraints(maxWidth: maxBarWidth),
+          decoration: BoxDecoration(
+            color: MyTheme.accent,
+            borderRadius: BorderRadius.circular(24.0),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x66000000),
+                blurRadius: 10.0,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: _buildControlBarActionWidgets(),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -941,11 +850,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget getBodyForMobile() {
     return Obx(() {
-      final keyboardIsVisible = _showEdit || keyboardVisibilityController.isVisible;
+      final keyboardIsVisible =
+          _showEdit || keyboardVisibilityController.isVisible;
       final isTablet = isTabletLayoutMode(context);
       final showKeyboardHideFab = isTablet && keyboardIsVisible;
-      final showActionButton = (!keyboardIsVisible || isTablet) &&
-          (!_showBar.value || showKeyboardHideFab || _showGestureHelp);
+      final showActionButton = !keyboardIsVisible || isTablet;
       final orientation = MediaQuery.of(context).orientation;
       final isLandscape = orientation == Orientation.landscape;
       final padding = MediaQuery.of(context).padding;
@@ -1009,25 +918,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ? _buildFloatingEscKeyContent()
             : const SizedBox.shrink()),
       ));
-      if (isLandscape && _showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
-        paints.add(Positioned(
-          top: 0,
-          bottom: 0,
-          right: 0,
-          width: 48.0 + padding.right,
-          child: Container(
-            color: MyTheme.accent,
-            padding: EdgeInsets.only(
-              top: padding.top,
-              bottom: padding.bottom,
-              right: padding.right,
-            ),
-            child: SizedBox(
-              width: 48.0,
-              child: _controlBarIcons(vertical: true),
-            ),
-          ),
-        ));
+      if (_showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
+        final fabPos = _getFabPosition(orientation, size, padding);
+        paints
+            .add(_buildFloatingControlBar(orientation, size, padding, fabPos));
       }
       if (showActionButton) {
         final fabPos = _getFabPosition(orientation, size, padding);
@@ -1054,14 +948,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               _isFabDragging = false;
             },
             onPanUpdate: (details) {
-              if (!_isFabDragging && (details.globalPosition - _fabDragStart).distance > 6.0) {
+              if (!_isFabDragging &&
+                  (details.globalPosition - _fabDragStart).distance > 6.0) {
                 _isFabDragging = true;
               }
               if (_isFabDragging) {
                 setState(() {
                   _updateFabPosition(
                     orientation,
-                    Offset(fabPos.dx + details.delta.dx, fabPos.dy + details.delta.dy),
+                    Offset(fabPos.dx + details.delta.dx,
+                        fabPos.dy + details.delta.dy),
                     size,
                   );
                 });
@@ -1094,7 +990,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               child: Icon(
                 (showKeyboardHideFab || _showGestureHelp)
                     ? Icons.expand_more
-                    : Icons.menu,
+                    : (_showBar.value ? Icons.close : Icons.menu),
                 color: Colors.white,
                 size: 24,
               ),
@@ -1497,12 +1393,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         style: TextButton.styleFrom(
           minimumSize: Size(0, 0),
           padding: EdgeInsets.symmetric(
-            vertical: widget.embedded
-                ? (isMultiLine ? 6.0 : 3.0)
-                : 10.0,
-            horizontal: widget.embedded
-                ? (isMultiLine ? 8.0 : 6.0)
-                : 9.75,
+            vertical: widget.embedded ? (isMultiLine ? 6.0 : 3.0) : 10.0,
+            horizontal: widget.embedded ? (isMultiLine ? 8.0 : 6.0) : 9.75,
           ),
           //adds padding inside the button
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1513,7 +1405,9 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           backgroundColor: active == true ? MyTheme.accent80 : null,
         ),
         child: icon != null
-            ? Icon(icon, size: widget.embedded ? (isMultiLine ? 14 : 13) : 14, color: Colors.white)
+            ? Icon(icon,
+                size: widget.embedded ? (isMultiLine ? 14 : 13) : 14,
+                color: Colors.white)
             : Text(translate(text),
                 style: TextStyle(
                   color: Colors.white,
@@ -1649,7 +1543,6 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                     key: 'key_help_tools_collapsed', value: 'Y');
               }),
           icon: Icons.keyboard_hide),
-
       wrap('', () {
         inputModel.inputKey('VK_LEFT');
       }, icon: Icons.keyboard_arrow_left),
@@ -1747,11 +1640,17 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final isHighRes = size.width > 2560;
     final expandedWidget = Container(
         key: _key,
-        color: (isHighRes || widget.embedded) ? Colors.transparent : Color(0xAA000000),
+        color: (isHighRes || widget.embedded)
+            ? Colors.transparent
+            : Color(0xAA000000),
         padding: EdgeInsets.only(
             top: widget.embedded
                 ? 1.0
-                : ((isAndroid || !_keyboardVisibilityController.isVisible || isHighRes) ? 4 : 24),
+                : ((isAndroid ||
+                        !_keyboardVisibilityController.isVisible ||
+                        isHighRes)
+                    ? 4
+                    : 24),
             bottom: widget.embedded ? 1.0 : (isHighRes ? 4 : 8)),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1771,7 +1670,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                       });
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
                         color: const Color(0x33FFFFFF),
                         borderRadius: BorderRadius.circular(10),
@@ -1779,11 +1679,13 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
+                          const Icon(Icons.keyboard_hide,
+                              size: 14, color: Colors.white70),
                           const SizedBox(width: 4),
                           Text(
                             translate('Hide'),
-                            style: const TextStyle(color: Colors.white70, fontSize: 11),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 11),
                           ),
                         ],
                       ),
@@ -2081,7 +1983,9 @@ void showOptions(
                     r?.onChanged?.call(kRemoteViewStyleOriginal);
                     viewStyle.value = kRemoteViewStyleOriginal;
                     bind.mainSetPeerOptionSync(
-                        id: id, key: 'view_style', value: kRemoteViewStyleOriginal);
+                        id: id,
+                        key: 'view_style',
+                        value: kRemoteViewStyleOriginal);
                   },
                 ),
               ),
@@ -2096,7 +2000,9 @@ void showOptions(
                     r?.onChanged?.call(kRemoteViewStyleAdaptive);
                     viewStyle.value = kRemoteViewStyleAdaptive;
                     bind.mainSetPeerOptionSync(
-                        id: id, key: 'view_style', value: kRemoteViewStyleAdaptive);
+                        id: id,
+                        key: 'view_style',
+                        value: kRemoteViewStyleAdaptive);
                   },
                 ),
               ),
@@ -2106,11 +2012,14 @@ void showOptions(
                   text: translate('Custom'),
                   selected: viewStyle.value == kRemoteViewStyleCustom,
                   onTap: () {
-                    final r = findRadio(viewStyleRadios, kRemoteViewStyleCustom);
+                    final r =
+                        findRadio(viewStyleRadios, kRemoteViewStyleCustom);
                     r?.onChanged?.call(kRemoteViewStyleCustom);
                     viewStyle.value = kRemoteViewStyleCustom;
                     bind.mainSetPeerOptionSync(
-                        id: id, key: 'view_style', value: kRemoteViewStyleCustom);
+                        id: id,
+                        key: 'view_style',
+                        value: kRemoteViewStyleCustom);
                   },
                 ),
               ),
@@ -2204,12 +2113,12 @@ void showOptions(
       );
     }
 
-    final savedPeerFps =
-        bind.mainGetPeerOptionSync(id: id, key: 'custom-fps');
+    final savedPeerFps = bind.mainGetPeerOptionSync(id: id, key: 'custom-fps');
     final currentFps = (savedPeerFps.isNotEmpty ? savedPeerFps : '60').obs;
 
     final fpsButtons = [
-      buildSectionTitle(localeName.startsWith('zh') ? '帧率 (FPS)' : 'Framerate (FPS)'),
+      buildSectionTitle(
+          localeName.startsWith('zh') ? '帧率 (FPS)' : 'Framerate (FPS)'),
       Obx(() => Row(
             children: [
               Expanded(
@@ -2220,7 +2129,8 @@ void showOptions(
                     currentFps.value = '30';
                     await bind.sessionSetCustomFps(
                         sessionId: gFFI.sessionId, fps: 30);
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '30');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-fps', value: '30');
                     BotToast.showText(text: '30 FPS');
                   },
                 ),
@@ -2229,12 +2139,14 @@ void showOptions(
               Expanded(
                 child: buildSegmentButton(
                   text: '60 FPS',
-                  selected: currentFps.value == '60' || currentFps.value.isEmpty,
+                  selected:
+                      currentFps.value == '60' || currentFps.value.isEmpty,
                   onTap: () async {
                     currentFps.value = '60';
                     await bind.sessionSetCustomFps(
                         sessionId: gFFI.sessionId, fps: 60);
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '60');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-fps', value: '60');
                     BotToast.showText(text: '60 FPS');
                   },
                 ),
@@ -2248,7 +2160,8 @@ void showOptions(
                     currentFps.value = '120';
                     await bind.sessionSetCustomFps(
                         sessionId: gFFI.sessionId, fps: 120);
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-fps', value: '120');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-fps', value: '120');
                     BotToast.showText(text: '120 FPS');
                   },
                 ),
@@ -2257,14 +2170,17 @@ void showOptions(
           )),
     ];
     final colorModeButtons = [
-      buildSectionTitle(localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
+      buildSectionTitle(
+          localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
       Obx(() {
         final is444 = isI444Enabled.value;
         return Row(
           children: [
             Expanded(
               child: buildSegmentButton(
-                text: localeName.startsWith('zh') ? '⚡ 低延时 (4:2:0 硬解)' : '⚡ Low Latency (4:2:0)',
+                text: localeName.startsWith('zh')
+                    ? '⚡ 低延时 (4:2:0 硬解)'
+                    : '⚡ Low Latency (4:2:0)',
                 selected: !is444,
                 onTap: () async {
                   isI444Enabled.value = false;
@@ -2272,8 +2188,11 @@ void showOptions(
                       sessionId: gFFI.sessionId, name: 'i444', value: '');
                   bind.mainSetPeerOptionSync(id: id, key: 'i444', value: '');
                   await bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId, name: 'codec-preference', value: 'auto');
-                  bind.mainSetPeerOptionSync(id: id, key: 'codec-preference', value: 'auto');
+                      sessionId: gFFI.sessionId,
+                      name: 'codec-preference',
+                      value: 'auto');
+                  bind.mainSetPeerOptionSync(
+                      id: id, key: 'codec-preference', value: 'auto');
                   final r = findRadio(codecRadios, 'auto');
                   r?.onChanged?.call('auto');
                   codec.value = 'auto';
@@ -2289,7 +2208,9 @@ void showOptions(
             const SizedBox(width: 6),
             Expanded(
               child: buildSegmentButton(
-                text: localeName.startsWith('zh') ? '🎨 真彩 (VP9 4:4:4)' : '🎨 True Color (VP9 4:4:4)',
+                text: localeName.startsWith('zh')
+                    ? '🎨 真彩 (VP9 4:4:4)'
+                    : '🎨 True Color (VP9 4:4:4)',
                 selected: is444,
                 onTap: () async {
                   isI444Enabled.value = true;
@@ -2297,8 +2218,11 @@ void showOptions(
                       sessionId: gFFI.sessionId, name: 'i444', value: 'Y');
                   bind.mainSetPeerOptionSync(id: id, key: 'i444', value: 'Y');
                   await bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId, name: 'codec-preference', value: 'vp9');
-                  bind.mainSetPeerOptionSync(id: id, key: 'codec-preference', value: 'vp9');
+                      sessionId: gFFI.sessionId,
+                      name: 'codec-preference',
+                      value: 'vp9');
+                  bind.mainSetPeerOptionSync(
+                      id: id, key: 'codec-preference', value: 'vp9');
                   final r = findRadio(codecRadios, 'vp9');
                   r?.onChanged?.call('vp9');
                   codec.value = 'vp9';
@@ -2392,16 +2316,22 @@ void showOptions(
         (savedOrientation.isNotEmpty ? savedOrientation : 'auto').obs;
 
     final orientationButtons = [
-      buildSectionTitle(localeName.startsWith('zh') ? '屏幕方向 (自动记忆)' : 'Orientation (Memorized)'),
+      buildSectionTitle(localeName.startsWith('zh')
+          ? '屏幕方向 (自动记忆)'
+          : 'Orientation (Memorized)'),
       Obx(() => Row(
             children: [
               Expanded(
                 child: buildSegmentButton(
                   text: localeName.startsWith('zh') ? '自动跟随' : 'Auto',
-                  selected: currentOrientation.value == 'auto' || currentOrientation.value.isEmpty,
+                  selected: currentOrientation.value == 'auto' ||
+                      currentOrientation.value.isEmpty,
                   onTap: () async {
                     currentOrientation.value = 'auto';
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'auto');
+                    bind.mainSetPeerOptionSync(
+                        id: id,
+                        key: 'custom-display-orientation',
+                        value: 'auto');
                     sendPhysicalResolutionToServer(
                       peerId: id,
                       sessionId: gFFI.sessionId,
@@ -2422,7 +2352,10 @@ void showOptions(
                   selected: currentOrientation.value == 'landscape',
                   onTap: () async {
                     currentOrientation.value = 'landscape';
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'landscape');
+                    bind.mainSetPeerOptionSync(
+                        id: id,
+                        key: 'custom-display-orientation',
+                        value: 'landscape');
                     sendPhysicalResolutionToServer(
                       peerId: id,
                       sessionId: gFFI.sessionId,
@@ -2443,7 +2376,10 @@ void showOptions(
                   selected: currentOrientation.value == 'portrait',
                   onTap: () async {
                     currentOrientation.value = 'portrait';
-                    bind.mainSetPeerOptionSync(id: id, key: 'custom-display-orientation', value: 'portrait');
+                    bind.mainSetPeerOptionSync(
+                        id: id,
+                        key: 'custom-display-orientation',
+                        value: 'portrait');
                     sendPhysicalResolutionToServer(
                       peerId: id,
                       sessionId: gFFI.sessionId,
@@ -2690,7 +2626,8 @@ void sendPhysicalResolutionToServer({
     if (targetW <= 0 || targetH <= 0) return;
 
     final orientationMode = forcedOrientation ??
-        bind.mainGetPeerOptionSync(id: peerId, key: 'custom-display-orientation');
+        bind.mainGetPeerOptionSync(
+            id: peerId, key: 'custom-display-orientation');
     final minDim = min(targetW, targetH);
     final maxDim = max(targetW, targetH);
 
@@ -2715,7 +2652,8 @@ void sendPhysicalResolutionToServer({
       }
     }
 
-    debugPrint("Sending secondary display resolution to server: ${targetW}x$targetH (orientation: $orientationMode)");
+    debugPrint(
+        "Sending secondary display resolution to server: ${targetW}x$targetH (orientation: $orientationMode)");
     bind.sessionPeerOption(
       sessionId: sessionId,
       name: 'secondary_display',
@@ -3002,7 +2940,9 @@ TTextMenu? getPhonePortraitVirtualDisplayMenu(
                   visualDensity: VisualDensity.compact,
                   leading: const Icon(Icons.tune),
                   title: Text(
-                    isZh ? '✏️ 自定义竖屏分辨率...' : '✏️ Custom portrait resolution...',
+                    isZh
+                        ? '✏️ 自定义竖屏分辨率...'
+                        : '✏️ Custom portrait resolution...',
                   ),
                   onTap: () {
                     close();
@@ -3044,7 +2984,8 @@ TTextMenu? getPhonePortraitVirtualDisplayMenu(
                         openMonitorInTheSameTab(0, ffi, pi);
                       }
                       BotToast.showText(
-                        text: isZh ? '已拔出虚拟显示器' : 'Virtual displays plugged out',
+                        text:
+                            isZh ? '已拔出虚拟显示器' : 'Virtual displays plugged out',
                       );
                     },
                   ),
