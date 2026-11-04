@@ -138,6 +138,7 @@ class _RawTouchGestureDetectorRegionState
   @override
   Widget build(BuildContext context) {
     return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
       child: widget.child,
       gestures: makeGestures(context),
     );

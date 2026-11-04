@@ -663,10 +663,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       return btn;
     }
 
-    final buttons = <Widget>[
+    final featureButtons = <Widget>[
       // 1. Disconnect / Close
       buildBtn(
-        icon: const Icon(Icons.clear),
+        icon: const Icon(Icons.clear, color: Colors.white, size: 20),
         tooltip: translate('Close'),
         onPressed: () {
           clientClose(sessionId, gFFI);
@@ -674,7 +674,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ),
       // 2. Display / Monitor
       buildBtn(
-        icon: const Icon(Icons.tv),
+        icon: const Icon(Icons.tv, color: Colors.white, size: 20),
         tooltip: translate('Display'),
         onPressed: () {
           setState(() => _showEdit = false);
@@ -684,14 +684,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       // 3. Soft Keyboard
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
-          icon: const Icon(Icons.keyboard),
+          icon: const Icon(Icons.keyboard, color: Colors.white, size: 20),
           tooltip: translate('Keyboard'),
           onPressed: openKeyboard,
         ),
       // 4. Input Method Picker (Android)
       if (isAndroid && !isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
-          icon: const Icon(Icons.language),
+          icon: const Icon(Icons.language, color: Colors.white, size: 20),
           tooltip: translate('Input Method'),
           onPressed: () => gFFI.invokeMethod("show_input_method_picker", null),
         ),
@@ -701,7 +701,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           !ffiModel.viewOnly &&
           ffiModel.keyboard)
         buildBtn(
-          icon: const Icon(Icons.build),
+          icon: const Icon(Icons.build, color: Colors.white, size: 20),
           tooltip: 'Android Actions',
           onPressed: () =>
               gFFI.dialogManager.toggleMobileActionsOverlay(ffi: gFFI),
@@ -709,7 +709,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       // 5. Touch / Mouse Mode toggle & Gesture settings
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
-          icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse),
+          icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse,
+              color: Colors.white, size: 20),
           tooltip: ffiModel.touchMode
               ? (localeName.startsWith('zh')
                   ? '触屏模式 (点击打开说明与设置)'
@@ -732,7 +733,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   colorFilter:
                       const ColorFilter.mode(Colors.white, BlendMode.srcIn),
                 )
-              : const Icon(Icons.message),
+              : const Icon(Icons.message, color: Colors.white, size: 20),
           tooltip: translate('Chat'),
           onPressed: () => isAndroid
               ? showChatOptions(widget.id)
@@ -740,59 +741,81 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         ),
       // 7. More Actions
       buildBtn(
-        icon: const Icon(Icons.more_vert),
+        icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
         tooltip: translate('Actions'),
         onPressed: () {
           setState(() => _showEdit = false);
           showActions(widget.id);
         },
       ),
-      // 8. Collapse Chevron
-      buildBtn(
-        icon: Icon(isLandscape ? Icons.expand_more : Icons.chevron_right),
-        tooltip: translate('Collapse'),
-        onPressed: () {
-          _showBar.value = false;
-          if (mounted) setState(() {});
-        },
-      ),
     ];
+
+    final totalCount = featureButtons.length + 1; // including collapse button
+    final double neededLength = totalCount * 38.0 + 8.0;
 
     final double barWidth = isLandscape
         ? 48.0
-        : min(370.0, size.width - padding.left - padding.right - 16.0);
+        : min(neededLength, size.width - padding.left - padding.right - 16.0);
     final double barHeight = isLandscape
-        ? min(370.0, size.height - padding.top - padding.bottom - 16.0)
+        ? min(neededLength, size.height - padding.top - padding.bottom - 16.0)
         : 48.0;
 
+    bool collapseAtStart;
+    IconData collapseIcon;
     double barX;
     double barY;
 
     if (isLandscape) {
-      // Horizontal align with FAB
       barX = fabPos.dx;
-      // Vertical expansion:
-      // If FAB is in bottom half -> expand UPWARDS, so [收起箭头] (bottom of bar) sits at fabPos.dy
-      // If FAB is in top half -> expand DOWNWARDS, so [X 断开] (top of bar) sits at fabPos.dy
       if (fabPos.dy > size.height / 2) {
+        // More space above -> expands UPWARDS
+        // [收起箭头] placed at BOTTOM (end of list) so it stays exactly at fabPos.dy!
+        collapseAtStart = false;
+        collapseIcon = Icons.expand_more;
         barY = fabPos.dy + 48.0 - barHeight;
       } else {
+        // More space below -> expands DOWNWARDS
+        // [收起箭头] placed at TOP (start of list) so it stays exactly at fabPos.dy!
+        collapseAtStart = true;
+        collapseIcon = Icons.expand_less;
         barY = fabPos.dy;
       }
     } else {
-      // Vertical align with FAB
       barY = fabPos.dy;
-      // Horizontal expansion:
-      // If FAB is on right half -> expand LEFTWARDS, so [收起箭头] (right of bar) sits at fabPos.dx + 48.0
-      // If FAB is on left half -> expand RIGHTWARDS, so [X 断开] (left of bar) sits at fabPos.dx
       if (fabPos.dx > size.width / 2) {
+        // More space to the left -> expands LEFTWARDS
+        // [收起箭头] placed at RIGHT (end of list) so it stays exactly at fabPos.dx!
+        collapseAtStart = false;
+        collapseIcon = Icons.chevron_right;
         barX = fabPos.dx + 48.0 - barWidth;
       } else {
+        // More space to the right -> expands RIGHTWARDS
+        // [收起箭头] placed at LEFT (start of list) so it stays exactly at fabPos.dx!
+        collapseAtStart = true;
+        collapseIcon = Icons.chevron_left;
         barX = fabPos.dx;
       }
     }
 
-    // Clamp strictly within safe area so it NEVER overflows the screen
+    final collapseBtn = buildBtn(
+      icon: Icon(collapseIcon, color: Colors.white, size: 22),
+      tooltip: translate('Collapse'),
+      onPressed: () {
+        _showBar.value = false;
+        if (mounted) setState(() {});
+      },
+    );
+
+    final buttons = <Widget>[];
+    if (collapseAtStart) {
+      buttons.add(collapseBtn);
+      buttons.addAll(featureButtons);
+    } else {
+      buttons.addAll(featureButtons);
+      buttons.add(collapseBtn);
+    }
+
+    // Clamp strictly within safe area
     final minLeft = padding.left + 8.0;
     final maxLeft = max(minLeft, size.width - padding.right - barWidth - 8.0);
     final minTop = padding.top + 8.0;
@@ -819,16 +842,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               maxHeight: barHeight,
             ),
             decoration: BoxDecoration(
-              color: const Color(0xB81E222D), // 半透明灰黑，质感通透
+              color: const Color(0xC80071FF), // 半透明蓝色质感
               borderRadius: BorderRadius.circular(24.0),
               border: Border.all(
-                color: const Color(0x50FFFFFF),
+                color: const Color(0x60FFFFFF),
                 width: 1.0,
               ),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x60000000),
-                  blurRadius: 10.0,
+                  color: Color(0x40000000),
+                  blurRadius: 8.0,
                   offset: Offset(0, 3),
                 ),
               ],
@@ -880,29 +903,36 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final size = MediaQuery.of(context).size;
 
       final paints = <Widget>[
-        RawTouchGestureDetectorRegion(
-          ffi: gFFI,
-          child: Stack(
-            children: [
-              Listener(
-                behavior: HitTestBehavior.translucent,
-                onPointerDown: (event) {
-                  if (_showEdit) {
-                    _mobileFocusNode.requestFocus();
-                  }
-                },
-                child: ImagePaint(ffiModel: gFFI.ffiModel),
+        Positioned.fill(
+          child: RawTouchGestureDetectorRegion(
+            ffi: gFFI,
+            child: Container(
+              color: Colors.transparent,
+              child: Stack(
+                children: [
+                  Listener(
+                    behavior: HitTestBehavior.translucent,
+                    onPointerDown: (event) {
+                      if (_showEdit) {
+                        _mobileFocusNode.requestFocus();
+                      }
+                    },
+                    child: SizedBox.expand(
+                      child: ImagePaint(ffiModel: gFFI.ffiModel),
+                    ),
+                  ),
+                  if (showCursorPaint) CursorPaint(widget.id),
+                  if (gFFI.ffiModel.touchMode)
+                    FloatingMouse(
+                      ffi: gFFI,
+                    )
+                  else
+                    FloatingMouseWidgets(
+                      ffi: gFFI,
+                    ),
+                ],
               ),
-              if (showCursorPaint) CursorPaint(widget.id),
-              if (gFFI.ffiModel.touchMode)
-                FloatingMouse(
-                  ffi: gFFI,
-                )
-              else
-                FloatingMouseWidgets(
-                  ffi: gFFI,
-                ),
-            ],
+            ),
           ),
         ),
         Positioned(
@@ -1002,10 +1032,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: const Color(0x803E424B),
+                color: const Color(0x990071FF), // 半透明蓝色展开按钮
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: const Color(0x60FFFFFF),
+                  color: const Color(0x70FFFFFF),
                   width: 1.2,
                 ),
                 boxShadow: const [
