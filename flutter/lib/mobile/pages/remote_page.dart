@@ -121,6 +121,41 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
 
+  Offset? _fabPosition;
+  bool _isFabDragging = false;
+  Offset _fabDragStart = Offset.zero;
+
+  void _loadFabPosition(Orientation orientation) {
+    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
+    final saved = bind.getLocalFlutterOption(k: key);
+    if (saved.isNotEmpty) {
+      try {
+        final parts = saved.split(',');
+        if (parts.length == 2) {
+          final x = double.parse(parts[0]);
+          final y = double.parse(parts[1]);
+          final size = MediaQuery.of(context).size;
+          _fabPosition = Offset(
+            x.clamp(8.0, max(8.0, size.width - 48.0 - 8.0)),
+            y.clamp(8.0, max(8.0, size.height - 48.0 - 8.0)),
+          );
+          return;
+        }
+      } catch (_) {}
+    }
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final defaultX = size.width - 48.0 - max(16.0, padding.right + 12.0);
+    final defaultY = size.height - 48.0 - max(16.0, padding.bottom + 12.0);
+    _fabPosition = Offset(defaultX, defaultY);
+  }
+
+  void _saveFabPosition(Orientation orientation) {
+    if (_fabPosition == null) return;
+    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
+    bind.setLocalFlutterOption(k: key, v: '${_fabPosition!.dx},${_fabPosition!.dy}');
+  }
+
 
   _RemotePageState(String id) {
     initSharedStates(id);
@@ -450,7 +485,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
+  Widget _bottomWidget() {
+    if (_showGestureHelp) return getGestureHelp();
+    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return Offstage();
 
+    return getBottomAppBar();
+  }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
     if (displays.isEmpty) return;
@@ -493,15 +533,24 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           extendBody: true,
           extendBodyBehindAppBar: true,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
-          bottomNavigationBar: Obx(() {
-            if (gFFI.ffiModel.pi.isSet.isFalse) {
-              return emptyOverlay(MyTheme.canvasColor);
-            }
-            if (_showGestureHelp) {
-              return getGestureHelp();
-            }
-            return const SizedBox.shrink();
-          }),
+          floatingActionButtonLocation: null,
+          floatingActionButton: null,
+          bottomNavigationBar: Obx(() => Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  gFFI.ffiModel.pi.isSet.isTrue &&
+                          gFFI.ffiModel.waitForFirstImage.isTrue
+                      ? emptyOverlay(MyTheme.canvasColor)
+                      : () {
+                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
+                          return Offstage();
+                        }(),
+                  _bottomWidget(),
+                  gFFI.ffiModel.pi.isSet.isFalse
+                      ? emptyOverlay(MyTheme.canvasColor)
+                      : Offstage(),
+                ],
+              )),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
@@ -556,7 +605,195 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  // Removed static bottom app bar in favor of DraggableControlBar
+  Widget _controlBarIcons({bool compact = false}) {
+    final ffiModel = Provider.of<FfiModel>(context);
+    final double iconSize = compact ? 18.0 : 24.0;
+    final EdgeInsets padding = compact ? const EdgeInsets.all(4.0) : const EdgeInsets.all(8.0);
+    final BoxConstraints constraints = compact
+        ? const BoxConstraints(minWidth: 26, minHeight: 26)
+        : const BoxConstraints(minWidth: 48, minHeight: 48);
+
+    Widget buildBtn({required Widget icon, required VoidCallback? onPressed}) {
+      return IconButton(
+        iconSize: iconSize,
+        padding: padding,
+        constraints: constraints,
+        color: Colors.white,
+        icon: icon,
+        onPressed: onPressed,
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: <Widget>[
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                  buildBtn(
+                    icon: const Icon(Icons.clear),
+                    onPressed: () {
+                      clientClose(sessionId, gFFI);
+                    },
+                  ),
+                  buildBtn(
+                    icon: const Icon(Icons.tv),
+                    onPressed: () {
+                      setState(() => _showEdit = false);
+                      showOptions(context, widget.id, gFFI.dialogManager);
+                    },
+                  )
+                ] +
+                (isWebDesktop || ffiModel.viewOnly || !ffiModel.keyboard
+                    ? []
+                    : gFFI.ffiModel.isPeerAndroid
+                        ? [
+                            buildBtn(
+                                icon: const Icon(Icons.keyboard),
+                                onPressed: openKeyboard),
+                            if (isAndroid)
+                              buildBtn(
+                                icon: const Icon(Icons.language),
+                                onPressed: () => gFFI.invokeMethod(
+                                    "show_input_method_picker", null),
+                              ),
+                            buildBtn(
+                              icon: const Icon(Icons.build),
+                              onPressed: () => gFFI.dialogManager
+                                  .toggleMobileActionsOverlay(ffi: gFFI),
+                            )
+                          ]
+                        : [
+                            buildBtn(
+                                icon: const Icon(Icons.keyboard),
+                                onPressed: openKeyboard),
+                            if (isAndroid)
+                              buildBtn(
+                                icon: const Icon(Icons.language),
+                                onPressed: () => gFFI.invokeMethod(
+                                    "show_input_method_picker", null),
+                              ),
+                            Obx(() {
+                              final ffiModel = gFFI.ffiModel;
+                              final isTouch = ffiModel.touchMode;
+                              return Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Tooltip(
+                                    message: isTouch
+                                        ? '触屏模式说明与设置 (点击打开菜单)'
+                                        : '鼠标模式说明与设置 (点击打开菜单)',
+                                    child: buildBtn(
+                                      icon: Icon(isTouch
+                                          ? Icons.touch_app
+                                          : Icons.mouse),
+                                      onPressed: () {
+                                        setState(() => _showGestureHelp =
+                                            !_showGestureHelp);
+                                      },
+                                    ),
+                                  ),
+                                  if (isTouch) ...[
+                                    Tooltip(
+                                      message: ffiModel.touchPanMode.value ==
+                                              'scroll'
+                                          ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
+                                          : '单指移动: 选择文字 (点击切换为拖动屏幕)',
+                                      child: buildBtn(
+                                        icon: Icon(ffiModel.touchPanMode.value ==
+                                                'scroll'
+                                            ? Icons.swap_vert
+                                            : Icons.text_fields),
+                                        onPressed: () {
+                                          ffiModel.toggleTouchPanMode();
+                                          BotToast.showText(
+                                            text: ffiModel.touchPanMode.value ==
+                                                    'scroll'
+                                                ? '单指移动: 拖动屏幕'
+                                                : '单指移动: 选择文字',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    Tooltip(
+                                      message: ffiModel.touchZoomMode.value ==
+                                              'canvas'
+                                          ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
+                                          : '双指缩放: 远程缩放 (点击切换为缩放画布)',
+                                      child: buildBtn(
+                                        icon: Icon(ffiModel.touchZoomMode.value ==
+                                                'canvas'
+                                            ? Icons.zoom_out_map
+                                            : Icons.zoom_in),
+                                        onPressed: () {
+                                          ffiModel.toggleTouchZoomMode();
+                                          BotToast.showText(
+                                            text: ffiModel.touchZoomMode.value ==
+                                                    'canvas'
+                                                ? '双指缩放: 缩放画布'
+                                                : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              );
+                            }),
+                          ]) +
+                (isWeb
+                    ? []
+                    : <Widget>[
+                        futureBuilder(
+                            future: gFFI.invokeMethod(
+                                "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
+                            hasData: (isSupportVoiceCall) => buildBtn(
+                                  icon: isAndroid && isSupportVoiceCall
+                                      ? SvgPicture.asset('assets/chat.svg',
+                                          colorFilter: ColorFilter.mode(
+                                              Colors.white, BlendMode.srcIn))
+                                      : const Icon(Icons.message),
+                                  onPressed: () =>
+                                      isAndroid && isSupportVoiceCall
+                                          ? showChatOptions(widget.id)
+                                          : onPressedTextChat(widget.id),
+                                ))
+                      ]) +
+                [
+                  buildBtn(
+                    icon: const Icon(Icons.more_vert),
+                    onPressed: () {
+                      setState(() => _showEdit = false);
+                      showActions(widget.id);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        Obx(() => buildBtn(
+              icon: const Icon(Icons.expand_more),
+              onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+                  ? null
+                  : () {
+                      setState(() => _showBar = !_showBar);
+                    },
+            )),
+      ],
+    );
+  }
+
+  Widget getBottomAppBar() {
+    return BottomAppBar(
+      elevation: 10,
+      color: MyTheme.accent,
+      child: _controlBarIcons(),
+    );
+  }
 
   bool get showCursorPaint =>
       !gFFI.ffiModel.isPeerAndroid &&
@@ -574,6 +811,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Widget getBodyForMobile() {
     final keyboardIsVisible = _showEdit || keyboardVisibilityController.isVisible;
     final isTablet = isTabletLayoutMode(context);
+    final showKeyboardHideFab = isTablet && keyboardIsVisible;
+    final showActionButton = (!keyboardIsVisible || isTablet) &&
+        (!_showBar || showKeyboardHideFab || _showGestureHelp);
     return Container(
         color: MyTheme.canvasColor,
         child: Stack(children: () {
@@ -643,26 +883,85 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 ? _buildFloatingEscKeyContent()
                 : const SizedBox.shrink()),
           ));
-          paints.add(DraggableControlBar(
-            ffi: gFFI,
-            showGestureHelp: _showGestureHelp,
-            onOpenKeyboard: openKeyboard,
-            onShowGestureHelp: () => setState(() => _showGestureHelp = true),
-            onShowActions: showActions,
-            onClose: () => clientClose(sessionId, gFFI),
-            onShowOptions: () => showOptions(context, widget.id, gFFI.dialogManager),
-            onChat: () async {
-              if (isAndroid) {
-                final isSupportVoiceCall = await gFFI.invokeMethod(
-                    "get_value", "KEY_IS_SUPPORT_VOICE_CALL");
-                if (isSupportVoiceCall == true) {
-                  showChatOptions(widget.id);
-                  return;
-                }
-              }
-              onPressedTextChat(widget.id);
-            },
-          ));
+          if (showActionButton) {
+            final size = MediaQuery.of(context).size;
+            final orientation = MediaQuery.of(context).orientation;
+            if (_fabPosition == null) {
+              _loadFabPosition(orientation);
+            }
+            paints.add(Positioned(
+              left: _fabPosition!.dx,
+              top: _fabPosition!.dy,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    if (showKeyboardHideFab) {
+                      _showEdit = false;
+                      gFFI.invokeMethod("enable_soft_keyboard", false);
+                      _mobileFocusNode.unfocus();
+                      _physicalFocusNode.requestFocus();
+                    } else if (_showGestureHelp) {
+                      _showGestureHelp = false;
+                    } else {
+                      _showBar = !_showBar;
+                    }
+                  });
+                },
+                onPanStart: (details) {
+                  _fabDragStart = details.globalPosition;
+                  _isFabDragging = false;
+                },
+                onPanUpdate: (details) {
+                  if (!_isFabDragging && (details.globalPosition - _fabDragStart).distance > 6.0) {
+                    _isFabDragging = true;
+                  }
+                  if (_isFabDragging) {
+                    final maxX = max(8.0, size.width - 48.0 - 8.0);
+                    final maxY = max(8.0, size.height - 48.0 - 8.0);
+                    setState(() {
+                      _fabPosition = Offset(
+                        (_fabPosition!.dx + details.delta.dx).clamp(8.0, maxX),
+                        (_fabPosition!.dy + details.delta.dy).clamp(8.0, maxY),
+                      );
+                    });
+                  }
+                },
+                onPanEnd: (details) {
+                  if (_isFabDragging) {
+                    _saveFabPosition(orientation);
+                    _isFabDragging = false;
+                  }
+                },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: const Color(0x803E424B),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0x60FFFFFF),
+                      width: 1.2,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x40000000),
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    (showKeyboardHideFab || _showGestureHelp)
+                        ? Icons.expand_more
+                        : Icons.expand_less,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+              ),
+            ));
+          }
           return paints;
         }()));
   }
@@ -2775,339 +3074,5 @@ class FABLocation extends FloatingActionButtonLocation {
   Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
     final offset = location.getOffset(scaffoldGeometry);
     return Offset(offset.dx + offsetX, offset.dy + offsetY);
-  }
-}
-
-class DraggableControlBar extends StatefulWidget {
-  final FFI ffi;
-  final bool showGestureHelp;
-  final VoidCallback onOpenKeyboard;
-  final VoidCallback onShowGestureHelp;
-  final Function(String id) onShowActions;
-  final VoidCallback onClose;
-  final VoidCallback onShowOptions;
-  final VoidCallback onChat;
-
-  const DraggableControlBar({
-    Key? key,
-    required this.ffi,
-    this.showGestureHelp = false,
-    required this.onOpenKeyboard,
-    required this.onShowGestureHelp,
-    required this.onShowActions,
-    required this.onClose,
-    required this.onShowOptions,
-    required this.onChat,
-  }) : super(key: key);
-
-  @override
-  State<DraggableControlBar> createState() => _DraggableControlBarState();
-}
-
-class _DraggableControlBarState extends State<DraggableControlBar> {
-  Offset? _position;
-  bool _expanded = false;
-  bool _isDragging = false;
-  Offset _dragStart = Offset.zero;
-  Orientation? _lastOrientation;
-
-  static const double kButtonSize = 48.0;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final orientation = MediaQuery.of(context).orientation;
-    if (_lastOrientation != orientation) {
-      _lastOrientation = orientation;
-      _loadPosition(orientation);
-    }
-  }
-
-  void _loadPosition(Orientation orientation) {
-    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
-    final saved = bind.getLocalFlutterOption(k: key);
-    if (saved.isNotEmpty) {
-      try {
-        final parts = saved.split(',');
-        if (parts.length == 2) {
-          final x = double.parse(parts[0]);
-          final y = double.parse(parts[1]);
-          final size = MediaQuery.of(context).size;
-          _position = Offset(
-            x.clamp(8.0, max(8.0, size.width - kButtonSize - 8.0)),
-            y.clamp(8.0, max(8.0, size.height - kButtonSize - 8.0)),
-          );
-          return;
-        }
-      } catch (_) {}
-    }
-    // Default: bottom-right corner (like 333.jpg)
-    final size = MediaQuery.of(context).size;
-    final padding = MediaQuery.of(context).padding;
-    final defaultX = size.width - kButtonSize - max(16.0, padding.right + 12.0);
-    final defaultY = size.height - kButtonSize - max(16.0, padding.bottom + 12.0);
-    _position = Offset(defaultX, defaultY);
-  }
-
-  void _savePosition(Orientation orientation) {
-    if (_position == null) return;
-    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
-    bind.setLocalFlutterOption(k: key, v: '${_position!.dx},${_position!.dy}');
-  }
-
-  Widget _buildBtn({
-    required Widget icon,
-    required VoidCallback onPressed,
-    String? tooltip,
-    Color? color,
-  }) {
-    Widget btn = Material(
-      type: MaterialType.transparency,
-      child: InkWell(
-        onTap: onPressed,
-        child: Container(
-          width: 44,
-          height: 48,
-          alignment: Alignment.center,
-          child: IconTheme(
-            data: IconThemeData(
-              color: color ?? Colors.white,
-              size: 24,
-            ),
-            child: icon,
-          ),
-        ),
-      ),
-    );
-    if (tooltip != null) {
-      return Tooltip(message: tooltip, child: btn);
-    }
-    return btn;
-  }
-
-  List<Widget> _buildActionButtons() {
-    final ffiModel = widget.ffi.ffiModel;
-    final isPeerAndroid = ffiModel.isPeerAndroid;
-
-    return [
-      _buildBtn(
-        icon: const Icon(Icons.clear),
-        tooltip: translate('Close'),
-        onPressed: widget.onClose,
-      ),
-      _buildBtn(
-        icon: const Icon(Icons.tv),
-        tooltip: translate('Display Settings'),
-        onPressed: widget.onShowOptions,
-      ),
-      _buildBtn(
-        icon: const Icon(Icons.keyboard),
-        tooltip: translate('Keyboard'),
-        onPressed: widget.onOpenKeyboard,
-      ),
-      if (isAndroid)
-        _buildBtn(
-          icon: const Icon(Icons.language),
-          tooltip: translate('Input Method'),
-          onPressed: () => widget.ffi.invokeMethod("show_input_method_picker", null),
-        ),
-      Obx(() {
-        final isTouch = ffiModel.touchMode;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildBtn(
-              icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
-              tooltip: isTouch
-                  ? (localeName.startsWith('zh') ? '触屏模式 (点击打开说明与设置)' : 'Touch mode')
-                  : (localeName.startsWith('zh') ? '鼠标模式 (点击打开说明与设置)' : 'Mouse mode'),
-              onPressed: widget.onShowGestureHelp,
-            ),
-            if (isTouch) ...[
-              _buildBtn(
-                icon: Icon(ffiModel.touchPanMode.value == 'scroll'
-                    ? Icons.swap_vert
-                    : Icons.text_fields),
-                tooltip: ffiModel.touchPanMode.value == 'scroll'
-                    ? (localeName.startsWith('zh') ? '单指: 滚动屏幕' : 'Scroll')
-                    : (localeName.startsWith('zh') ? '单指: 选择文字' : 'Select'),
-                onPressed: () {
-                  ffiModel.toggleTouchPanMode();
-                  BotToast.showText(
-                    text: ffiModel.touchPanMode.value == 'scroll'
-                        ? '单指移动: 拖动屏幕'
-                        : '单指移动: 选择文字',
-                  );
-                },
-              ),
-              _buildBtn(
-                icon: Icon(ffiModel.touchZoomMode.value == 'canvas'
-                    ? Icons.zoom_out_map
-                    : Icons.zoom_in),
-                tooltip: ffiModel.touchZoomMode.value == 'canvas'
-                    ? (localeName.startsWith('zh') ? '双指: 缩放画布' : 'Canvas zoom')
-                    : (localeName.startsWith('zh') ? '双指: 远程缩放' : 'Remote zoom'),
-                onPressed: () {
-                  ffiModel.toggleTouchZoomMode();
-                  BotToast.showText(
-                    text: ffiModel.touchZoomMode.value == 'canvas'
-                        ? '双指缩放: 缩放画布'
-                        : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
-                  );
-                },
-              ),
-            ],
-          ],
-        );
-      }),
-      _buildBtn(
-        icon: const Icon(Icons.chat),
-        tooltip: translate('Chat'),
-        onPressed: widget.onChat,
-      ),
-      if (isPeerAndroid)
-        _buildBtn(
-          icon: const Icon(Icons.build),
-          tooltip: translate('Actions'),
-          onPressed: () => widget.ffi.dialogManager.toggleMobileActionsOverlay(ffi: widget.ffi),
-        ),
-      _buildBtn(
-        icon: const Icon(Icons.more_vert),
-        tooltip: translate('More Actions'),
-        onPressed: () => widget.onShowActions(widget.ffi.id),
-      ),
-    ];
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (widget.showGestureHelp) return const SizedBox.shrink();
-    if (_position == null) return const SizedBox.shrink();
-    final size = MediaQuery.of(context).size;
-    final padding = MediaQuery.of(context).padding;
-    final orientation = MediaQuery.of(context).orientation;
-
-    if (!_expanded) {
-      // 收起像 333: 悬浮球模式 (可拖拽，灰色半透明)
-      Widget toggleBtn = GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          setState(() {
-            _expanded = true;
-          });
-        },
-        onPanStart: (details) {
-          _dragStart = details.globalPosition;
-          _isDragging = false;
-        },
-        onPanUpdate: (details) {
-          if (!_isDragging && (details.globalPosition - _dragStart).distance > 8.0) {
-            _isDragging = true;
-          }
-          if (_isDragging) {
-            final maxX = max(8.0, size.width - kButtonSize - 8.0);
-            final maxY = max(8.0, size.height - kButtonSize - 8.0);
-            setState(() {
-              _position = Offset(
-                (_position!.dx + details.delta.dx).clamp(8.0, maxX),
-                (_position!.dy + details.delta.dy).clamp(8.0, maxY),
-              );
-            });
-          }
-        },
-        onPanEnd: (details) {
-          if (_isDragging) {
-            _savePosition(orientation);
-            _isDragging = false;
-          }
-        },
-        child: Container(
-          width: kButtonSize,
-          height: kButtonSize,
-          decoration: BoxDecoration(
-            color: const Color(0x803E424B), // 灰色半透明 (approx 50% opacity)
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: const Color(0x60FFFFFF),
-              width: 1.2,
-            ),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 6,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.expand_less,
-            color: Colors.white,
-            size: 28,
-          ),
-        ),
-      );
-
-      return Positioned(
-        left: _position!.dx,
-        top: _position!.dy,
-        child: toggleBtn,
-      );
-    }
-
-    // 展开像 444: 底部经典横向控制栏
-    final bottomBarHeight = 48.0 + padding.bottom;
-
-    return Positioned(
-      left: 0,
-      right: 0,
-      bottom: 0,
-      height: bottomBarHeight,
-      child: Container(
-        color: MyTheme.accent,
-        padding: EdgeInsets.only(bottom: padding.bottom),
-        child: Row(
-          children: [
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        mainAxisSize: MainAxisSize.max,
-                        children: _buildActionButtons(),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            // Pinned collapse button at the far right (like 444.jpg)
-            Material(
-              type: MaterialType.transparency,
-              child: InkWell(
-                onTap: () {
-                  setState(() {
-                    _expanded = false;
-                  });
-                },
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.expand_more,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
