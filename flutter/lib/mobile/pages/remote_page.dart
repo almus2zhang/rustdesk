@@ -487,7 +487,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget _bottomWidget() {
     if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return Offstage();
+    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return const Offstage();
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape) return const Offstage();
 
     return getBottomAppBar();
   }
@@ -605,7 +607,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlBarIcons({bool compact = false}) {
+  Widget _controlBarIcons({bool compact = false, bool vertical = false}) {
     final ffiModel = Provider.of<FfiModel>(context);
     final double iconSize = compact ? 18.0 : 24.0;
     final EdgeInsets padding = compact ? const EdgeInsets.all(4.0) : const EdgeInsets.all(8.0);
@@ -624,18 +626,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.max,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: <Widget>[
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                  buildBtn(
-                    icon: const Icon(Icons.clear),
+    final actionItems = <Widget>[
+      buildBtn(
+        icon: const Icon(Icons.clear),
                     onPressed: () {
                       clientClose(sessionId, gFFI);
                     },
@@ -680,7 +673,71 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             Obx(() {
                               final ffiModel = gFFI.ffiModel;
                               final isTouch = ffiModel.touchMode;
-                              return Row(
+                              return vertical
+                                  ? Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Tooltip(
+                                          message: isTouch
+                                              ? '触屏模式说明与设置 (点击打开菜单)'
+                                              : '鼠标模式说明与设置 (点击打开菜单)',
+                                          child: buildBtn(
+                                            icon: Icon(isTouch
+                                                ? Icons.touch_app
+                                                : Icons.mouse),
+                                            onPressed: () {
+                                              setState(() => _showGestureHelp =
+                                                  !_showGestureHelp);
+                                            },
+                                          ),
+                                        ),
+                                        if (isTouch) ...[
+                                          Tooltip(
+                                            message: ffiModel.touchPanMode.value ==
+                                                    'scroll'
+                                                ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
+                                                : '单指移动: 选择文字 (点击切换为拖动屏幕)',
+                                            child: buildBtn(
+                                              icon: Icon(ffiModel.touchPanMode.value ==
+                                                      'scroll'
+                                                  ? Icons.swap_vert
+                                                  : Icons.text_fields),
+                                              onPressed: () {
+                                                ffiModel.toggleTouchPanMode();
+                                                BotToast.showText(
+                                                  text: ffiModel.touchPanMode.value ==
+                                                          'scroll'
+                                                      ? '单指移动: 拖动屏幕'
+                                                      : '单指移动: 选择文字',
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                          Tooltip(
+                                            message: ffiModel.touchZoomMode.value ==
+                                                    'canvas'
+                                                ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
+                                                : '双指缩放: 远程缩放 (点击切换为缩放画布)',
+                                            child: buildBtn(
+                                              icon: Icon(ffiModel.touchZoomMode.value ==
+                                                      'canvas'
+                                                  ? Icons.zoom_out_map
+                                                  : Icons.zoom_in),
+                                              onPressed: () {
+                                                ffiModel.toggleTouchZoomMode();
+                                                BotToast.showText(
+                                                  text: ffiModel.touchZoomMode.value ==
+                                                          'canvas'
+                                                      ? '双指缩放: 缩放画布'
+                                                      : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    )
+                                  : Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Tooltip(
@@ -771,20 +828,57 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       showActions(widget.id);
                     },
                   ),
-                ],
+                ];
+
+    if (vertical) {
+      return Column(
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: actionItems,
               ),
             ),
           ),
-        Obx(() => buildBtn(
-              icon: const Icon(Icons.expand_more),
-              onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                  ? null
-                  : () {
-                      setState(() => _showBar = !_showBar);
-                    },
-            )),
-      ],
-    );
+          Obx(() => buildBtn(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+                    ? null
+                    : () {
+                        setState(() => _showBar = !_showBar);
+                      },
+              )),
+        ],
+      );
+    } else {
+      return Row(
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: actionItems,
+              ),
+            ),
+          ),
+          Obx(() => buildBtn(
+                icon: const Icon(Icons.expand_more),
+                onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
+                    ? null
+                    : () {
+                        setState(() => _showBar = !_showBar);
+                      },
+              )),
+        ],
+      );
+    }
   }
 
   Widget getBottomAppBar() {
@@ -883,6 +977,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 ? _buildFloatingEscKeyContent()
                 : const SizedBox.shrink()),
           ));
+          final orientation = MediaQuery.of(context).orientation;
+          final isLandscape = orientation == Orientation.landscape;
+          if (isLandscape && _showBar && gFFI.ffiModel.pi.displays.isNotEmpty) {
+            final padding = MediaQuery.of(context).padding;
+            paints.add(Positioned(
+              top: 0,
+              bottom: 0,
+              right: 0,
+              width: 48.0 + padding.right,
+              child: Container(
+                color: MyTheme.accent,
+                padding: EdgeInsets.only(
+                  top: padding.top,
+                  bottom: padding.bottom,
+                  right: padding.right,
+                ),
+                child: _controlBarIcons(vertical: true),
+              ),
+            ));
+          }
           if (showActionButton) {
             final size = MediaQuery.of(context).size;
             final orientation = MediaQuery.of(context).orientation;
