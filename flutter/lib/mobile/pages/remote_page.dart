@@ -526,16 +526,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
-  Widget _bottomWidget() {
-    if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty)
-      return const Offstage();
-    final isLandscape =
-        MediaQuery.of(context).orientation == Orientation.landscape;
-    if (isLandscape) return const Offstage();
-
-    return getBottomAppBar();
-  }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
     if (displays.isEmpty) return;
