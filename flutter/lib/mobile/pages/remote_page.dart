@@ -273,6 +273,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _blockableOverlayState.applyFfi(gFFI);
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
       gFFI.dialogManager.dismissAll();
+      gFFI.ffiModel.tryShowAndroidActionsOverlay();
       if (isSecondary) {
         _sendPhysicalResolutionToServer();
         _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
@@ -577,22 +578,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           floatingActionButtonLocation: null,
           floatingActionButton: null,
-          bottomNavigationBar: Obx(() => Stack(
-                alignment: Alignment.bottomCenter,
-                children: [
-                  gFFI.ffiModel.pi.isSet.isTrue &&
-                          gFFI.ffiModel.waitForFirstImage.isTrue
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : () {
-                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
-                          return const Offstage();
-                        }(),
-                  _bottomWidget(),
-                  gFFI.ffiModel.pi.isSet.isFalse
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : const Offstage(),
-                ],
-              )),
+          bottomNavigationBar: Obx(() {
+            if (_showGestureHelp) {
+              return getGestureHelp();
+            }
+            return const SizedBox.shrink();
+          }),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
@@ -647,15 +638,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlBarIcons({bool compact = false}) {
+  Widget _buildFloatingControlBar(
+      Orientation orientation, Size size, EdgeInsets padding, Offset fabPos) {
+    const double barHeight = 48.0;
     final ffiModel = Provider.of<FfiModel>(context);
-    final double iconSize = compact ? 18.0 : 22.0;
-    final EdgeInsets padding = compact
-        ? const EdgeInsets.all(4.0)
-        : const EdgeInsets.symmetric(horizontal: 4.0, vertical: 8.0);
-    final BoxConstraints constraints = compact
-        ? const BoxConstraints(minWidth: 26, minHeight: 26)
-        : const BoxConstraints(minWidth: 40, minHeight: 40);
+    const double iconSize = 20.0;
+    const EdgeInsets btnPadding = EdgeInsets.all(6.0);
+    const BoxConstraints constraints =
+        BoxConstraints(minWidth: 38, minHeight: 38);
 
     Widget buildBtn(
         {required Widget icon,
@@ -663,7 +653,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         String? tooltip}) {
       final btn = IconButton(
         iconSize: iconSize,
-        padding: padding,
+        padding: btnPadding,
         constraints: constraints,
         color: Colors.white,
         icon: icon,
@@ -675,134 +665,162 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       return btn;
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.max,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: <Widget>[
-        Expanded(
+    final buttons = <Widget>[
+      // 1. Disconnect / Close
+      buildBtn(
+        icon: const Icon(Icons.clear),
+        tooltip: translate('Close'),
+        onPressed: () {
+          clientClose(sessionId, gFFI);
+        },
+      ),
+      // 2. Display / Monitor
+      buildBtn(
+        icon: const Icon(Icons.tv),
+        tooltip: translate('Display'),
+        onPressed: () {
+          setState(() => _showEdit = false);
+          showOptions(context, widget.id, gFFI.dialogManager);
+        },
+      ),
+      // 3. Soft Keyboard
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.keyboard),
+          tooltip: translate('Keyboard'),
+          onPressed: openKeyboard,
+        ),
+      // 4. Input Method Picker (Android)
+      if (isAndroid && !isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.language),
+          tooltip: translate('Input Method'),
+          onPressed: () => gFFI.invokeMethod("show_input_method_picker", null),
+        ),
+      // Peer Android Actions
+      if (gFFI.ffiModel.isPeerAndroid &&
+          !isWebDesktop &&
+          !ffiModel.viewOnly &&
+          ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(Icons.build),
+          tooltip: 'Android Actions',
+          onPressed: () =>
+              gFFI.dialogManager.toggleMobileActionsOverlay(ffi: gFFI),
+        ),
+      // 5. Touch / Mouse Mode toggle & Gesture settings (NO Obx crash)
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse),
+          tooltip: ffiModel.touchMode
+              ? (localeName.startsWith('zh')
+                  ? '触屏模式 (点击打开说明与设置)'
+                  : 'Touch Mode (Tap for help)')
+              : (localeName.startsWith('zh')
+                  ? '鼠标模式 (点击打开说明与设置)'
+                  : 'Mouse Mode (Tap for help)'),
+          onPressed: () {
+            setState(() => _showGestureHelp = !_showGestureHelp);
+          },
+        ),
+      // 6. Chat
+      if (!isWeb)
+        buildBtn(
+          icon: isAndroid
+              ? SvgPicture.asset(
+                  'assets/chat.svg',
+                  width: 20,
+                  height: 20,
+                  colorFilter:
+                      const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                )
+              : const Icon(Icons.message),
+          tooltip: translate('Chat'),
+          onPressed: () => isAndroid
+              ? showChatOptions(widget.id)
+              : onPressedTextChat(widget.id),
+        ),
+      // 7. More Actions
+      buildBtn(
+        icon: const Icon(Icons.more_vert),
+        tooltip: translate('Actions'),
+        onPressed: () {
+          setState(() => _showEdit = false);
+          showActions(widget.id);
+        },
+      ),
+      // 8. Collapse Chevron
+      buildBtn(
+        icon: const Icon(Icons.expand_more),
+        tooltip: translate('Collapse'),
+        onPressed: () {
+          _showBar.value = false;
+          if (mounted) setState(() {});
+        },
+      ),
+    ];
+
+    final double maxBarWidth = min(
+        420.0, max(240.0, size.width - padding.left - padding.right - 16.0));
+    const double fabSize = 48.0;
+
+    // Decide Y position: pop above if in bottom half, pop below if in top half
+    double barY;
+    if (fabPos.dy > size.height / 2) {
+      barY = fabPos.dy - barHeight - 10.0;
+    } else {
+      barY = fabPos.dy + fabSize + 10.0;
+    }
+
+    // Decide X position: align with FAB horizontally
+    double barX;
+    if (fabPos.dx > size.width / 2) {
+      barX = fabPos.dx + fabSize - maxBarWidth;
+    } else {
+      barX = fabPos.dx;
+    }
+
+    // Clamp within safe area so it NEVER overflows the screen
+    final minLeft = padding.left + 8.0;
+    final maxLeft =
+        max(minLeft, size.width - padding.right - maxBarWidth - 8.0);
+    final minTop = padding.top + 8.0;
+    final maxTop = max(minTop, size.height - padding.bottom - barHeight - 8.0);
+
+    final clampedX = barX.clamp(minLeft, maxLeft);
+    final clampedY = barY.clamp(minTop, maxTop);
+
+    return Positioned(
+      left: clampedX,
+      top: clampedY,
+      child: Material(
+        color: Colors.transparent,
+        elevation: 8.0,
+        borderRadius: BorderRadius.circular(24.0),
+        child: Container(
+          height: barHeight,
+          constraints: BoxConstraints(maxWidth: maxBarWidth),
+          decoration: BoxDecoration(
+            color: MyTheme.accent,
+            borderRadius: BorderRadius.circular(24.0),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x66000000),
+                blurRadius: 10.0,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 4.0),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                // 1. Disconnect / Close
-                buildBtn(
-                  icon: const Icon(Icons.clear),
-                  tooltip: translate('Close'),
-                  onPressed: () {
-                    clientClose(sessionId, gFFI);
-                  },
-                ),
-                // 2. Display / Monitor
-                buildBtn(
-                  icon: const Icon(Icons.tv),
-                  tooltip: translate('Display'),
-                  onPressed: () {
-                    setState(() => _showEdit = false);
-                    showOptions(context, widget.id, gFFI.dialogManager);
-                  },
-                ),
-                // 3. Soft Keyboard
-                if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
-                  buildBtn(
-                    icon: const Icon(Icons.keyboard),
-                    tooltip: translate('Keyboard'),
-                    onPressed: openKeyboard,
-                  ),
-                // 4. Input Method Picker (Android)
-                if (isAndroid &&
-                    !isWebDesktop &&
-                    !ffiModel.viewOnly &&
-                    ffiModel.keyboard)
-                  buildBtn(
-                    icon: const Icon(Icons.language),
-                    tooltip: translate('Input Method'),
-                    onPressed: () =>
-                        gFFI.invokeMethod("show_input_method_picker", null),
-                  ),
-                // Peer Android Actions
-                if (gFFI.ffiModel.isPeerAndroid &&
-                    !isWebDesktop &&
-                    !ffiModel.viewOnly &&
-                    ffiModel.keyboard)
-                  buildBtn(
-                    icon: const Icon(Icons.build),
-                    tooltip: 'Android Actions',
-                    onPressed: () => gFFI.dialogManager
-                        .toggleMobileActionsOverlay(ffi: gFFI),
-                  ),
-                // 5. Touch / Mouse Mode toggle & Gesture settings
-                if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
-                  Obx(() {
-                    final isTouch = gFFI.ffiModel.touchMode;
-                    return buildBtn(
-                      icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
-                      tooltip: isTouch
-                          ? (localeName.startsWith('zh')
-                              ? '触屏模式 (点击打开说明与设置)'
-                              : 'Touch Mode (Tap for help)')
-                          : (localeName.startsWith('zh')
-                              ? '鼠标模式 (点击打开说明与设置)'
-                              : 'Mouse Mode (Tap for help)'),
-                      onPressed: () {
-                        setState(() => _showGestureHelp = !_showGestureHelp);
-                      },
-                    );
-                  }),
-                // 6. Chat
-                if (!isWeb)
-                  futureBuilder(
-                    future: gFFI.invokeMethod(
-                        "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                    hasData: (isSupportVoiceCall) => buildBtn(
-                      icon: isAndroid && isSupportVoiceCall
-                          ? SvgPicture.asset(
-                              'assets/chat.svg',
-                              width: 22,
-                              height: 22,
-                              colorFilter: const ColorFilter.mode(
-                                  Colors.white, BlendMode.srcIn),
-                            )
-                          : const Icon(Icons.message),
-                      tooltip: translate('Chat'),
-                      onPressed: () => isAndroid && isSupportVoiceCall
-                          ? showChatOptions(widget.id)
-                          : onPressedTextChat(widget.id),
-                    ),
-                  ),
-                // 7. More Actions
-                buildBtn(
-                  icon: const Icon(Icons.more_vert),
-                  tooltip: translate('Actions'),
-                  onPressed: () {
-                    setState(() => _showEdit = false);
-                    showActions(widget.id);
-                  },
-                ),
-              ],
+              children: buttons,
             ),
           ),
         ),
-        // 8. Collapse Chevron (Pinned to far right)
-        Obx(() => buildBtn(
-              icon: const Icon(Icons.expand_more),
-              tooltip: translate('Collapse'),
-              onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                  ? null
-                  : () {
-                      _showBar.value = false;
-                      if (mounted) setState(() {});
-                    },
-            )),
-      ],
-    );
-  }
-
-  Widget getBottomAppBar() {
-    return BottomAppBar(
-      elevation: 10,
-      color: MyTheme.accent,
-      child: _controlBarIcons(),
+      ),
     );
   }
 
@@ -889,7 +907,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ? _buildFloatingEscKeyContent()
             : const SizedBox.shrink()),
       ));
-      if (!_showBar.value && showActionButton) {
+      if (_showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
+        final fabPos = _getFabPosition(orientation, size, padding);
+        paints
+            .add(_buildFloatingControlBar(orientation, size, padding, fabPos));
+      }
+      if (showActionButton) {
         final fabPos = _getFabPosition(orientation, size, padding);
         paints.add(Positioned(
           left: fabPos.dx,
@@ -905,7 +928,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               } else if (_showGestureHelp) {
                 _showGestureHelp = false;
               } else {
-                _showBar.value = true;
+                _showBar.value = !_showBar.value;
               }
               if (mounted) setState(() {});
             },
@@ -956,7 +979,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               child: Icon(
                 (showKeyboardHideFab || _showGestureHelp)
                     ? Icons.expand_more
-                    : Icons.menu,
+                    : (_showBar.value ? Icons.close : Icons.menu),
                 color: Colors.white,
                 size: 24,
               ),
