@@ -273,7 +273,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _blockableOverlayState.applyFfi(gFFI);
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
       gFFI.dialogManager.dismissAll();
-      gFFI.ffiModel.tryShowAndroidActionsOverlay();
       if (isSecondary) {
         _sendPhysicalResolutionToServer();
         _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
@@ -571,12 +570,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           floatingActionButtonLocation: null,
           floatingActionButton: null,
-          bottomNavigationBar: Obx(() {
-            if (_showGestureHelp) {
-              return getGestureHelp();
-            }
-            return const SizedBox.shrink();
-          }),
+          bottomNavigationBar: Obx(() => Stack(
+                alignment: Alignment.bottomCenter,
+                children: [
+                  gFFI.ffiModel.pi.isSet.isTrue &&
+                          gFFI.ffiModel.waitForFirstImage.isTrue
+                      ? emptyOverlay(MyTheme.canvasColor)
+                      : () {
+                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
+                          return const Offstage();
+                        }(),
+                  _showGestureHelp ? getGestureHelp() : const Offstage(),
+                  gFFI.ffiModel.pi.isSet.isFalse
+                      ? emptyOverlay(MyTheme.canvasColor)
+                      : const Offstage(),
+                ],
+              )),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
