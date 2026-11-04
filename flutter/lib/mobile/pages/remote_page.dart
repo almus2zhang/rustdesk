@@ -865,13 +865,52 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       }
     }
 
-    final collapseBtn = buildBtn(
-      icon: Icon(collapseIcon, color: Colors.white, size: 22),
-      tooltip: translate('Collapse'),
-      onPressed: () {
-        _showBar.value = false;
-        if (mounted) setState(() {});
+    final collapseBtn = Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (event) {
+        _fabDragFingerStart = event.position;
+        _fabDragInitPos = fabPos;
+        _isFabDragging = false;
       },
+      onPointerMove: (event) {
+        final delta = event.position - _fabDragFingerStart;
+        if (!_isFabDragging && delta.distance > 4.0) {
+          _isFabDragging = true;
+        }
+        if (_isFabDragging) {
+          setState(() {
+            _updateFabPosition(
+              orientation,
+              _fabDragInitPos + delta,
+              size,
+            );
+          });
+        }
+      },
+      onPointerUp: (event) {
+        if (_isFabDragging) {
+          _saveFabPosition(orientation);
+          _isFabDragging = false;
+        } else {
+          _showBar.value = false;
+          if (mounted) setState(() {});
+        }
+      },
+      onPointerCancel: (event) {
+        if (_isFabDragging) {
+          _saveFabPosition(orientation);
+          _isFabDragging = false;
+        }
+      },
+      child: Tooltip(
+        message: translate('Collapse'),
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          child: Icon(collapseIcon, color: Colors.white, size: 22),
+        ),
+      ),
     );
 
     final buttons = <Widget>[];
