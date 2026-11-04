@@ -450,12 +450,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
-  Widget _bottomWidget() {
-    if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return Offstage();
 
-    return getBottomAppBar();
-  }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
     if (displays.isEmpty) return;
@@ -488,11 +483,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final isTablet = isTabletLayoutMode(context);
-    final keyboardIsVisible =
-        keyboardVisibilityController.isVisible && _showEdit;
-    final showKeyboardHideFab = isTablet && keyboardIsVisible;
-    final showActionButton = (!keyboardIsVisible || isTablet) &&
-        (!_showBar || showKeyboardHideFab || _showGestureHelp);
 
     return WillPopScope(
       onWillPop: () async {
@@ -503,51 +493,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           extendBody: true,
           extendBodyBehindAppBar: true,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
-          // workaround for https://github.com/rustdesk/rustdesk/issues/3131
-          floatingActionButtonLocation: showKeyboardHideFab
-              ? FABLocation(FloatingActionButtonLocation.endFloat, 0, -35)
-              : null,
-          floatingActionButton: !showActionButton
-              ? null
-              : FloatingActionButton(
-                  mini: !showKeyboardHideFab,
-                  child: Icon(
-                    (showKeyboardHideFab || _showGestureHelp)
-                        ? Icons.expand_more
-                        : Icons.expand_less,
-                    color: Colors.white,
-                  ),
-                  backgroundColor: MyTheme.accent,
-                  onPressed: () {
-                    setState(() {
-                      if (showKeyboardHideFab) {
-                        _showEdit = false;
-                        gFFI.invokeMethod("enable_soft_keyboard", false);
-                        _mobileFocusNode.unfocus();
-                        _physicalFocusNode.requestFocus();
-                      } else if (_showGestureHelp) {
-                        _showGestureHelp = false;
-                      } else {
-                        _showBar = !_showBar;
-                      }
-                    });
-                  }),
-          bottomNavigationBar: Obx(() => Stack(
-                alignment: Alignment.bottomCenter,
-                children: [
-                  gFFI.ffiModel.pi.isSet.isTrue &&
-                          gFFI.ffiModel.waitForFirstImage.isTrue
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : () {
-                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
-                          return Offstage();
-                        }(),
-                  _bottomWidget(),
-                  gFFI.ffiModel.pi.isSet.isFalse
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : Offstage(),
-                ],
-              )),
+          bottomNavigationBar: Obx(() {
+            if (gFFI.ffiModel.pi.isSet.isFalse) {
+              return emptyOverlay(MyTheme.canvasColor);
+            }
+            if (_showGestureHelp) {
+              return getGestureHelp();
+            }
+            return const SizedBox.shrink();
+          }),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
@@ -602,195 +556,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _controlBarIcons({bool compact = false}) {
-    final ffiModel = Provider.of<FfiModel>(context);
-    final double iconSize = compact ? 18.0 : 24.0;
-    final EdgeInsets padding = compact ? const EdgeInsets.all(4.0) : const EdgeInsets.all(8.0);
-    final BoxConstraints constraints = compact
-        ? const BoxConstraints(minWidth: 26, minHeight: 26)
-        : const BoxConstraints(minWidth: 48, minHeight: 48);
-
-    Widget buildBtn({required Widget icon, required VoidCallback? onPressed}) {
-      return IconButton(
-        iconSize: iconSize,
-        padding: padding,
-        constraints: constraints,
-        color: Colors.white,
-        icon: icon,
-        onPressed: onPressed,
-      );
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.max,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: <Widget>[
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                  buildBtn(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      clientClose(sessionId, gFFI);
-                    },
-                  ),
-                  buildBtn(
-                    icon: const Icon(Icons.tv),
-                    onPressed: () {
-                      setState(() => _showEdit = false);
-                      showOptions(context, widget.id, gFFI.dialogManager);
-                    },
-                  )
-                ] +
-                (isWebDesktop || ffiModel.viewOnly || !ffiModel.keyboard
-                    ? []
-                    : gFFI.ffiModel.isPeerAndroid
-                        ? [
-                            buildBtn(
-                                icon: const Icon(Icons.keyboard),
-                                onPressed: openKeyboard),
-                            if (isAndroid)
-                              buildBtn(
-                                icon: const Icon(Icons.language),
-                                onPressed: () => gFFI.invokeMethod(
-                                    "show_input_method_picker", null),
-                              ),
-                            buildBtn(
-                              icon: const Icon(Icons.build),
-                              onPressed: () => gFFI.dialogManager
-                                  .toggleMobileActionsOverlay(ffi: gFFI),
-                            )
-                          ]
-                        : [
-                            buildBtn(
-                                icon: const Icon(Icons.keyboard),
-                                onPressed: openKeyboard),
-                            if (isAndroid)
-                              buildBtn(
-                                icon: const Icon(Icons.language),
-                                onPressed: () => gFFI.invokeMethod(
-                                    "show_input_method_picker", null),
-                              ),
-                            Obx(() {
-                              final ffiModel = gFFI.ffiModel;
-                              final isTouch = ffiModel.touchMode;
-                              return Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Tooltip(
-                                    message: isTouch
-                                        ? '触屏模式说明与设置 (点击打开菜单)'
-                                        : '鼠标模式说明与设置 (点击打开菜单)',
-                                    child: buildBtn(
-                                      icon: Icon(isTouch
-                                          ? Icons.touch_app
-                                          : Icons.mouse),
-                                      onPressed: () {
-                                        setState(() => _showGestureHelp =
-                                            !_showGestureHelp);
-                                      },
-                                    ),
-                                  ),
-                                  if (isTouch) ...[
-                                    Tooltip(
-                                      message: ffiModel.touchPanMode.value ==
-                                              'scroll'
-                                          ? '单指移动: 拖动屏幕 (点击切换为选择文字)'
-                                          : '单指移动: 选择文字 (点击切换为拖动屏幕)',
-                                      child: buildBtn(
-                                        icon: Icon(ffiModel.touchPanMode.value ==
-                                                'scroll'
-                                            ? Icons.swap_vert
-                                            : Icons.text_fields),
-                                        onPressed: () {
-                                          ffiModel.toggleTouchPanMode();
-                                          BotToast.showText(
-                                            text: ffiModel.touchPanMode.value ==
-                                                    'scroll'
-                                                ? '单指移动: 拖动屏幕'
-                                                : '单指移动: 选择文字',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                    Tooltip(
-                                      message: ffiModel.touchZoomMode.value ==
-                                              'canvas'
-                                          ? '双指缩放: 缩放画布 (点击切换为远程窗口缩放)'
-                                          : '双指缩放: 远程缩放 (点击切换为缩放画布)',
-                                      child: buildBtn(
-                                        icon: Icon(ffiModel.touchZoomMode.value ==
-                                                'canvas'
-                                            ? Icons.zoom_out_map
-                                            : Icons.zoom_in),
-                                        onPressed: () {
-                                          ffiModel.toggleTouchZoomMode();
-                                          BotToast.showText(
-                                            text: ffiModel.touchZoomMode.value ==
-                                                    'canvas'
-                                                ? '双指缩放: 缩放画布'
-                                                : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              );
-                            }),
-                          ]) +
-                (isWeb
-                    ? []
-                    : <Widget>[
-                        futureBuilder(
-                            future: gFFI.invokeMethod(
-                                "get_value", "KEY_IS_SUPPORT_VOICE_CALL"),
-                            hasData: (isSupportVoiceCall) => buildBtn(
-                                  icon: isAndroid && isSupportVoiceCall
-                                      ? SvgPicture.asset('assets/chat.svg',
-                                          colorFilter: ColorFilter.mode(
-                                              Colors.white, BlendMode.srcIn))
-                                      : const Icon(Icons.message),
-                                  onPressed: () =>
-                                      isAndroid && isSupportVoiceCall
-                                          ? showChatOptions(widget.id)
-                                          : onPressedTextChat(widget.id),
-                                ))
-                      ]) +
-                [
-                  buildBtn(
-                    icon: const Icon(Icons.more_vert),
-                    onPressed: () {
-                      setState(() => _showEdit = false);
-                      showActions(widget.id);
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        Obx(() => buildBtn(
-              icon: const Icon(Icons.expand_more),
-              onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
-                  ? null
-                  : () {
-                      setState(() => _showBar = !_showBar);
-                    },
-            )),
-      ],
-    );
-  }
-
-  Widget getBottomAppBar() {
-    return BottomAppBar(
-      elevation: 10,
-      color: MyTheme.accent,
-      child: _controlBarIcons(),
-    );
-  }
+  // Removed static bottom app bar in favor of DraggableControlBar
 
   bool get showCursorPaint =>
       !gFFI.ffiModel.isPeerAndroid &&
@@ -876,6 +642,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             child: Obx(() => gFFI.canvasModel.showEscKey.value
                 ? _buildFloatingEscKeyContent()
                 : const SizedBox.shrink()),
+          ));
+          paints.add(DraggableControlBar(
+            ffi: gFFI,
+            onOpenKeyboard: openKeyboard,
+            onShowGestureHelp: () => setState(() => _showGestureHelp = true),
+            onShowActions: showActions,
+            onClose: () => clientClose(sessionId, gFFI),
+            onShowOptions: () => showOptions(context, widget.id, gFFI.dialogManager),
           ));
           return paints;
         }()));
@@ -2989,5 +2763,384 @@ class FABLocation extends FloatingActionButtonLocation {
   Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
     final offset = location.getOffset(scaffoldGeometry);
     return Offset(offset.dx + offsetX, offset.dy + offsetY);
+  }
+}
+
+class DraggableControlBar extends StatefulWidget {
+  final FFI ffi;
+  final VoidCallback onOpenKeyboard;
+  final VoidCallback onShowGestureHelp;
+  final Function(String id) onShowActions;
+  final VoidCallback onClose;
+  final VoidCallback onShowOptions;
+
+  const DraggableControlBar({
+    Key? key,
+    required this.ffi,
+    required this.onOpenKeyboard,
+    required this.onShowGestureHelp,
+    required this.onShowActions,
+    required this.onClose,
+    required this.onShowOptions,
+  }) : super(key: key);
+
+  @override
+  State<DraggableControlBar> createState() => _DraggableControlBarState();
+}
+
+class _DraggableControlBarState extends State<DraggableControlBar> {
+  Offset? _position;
+  bool _expanded = false;
+  bool _isDragging = false;
+  Offset _dragStart = Offset.zero;
+  Orientation? _lastOrientation;
+
+  static const double kButtonSize = 46.0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final orientation = MediaQuery.of(context).orientation;
+    if (_lastOrientation != orientation) {
+      _lastOrientation = orientation;
+      _loadPosition(orientation);
+    }
+  }
+
+  void _loadPosition(Orientation orientation) {
+    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
+    final saved = bind.getLocalFlutterOption(k: key);
+    if (saved.isNotEmpty) {
+      try {
+        final parts = saved.split(',');
+        if (parts.length == 2) {
+          final x = double.parse(parts[0]);
+          final y = double.parse(parts[1]);
+          final size = MediaQuery.of(context).size;
+          _position = Offset(
+            x.clamp(8.0, max(8.0, size.width - kButtonSize - 8.0)),
+            y.clamp(8.0, max(8.0, size.height - kButtonSize - 8.0)),
+          );
+          return;
+        }
+      } catch (_) {}
+    }
+    // Default: bottom-right corner
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final defaultX = size.width - kButtonSize - max(16.0, padding.right + 8.0);
+    final defaultY = size.height - kButtonSize - max(16.0, padding.bottom + 8.0);
+    _position = Offset(defaultX, defaultY);
+  }
+
+  void _savePosition(Orientation orientation) {
+    if (_position == null) return;
+    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
+    bind.setLocalFlutterOption(k: key, v: '${_position!.dx},${_position!.dy}');
+  }
+
+  Widget _buildBtn({
+    required Widget icon,
+    required VoidCallback onPressed,
+    String? tooltip,
+    Color? color,
+  }) {
+    Widget btn = InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(19),
+      child: Container(
+        width: 38,
+        height: 38,
+        alignment: Alignment.center,
+        child: IconTheme(
+          data: IconThemeData(
+            color: color ?? Colors.white,
+            size: 20,
+          ),
+          child: icon,
+        ),
+      ),
+    );
+    if (tooltip != null) {
+      return Tooltip(message: tooltip, child: btn);
+    }
+    return btn;
+  }
+
+  List<Widget> _buildActionButtons(bool isLandscape) {
+    final ffiModel = widget.ffi.ffiModel;
+    final isPeerAndroid = ffiModel.isPeerAndroid;
+
+    return [
+      _buildBtn(
+        icon: const Icon(Icons.clear),
+        tooltip: translate('Close'),
+        color: Colors.redAccent.shade100,
+        onPressed: widget.onClose,
+      ),
+      _buildBtn(
+        icon: const Icon(Icons.tv),
+        tooltip: translate('Display Settings'),
+        onPressed: () {
+          widget.onShowOptions();
+        },
+      ),
+      _buildBtn(
+        icon: const Icon(Icons.keyboard),
+        tooltip: translate('Keyboard'),
+        onPressed: widget.onOpenKeyboard,
+      ),
+      if (isAndroid)
+        _buildBtn(
+          icon: const Icon(Icons.language),
+          tooltip: translate('Input Method'),
+          onPressed: () => widget.ffi.invokeMethod("show_input_method_picker", null),
+        ),
+      if (isPeerAndroid)
+        _buildBtn(
+          icon: const Icon(Icons.build),
+          tooltip: translate('Actions'),
+          onPressed: () => widget.ffi.dialogManager.toggleMobileActionsOverlay(ffi: widget.ffi),
+        ),
+      Obx(() {
+        final isTouch = ffiModel.touchMode;
+        final modeWidgets = <Widget>[
+          _buildBtn(
+            icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
+            tooltip: isTouch
+                ? (localeName.startsWith('zh') ? '触屏模式 (点击打开说明与设置)' : 'Touch mode')
+                : (localeName.startsWith('zh') ? '鼠标模式 (点击打开说明与设置)' : 'Mouse mode'),
+            onPressed: widget.onShowGestureHelp,
+          ),
+          if (isTouch) ...[
+            _buildBtn(
+              icon: Icon(ffiModel.touchPanMode.value == 'scroll'
+                  ? Icons.swap_vert
+                  : Icons.text_fields),
+              tooltip: ffiModel.touchPanMode.value == 'scroll'
+                  ? (localeName.startsWith('zh') ? '单指: 滚动屏幕' : 'Scroll')
+                  : (localeName.startsWith('zh') ? '单指: 选择文字' : 'Select'),
+              onPressed: () {
+                ffiModel.toggleTouchPanMode();
+                BotToast.showText(
+                  text: ffiModel.touchPanMode.value == 'scroll'
+                      ? '单指移动: 拖动屏幕'
+                      : '单指移动: 选择文字',
+                );
+              },
+            ),
+            _buildBtn(
+              icon: Icon(ffiModel.touchZoomMode.value == 'canvas'
+                  ? Icons.zoom_out_map
+                  : Icons.zoom_in),
+              tooltip: ffiModel.touchZoomMode.value == 'canvas'
+                  ? (localeName.startsWith('zh') ? '双指: 缩放画布' : 'Canvas zoom')
+                  : (localeName.startsWith('zh') ? '双指: 远程缩放' : 'Remote zoom'),
+              onPressed: () {
+                ffiModel.toggleTouchZoomMode();
+                BotToast.showText(
+                  text: ffiModel.touchZoomMode.value == 'canvas'
+                      ? '双指缩放: 缩放画布'
+                      : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
+                );
+              },
+            ),
+          ],
+        ];
+
+        return isLandscape
+            ? Column(mainAxisSize: MainAxisSize.min, children: modeWidgets)
+            : Row(mainAxisSize: MainAxisSize.min, children: modeWidgets);
+      }),
+      _buildBtn(
+        icon: const Icon(Icons.more_vert),
+        tooltip: translate('More Actions'),
+        onPressed: () => widget.onShowActions(widget.ffi.id),
+      ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_position == null) return const SizedBox.shrink();
+    final size = MediaQuery.of(context).size;
+    final padding = MediaQuery.of(context).padding;
+    final orientation = MediaQuery.of(context).orientation;
+    final isLandscape = orientation == Orientation.landscape;
+
+    Widget toggleBtn = GestureDetector(
+      onPanStart: (details) {
+        _dragStart = details.globalPosition;
+        _isDragging = false;
+      },
+      onPanUpdate: (details) {
+        if (!_isDragging && (details.globalPosition - _dragStart).distance > 4.0) {
+          _isDragging = true;
+        }
+        if (_isDragging) {
+          setState(() {
+            _position = Offset(
+              (_position!.dx + details.delta.dx).clamp(8.0, size.width - kButtonSize - 8.0),
+              (_position!.dy + details.delta.dy).clamp(8.0, size.height - kButtonSize - 8.0),
+            );
+          });
+        }
+      },
+      onPanEnd: (details) {
+        if (_isDragging) {
+          _savePosition(orientation);
+        } else {
+          setState(() {
+            _expanded = !_expanded;
+          });
+        }
+      },
+      child: Container(
+        width: kButtonSize,
+        height: kButtonSize,
+        decoration: BoxDecoration(
+          color: MyTheme.accent,
+          shape: BoxShape.circle,
+          boxShadow: const [
+            BoxShadow(
+              color: Colors.black45,
+              blurRadius: 6,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Icon(
+          _expanded ? Icons.close : Icons.tune,
+          color: Colors.white,
+          size: 22,
+        ),
+      ),
+    );
+
+    if (!_expanded) {
+      return Positioned(
+        left: _position!.dx,
+        top: _position!.dy,
+        child: toggleBtn,
+      );
+    }
+
+    final actionButtons = _buildActionButtons(isLandscape);
+
+    if (isLandscape) {
+      // Landscape: expand vertically upwards along the short edge (height)
+      final expandUpwards = _position!.dy >= size.height / 2;
+      final maxAvailableHeight = expandUpwards
+          ? max(100.0, _position!.dy + kButtonSize - padding.top - 16.0)
+          : max(100.0, size.height - _position!.dy - padding.bottom - 16.0);
+
+      Widget scrollableActions = ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxAvailableHeight - kButtonSize - 8.0),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.vertical,
+          reverse: expandUpwards,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: actionButtons,
+          ),
+        ),
+      );
+
+      final columnChildren = expandUpwards
+          ? [
+              scrollableActions,
+              Container(height: 1, width: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(vertical: 4)),
+              toggleBtn,
+            ]
+          : [
+              toggleBtn,
+              Container(height: 1, width: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(vertical: 4)),
+              scrollableActions,
+            ];
+
+      double top = expandUpwards
+          ? max(padding.top + 8.0, _position!.dy - (maxAvailableHeight - kButtonSize))
+          : _position!.dy;
+
+      return Positioned(
+        left: _position!.dx,
+        bottom: expandUpwards ? (size.height - _position!.dy - kButtonSize) : null,
+        top: expandUpwards ? null : top,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xEE1E222B),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white12),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 10,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: columnChildren,
+          ),
+        ),
+      );
+    } else {
+      // Portrait: expand horizontally leftwards along the short edge (width)
+      final expandLeftwards = _position!.dx >= size.width / 2;
+      final maxAvailableWidth = expandLeftwards
+          ? max(100.0, _position!.dx + kButtonSize - padding.left - 16.0)
+          : max(100.0, size.width - _position!.dx - padding.right - 16.0);
+
+      Widget scrollableActions = ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxAvailableWidth - kButtonSize - 8.0),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          reverse: expandLeftwards,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: actionButtons,
+          ),
+        ),
+      );
+
+      final rowChildren = expandLeftwards
+          ? [
+              scrollableActions,
+              Container(width: 1, height: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 4)),
+              toggleBtn,
+            ]
+          : [
+              toggleBtn,
+              Container(width: 1, height: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 4)),
+              scrollableActions,
+            ];
+
+      return Positioned(
+        top: _position!.dy,
+        right: expandLeftwards ? (size.width - _position!.dx - kButtonSize) : null,
+        left: expandLeftwards ? null : _position!.dx,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xEE1E222B),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white12),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black54,
+                blurRadius: 10,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: rowChildren,
+          ),
+        ),
+      );
+    }
   }
 }
