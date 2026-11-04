@@ -646,6 +646,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     Widget buildBtn(
         {required Widget icon,
         required VoidCallback? onPressed,
+        Color? backgroundColor,
+        BorderRadius? borderRadius,
         String? tooltip}) {
       Widget btn = GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -653,6 +655,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         child: Container(
           width: 38,
           height: 38,
+          decoration: backgroundColor != null
+              ? BoxDecoration(
+                  color: backgroundColor,
+                  borderRadius: borderRadius ?? BorderRadius.circular(19),
+                  border: Border.all(
+                    color: Colors.white24,
+                    width: 0.8,
+                  ),
+                )
+              : null,
           alignment: Alignment.center,
           child: icon,
         ),
@@ -706,20 +718,72 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           onPressed: () =>
               gFFI.dialogManager.toggleMobileActionsOverlay(ffi: gFFI),
         ),
-      // 5. Touch / Mouse Mode toggle & Gesture settings
+      // 5. Mouse Mode button (selected: blue, unselected: grey)
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
-          icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse,
-              color: Colors.white, size: 20),
+          icon: Icon(
+            Icons.mouse,
+            color: !ffiModel.touchMode ? Colors.white : Colors.white70,
+            size: 20,
+          ),
+          backgroundColor: !ffiModel.touchMode
+              ? const Color(0xFF0071FF) // 选中底色为蓝色
+              : const Color(0x604A5568), // 未选中底色为灰色
+          borderRadius: BorderRadius.circular(19),
+          tooltip: !ffiModel.touchMode
+              ? (localeName.startsWith('zh')
+                  ? '鼠标模式 (已选中，点击打开说明与设置)'
+                  : 'Mouse Mode (Selected, tap for menu)')
+              : (localeName.startsWith('zh')
+                  ? '鼠标模式 (点击切换)'
+                  : 'Mouse Mode (Tap to select)'),
+          onPressed: () {
+            if (ffiModel.touchMode) {
+              ffiModel.toggleTouchMode();
+              bind.mainSetLocalOption(key: kOptionTouchMode, value: 'N');
+              BotToast.showText(
+                text: localeName.startsWith('zh')
+                    ? '已切换至鼠标模式'
+                    : 'Switched to Mouse Mode',
+              );
+              if (mounted) setState(() {});
+            } else {
+              setState(() => _showGestureHelp = !_showGestureHelp);
+            }
+          },
+        ),
+      // 6. Touch Mode button (selected: blue, unselected: grey)
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        buildBtn(
+          icon: Icon(
+            Icons.touch_app,
+            color: ffiModel.touchMode ? Colors.white : Colors.white70,
+            size: 20,
+          ),
+          backgroundColor: ffiModel.touchMode
+              ? const Color(0xFF0071FF) // 选中底色为蓝色
+              : const Color(0x604A5568), // 未选中底色为灰色
+          borderRadius: BorderRadius.circular(19),
           tooltip: ffiModel.touchMode
               ? (localeName.startsWith('zh')
-                  ? '触屏模式 (点击打开说明与设置)'
-                  : 'Touch Mode (Tap for help)')
+                  ? '触屏模式 (已选中，点击打开说明与设置)'
+                  : 'Touch Mode (Selected, tap for menu)')
               : (localeName.startsWith('zh')
-                  ? '鼠标模式 (点击打开说明与设置)'
-                  : 'Mouse Mode (Tap for help)'),
+                  ? '触屏模式 (点击切换)'
+                  : 'Touch Mode (Tap to select)'),
           onPressed: () {
-            setState(() => _showGestureHelp = !_showGestureHelp);
+            if (!ffiModel.touchMode) {
+              ffiModel.toggleTouchMode();
+              bind.mainSetLocalOption(key: kOptionTouchMode, value: 'Y');
+              BotToast.showText(
+                text: localeName.startsWith('zh')
+                    ? '已切换至触屏模式'
+                    : 'Switched to Touch Mode',
+              );
+              if (mounted) setState(() {});
+            } else {
+              setState(() => _showGestureHelp = !_showGestureHelp);
+            }
           },
         ),
       // 5.1 One-Finger Move quick toggle (when enabled in gesture settings)
