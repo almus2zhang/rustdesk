@@ -645,11 +645,23 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           ));
           paints.add(DraggableControlBar(
             ffi: gFFI,
+            showGestureHelp: _showGestureHelp,
             onOpenKeyboard: openKeyboard,
             onShowGestureHelp: () => setState(() => _showGestureHelp = true),
             onShowActions: showActions,
             onClose: () => clientClose(sessionId, gFFI),
             onShowOptions: () => showOptions(context, widget.id, gFFI.dialogManager),
+            onChat: () async {
+              if (isAndroid) {
+                final isSupportVoiceCall = await gFFI.invokeMethod(
+                    "get_value", "KEY_IS_SUPPORT_VOICE_CALL");
+                if (isSupportVoiceCall == true) {
+                  showChatOptions(widget.id);
+                  return;
+                }
+              }
+              onPressedTextChat(widget.id);
+            },
           ));
           return paints;
         }()));
@@ -2768,20 +2780,24 @@ class FABLocation extends FloatingActionButtonLocation {
 
 class DraggableControlBar extends StatefulWidget {
   final FFI ffi;
+  final bool showGestureHelp;
   final VoidCallback onOpenKeyboard;
   final VoidCallback onShowGestureHelp;
   final Function(String id) onShowActions;
   final VoidCallback onClose;
   final VoidCallback onShowOptions;
+  final VoidCallback onChat;
 
   const DraggableControlBar({
     Key? key,
     required this.ffi,
+    this.showGestureHelp = false,
     required this.onOpenKeyboard,
     required this.onShowGestureHelp,
     required this.onShowActions,
     required this.onClose,
     required this.onShowOptions,
+    required this.onChat,
   }) : super(key: key);
 
   @override
@@ -2795,7 +2811,7 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
   Offset _dragStart = Offset.zero;
   Orientation? _lastOrientation;
 
-  static const double kButtonSize = 46.0;
+  static const double kButtonSize = 48.0;
 
   @override
   void didChangeDependencies() {
@@ -2825,11 +2841,11 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
         }
       } catch (_) {}
     }
-    // Default: bottom-right corner
+    // Default: bottom-right corner (like 333.jpg)
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
-    final defaultX = size.width - kButtonSize - max(16.0, padding.right + 8.0);
-    final defaultY = size.height - kButtonSize - max(16.0, padding.bottom + 8.0);
+    final defaultX = size.width - kButtonSize - max(16.0, padding.right + 12.0);
+    final defaultY = size.height - kButtonSize - max(16.0, padding.bottom + 12.0);
     _position = Offset(defaultX, defaultY);
   }
 
@@ -2849,15 +2865,14 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
       type: MaterialType.transparency,
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(19),
         child: Container(
-          width: 38,
-          height: 38,
+          width: 44,
+          height: 48,
           alignment: Alignment.center,
           child: IconTheme(
             data: IconThemeData(
-              color: color ?? const Color(0xD9FFFFFF),
-              size: 20,
+              color: color ?? Colors.white,
+              size: 24,
             ),
             child: icon,
           ),
@@ -2870,7 +2885,7 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
     return btn;
   }
 
-  List<Widget> _buildActionButtons(bool isLandscape) {
+  List<Widget> _buildActionButtons() {
     final ffiModel = widget.ffi.ffiModel;
     final isPeerAndroid = ffiModel.isPeerAndroid;
 
@@ -2878,15 +2893,12 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
       _buildBtn(
         icon: const Icon(Icons.clear),
         tooltip: translate('Close'),
-        color: Colors.redAccent.shade100,
         onPressed: widget.onClose,
       ),
       _buildBtn(
         icon: const Icon(Icons.tv),
         tooltip: translate('Display Settings'),
-        onPressed: () {
-          widget.onShowOptions();
-        },
+        onPressed: widget.onShowOptions,
       ),
       _buildBtn(
         icon: const Icon(Icons.keyboard),
@@ -2899,62 +2911,66 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
           tooltip: translate('Input Method'),
           onPressed: () => widget.ffi.invokeMethod("show_input_method_picker", null),
         ),
+      Obx(() {
+        final isTouch = ffiModel.touchMode;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildBtn(
+              icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
+              tooltip: isTouch
+                  ? (localeName.startsWith('zh') ? '触屏模式 (点击打开说明与设置)' : 'Touch mode')
+                  : (localeName.startsWith('zh') ? '鼠标模式 (点击打开说明与设置)' : 'Mouse mode'),
+              onPressed: widget.onShowGestureHelp,
+            ),
+            if (isTouch) ...[
+              _buildBtn(
+                icon: Icon(ffiModel.touchPanMode.value == 'scroll'
+                    ? Icons.swap_vert
+                    : Icons.text_fields),
+                tooltip: ffiModel.touchPanMode.value == 'scroll'
+                    ? (localeName.startsWith('zh') ? '单指: 滚动屏幕' : 'Scroll')
+                    : (localeName.startsWith('zh') ? '单指: 选择文字' : 'Select'),
+                onPressed: () {
+                  ffiModel.toggleTouchPanMode();
+                  BotToast.showText(
+                    text: ffiModel.touchPanMode.value == 'scroll'
+                        ? '单指移动: 拖动屏幕'
+                        : '单指移动: 选择文字',
+                  );
+                },
+              ),
+              _buildBtn(
+                icon: Icon(ffiModel.touchZoomMode.value == 'canvas'
+                    ? Icons.zoom_out_map
+                    : Icons.zoom_in),
+                tooltip: ffiModel.touchZoomMode.value == 'canvas'
+                    ? (localeName.startsWith('zh') ? '双指: 缩放画布' : 'Canvas zoom')
+                    : (localeName.startsWith('zh') ? '双指: 远程缩放' : 'Remote zoom'),
+                onPressed: () {
+                  ffiModel.toggleTouchZoomMode();
+                  BotToast.showText(
+                    text: ffiModel.touchZoomMode.value == 'canvas'
+                        ? '双指缩放: 缩放画布'
+                        : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
+                  );
+                },
+              ),
+            ],
+          ],
+        );
+      }),
+      _buildBtn(
+        icon: const Icon(Icons.chat),
+        tooltip: translate('Chat'),
+        onPressed: widget.onChat,
+      ),
       if (isPeerAndroid)
         _buildBtn(
           icon: const Icon(Icons.build),
           tooltip: translate('Actions'),
           onPressed: () => widget.ffi.dialogManager.toggleMobileActionsOverlay(ffi: widget.ffi),
         ),
-      Obx(() {
-        final isTouch = ffiModel.touchMode;
-        final modeWidgets = <Widget>[
-          _buildBtn(
-            icon: Icon(isTouch ? Icons.touch_app : Icons.mouse),
-            tooltip: isTouch
-                ? (localeName.startsWith('zh') ? '触屏模式 (点击打开说明与设置)' : 'Touch mode')
-                : (localeName.startsWith('zh') ? '鼠标模式 (点击打开说明与设置)' : 'Mouse mode'),
-            onPressed: widget.onShowGestureHelp,
-          ),
-          if (isTouch) ...[
-            _buildBtn(
-              icon: Icon(ffiModel.touchPanMode.value == 'scroll'
-                  ? Icons.swap_vert
-                  : Icons.text_fields),
-              tooltip: ffiModel.touchPanMode.value == 'scroll'
-                  ? (localeName.startsWith('zh') ? '单指: 滚动屏幕' : 'Scroll')
-                  : (localeName.startsWith('zh') ? '单指: 选择文字' : 'Select'),
-              onPressed: () {
-                ffiModel.toggleTouchPanMode();
-                BotToast.showText(
-                  text: ffiModel.touchPanMode.value == 'scroll'
-                      ? '单指移动: 拖动屏幕'
-                      : '单指移动: 选择文字',
-                );
-              },
-            ),
-            _buildBtn(
-              icon: Icon(ffiModel.touchZoomMode.value == 'canvas'
-                  ? Icons.zoom_out_map
-                  : Icons.zoom_in),
-              tooltip: ffiModel.touchZoomMode.value == 'canvas'
-                  ? (localeName.startsWith('zh') ? '双指: 缩放画布' : 'Canvas zoom')
-                  : (localeName.startsWith('zh') ? '双指: 远程缩放' : 'Remote zoom'),
-              onPressed: () {
-                ffiModel.toggleTouchZoomMode();
-                BotToast.showText(
-                  text: ffiModel.touchZoomMode.value == 'canvas'
-                      ? '双指缩放: 缩放画布'
-                      : '双指缩放: 远程缩放 (以屏幕中心缩放应用)',
-                );
-              },
-            ),
-          ],
-        ];
-
-        return isLandscape
-            ? Column(mainAxisSize: MainAxisSize.min, children: modeWidgets)
-            : Row(mainAxisSize: MainAxisSize.min, children: modeWidgets);
-      }),
       _buildBtn(
         icon: const Icon(Icons.more_vert),
         tooltip: translate('More Actions'),
@@ -2965,81 +2981,72 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.showGestureHelp) return const SizedBox.shrink();
     if (_position == null) return const SizedBox.shrink();
     final size = MediaQuery.of(context).size;
     final padding = MediaQuery.of(context).padding;
     final orientation = MediaQuery.of(context).orientation;
-    final isLandscape = orientation == Orientation.landscape;
-
-    Widget toggleBtn = GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        setState(() {
-          _expanded = !_expanded;
-        });
-      },
-      onPanStart: _expanded
-          ? null
-          : (details) {
-              _dragStart = details.globalPosition;
-              _isDragging = false;
-            },
-      onPanUpdate: _expanded
-          ? null
-          : (details) {
-              if (!_isDragging && (details.globalPosition - _dragStart).distance > 8.0) {
-                _isDragging = true;
-              }
-              if (_isDragging) {
-                final maxX = max(8.0, size.width - kButtonSize - 8.0);
-                final maxY = max(8.0, size.height - kButtonSize - 8.0);
-                setState(() {
-                  _position = Offset(
-                    (_position!.dx + details.delta.dx).clamp(8.0, maxX),
-                    (_position!.dy + details.delta.dy).clamp(8.0, maxY),
-                  );
-                });
-              }
-            },
-      onPanEnd: _expanded
-          ? null
-          : (details) {
-              if (_isDragging) {
-                _savePosition(orientation);
-                _isDragging = false;
-              }
-            },
-      child: Container(
-        width: kButtonSize,
-        height: kButtonSize,
-        decoration: BoxDecoration(
-          color: _expanded
-              ? const Color(0x604E5360)
-              : const Color(0x803E424B),
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: _expanded ? Colors.white24 : const Color(0x60FFFFFF),
-            width: 1.2,
-          ),
-          boxShadow: _expanded
-              ? null
-              : const [
-                  BoxShadow(
-                    color: Color(0x40000000),
-                    blurRadius: 6,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-        ),
-        child: Icon(
-          _expanded ? Icons.close : Icons.tune,
-          color: const Color(0xD9FFFFFF),
-          size: 22,
-        ),
-      ),
-    );
 
     if (!_expanded) {
+      // 收起像 333: 悬浮球模式 (可拖拽，灰色半透明)
+      Widget toggleBtn = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() {
+            _expanded = true;
+          });
+        },
+        onPanStart: (details) {
+          _dragStart = details.globalPosition;
+          _isDragging = false;
+        },
+        onPanUpdate: (details) {
+          if (!_isDragging && (details.globalPosition - _dragStart).distance > 8.0) {
+            _isDragging = true;
+          }
+          if (_isDragging) {
+            final maxX = max(8.0, size.width - kButtonSize - 8.0);
+            final maxY = max(8.0, size.height - kButtonSize - 8.0);
+            setState(() {
+              _position = Offset(
+                (_position!.dx + details.delta.dx).clamp(8.0, maxX),
+                (_position!.dy + details.delta.dy).clamp(8.0, maxY),
+              );
+            });
+          }
+        },
+        onPanEnd: (details) {
+          if (_isDragging) {
+            _savePosition(orientation);
+            _isDragging = false;
+          }
+        },
+        child: Container(
+          width: kButtonSize,
+          height: kButtonSize,
+          decoration: BoxDecoration(
+            color: const Color(0x803E424B), // 灰色半透明 (approx 50% opacity)
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: const Color(0x60FFFFFF),
+              width: 1.2,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40000000),
+                blurRadius: 6,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.expand_less,
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+      );
+
       return Positioned(
         left: _position!.dx,
         top: _position!.dy,
@@ -3047,122 +3054,60 @@ class _DraggableControlBarState extends State<DraggableControlBar> {
       );
     }
 
-    final actionButtons = _buildActionButtons(isLandscape);
+    // 展开像 444: 底部经典横向控制栏
+    final bottomBarHeight = 48.0 + padding.bottom;
 
-    if (isLandscape) {
-      // Landscape: expand vertically upwards along the short edge (height)
-      final expandUpwards = _position!.dy >= size.height / 2;
-      final maxAvailableHeight = expandUpwards
-          ? max(100.0, _position!.dy + kButtonSize - padding.top - 16.0)
-          : max(100.0, size.height - _position!.dy - padding.bottom - 16.0);
-
-      Widget scrollableActions = ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxAvailableHeight - kButtonSize - 8.0),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.vertical,
-          reverse: expandUpwards,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: actionButtons,
-          ),
-        ),
-      );
-
-      final columnChildren = expandUpwards
-          ? [
-              scrollableActions,
-              Container(height: 1, width: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(vertical: 4)),
-              toggleBtn,
-            ]
-          : [
-              toggleBtn,
-              Container(height: 1, width: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(vertical: 4)),
-              scrollableActions,
-            ];
-
-      double top = expandUpwards
-          ? max(padding.top + 8.0, _position!.dy - (maxAvailableHeight - kButtonSize))
-          : _position!.dy;
-
-      return Positioned(
-        left: _position!.dx,
-        bottom: expandUpwards ? (size.height - _position!.dy - kButtonSize) : null,
-        top: expandUpwards ? null : top,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-          decoration: BoxDecoration(
-            color: const Color(0xCC20232A),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: const Color(0x33FFFFFF)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 10,
-                spreadRadius: 1,
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      height: bottomBarHeight,
+      child: Container(
+        color: MyTheme.accent,
+        padding: EdgeInsets.only(bottom: padding.bottom),
+        child: Row(
+          children: [
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        mainAxisSize: MainAxisSize.max,
+                        children: _buildActionButtons(),
+                      ),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: columnChildren,
-          ),
-        ),
-      );
-    } else {
-      // Portrait: expand horizontally leftwards along the short edge (width)
-      final expandLeftwards = _position!.dx >= size.width / 2;
-      final maxAvailableWidth = expandLeftwards
-          ? max(100.0, _position!.dx + kButtonSize - padding.left - 16.0)
-          : max(100.0, size.width - _position!.dx - padding.right - 16.0);
-
-      Widget scrollableActions = ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxAvailableWidth - kButtonSize - 8.0),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          reverse: expandLeftwards,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: actionButtons,
-          ),
-        ),
-      );
-
-      final rowChildren = expandLeftwards
-          ? [
-              scrollableActions,
-              Container(width: 1, height: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 4)),
-              toggleBtn,
-            ]
-          : [
-              toggleBtn,
-              Container(width: 1, height: 20, color: Colors.white24, margin: const EdgeInsets.symmetric(horizontal: 4)),
-              scrollableActions,
-            ];
-
-      return Positioned(
-        top: _position!.dy,
-        right: expandLeftwards ? (size.width - _position!.dx - kButtonSize) : null,
-        left: expandLeftwards ? null : _position!.dx,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: const Color(0xCC20232A),
-            borderRadius: BorderRadius.circular(26),
-            border: Border.all(color: const Color(0x33FFFFFF)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x40000000),
-                blurRadius: 10,
-                spreadRadius: 1,
+            ),
+            // Pinned collapse button at the far right (like 444.jpg)
+            Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                onTap: () {
+                  setState(() {
+                    _expanded = false;
+                  });
+                },
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.expand_more,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
               ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: rowChildren,
-          ),
+            ),
+          ],
         ),
-      );
-    }
+      ),
+    );
   }
 }
