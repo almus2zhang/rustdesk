@@ -97,7 +97,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   Timer? _timer;
-  late bool _showBar;
+  final RxBool _showBar = false.obs;
   bool _showGestureHelp = false;
   String _value = '';
   Orientation? _currentOrientation;
@@ -121,39 +121,71 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final TextEditingController _textController =
       TextEditingController(text: initText);
 
-  Offset? _fabPosition;
+  Offset? _fabPortraitPos;
+  Offset? _fabLandscapePos;
   bool _isFabDragging = false;
   Offset _fabDragStart = Offset.zero;
 
-  void _loadFabPosition(Orientation orientation) {
-    final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
-    final saved = bind.getLocalFlutterOption(k: key);
-    if (saved.isNotEmpty) {
-      try {
-        final parts = saved.split(',');
-        if (parts.length == 2) {
-          final x = double.parse(parts[0]);
-          final y = double.parse(parts[1]);
-          final size = MediaQuery.of(context).size;
-          _fabPosition = Offset(
-            x.clamp(8.0, max(8.0, size.width - 48.0 - 8.0)),
-            y.clamp(8.0, max(8.0, size.height - 48.0 - 8.0)),
-          );
-          return;
-        }
-      } catch (_) {}
+  Offset _getFabPosition(Orientation orientation, Size size, EdgeInsets padding) {
+    if (orientation == Orientation.landscape) {
+      if (_fabLandscapePos != null) return _fabLandscapePos!;
+      final saved = bind.getLocalFlutterOption(k: 'float_ctrl_l_pos');
+      if (saved.isNotEmpty) {
+        try {
+          final parts = saved.split(',');
+          if (parts.length == 2) {
+            final x = double.parse(parts[0]);
+            final y = double.parse(parts[1]);
+            final maxX = max(8.0, size.width - 48.0 - 8.0);
+            final maxY = max(8.0, size.height - 48.0 - 8.0);
+            _fabLandscapePos = Offset(x.clamp(8.0, maxX), y.clamp(8.0, maxY));
+            return _fabLandscapePos!;
+          }
+        } catch (_) {}
+      }
+      final defaultX = max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
+      final defaultY = max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
+      _fabLandscapePos = Offset(defaultX, defaultY);
+      return _fabLandscapePos!;
+    } else {
+      if (_fabPortraitPos != null) return _fabPortraitPos!;
+      final saved = bind.getLocalFlutterOption(k: 'float_ctrl_p_pos');
+      if (saved.isNotEmpty) {
+        try {
+          final parts = saved.split(',');
+          if (parts.length == 2) {
+            final x = double.parse(parts[0]);
+            final y = double.parse(parts[1]);
+            final maxX = max(8.0, size.width - 48.0 - 8.0);
+            final maxY = max(8.0, size.height - 48.0 - 8.0);
+            _fabPortraitPos = Offset(x.clamp(8.0, maxX), y.clamp(8.0, maxY));
+            return _fabPortraitPos!;
+          }
+        } catch (_) {}
+      }
+      final defaultX = max(8.0, size.width - 48.0 - max(16.0, padding.right + 12.0));
+      final defaultY = max(8.0, size.height - 48.0 - max(16.0, padding.bottom + 12.0));
+      _fabPortraitPos = Offset(defaultX, defaultY);
+      return _fabPortraitPos!;
     }
-    final size = MediaQuery.of(context).size;
-    final padding = MediaQuery.of(context).padding;
-    final defaultX = size.width - 48.0 - max(16.0, padding.right + 12.0);
-    final defaultY = size.height - 48.0 - max(16.0, padding.bottom + 12.0);
-    _fabPosition = Offset(defaultX, defaultY);
+  }
+
+  void _updateFabPosition(Orientation orientation, Offset newPos, Size size) {
+    final maxX = max(8.0, size.width - 48.0 - 8.0);
+    final maxY = max(8.0, size.height - 48.0 - 8.0);
+    final clamped = Offset(newPos.dx.clamp(8.0, maxX), newPos.dy.clamp(8.0, maxY));
+    if (orientation == Orientation.landscape) {
+      _fabLandscapePos = clamped;
+    } else {
+      _fabPortraitPos = clamped;
+    }
   }
 
   void _saveFabPosition(Orientation orientation) {
-    if (_fabPosition == null) return;
+    final pos = orientation == Orientation.landscape ? _fabLandscapePos : _fabPortraitPos;
+    if (pos == null) return;
     final key = orientation == Orientation.landscape ? 'float_ctrl_l_pos' : 'float_ctrl_p_pos';
-    bind.setLocalFlutterOption(k: key, v: '${_fabPosition!.dx},${_fabPosition!.dy}');
+    bind.setLocalFlutterOption(k: key, v: '${pos.dx},${pos.dy}');
   }
 
 
@@ -165,7 +197,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   void initState() {
-    _showBar = isSecondary ? false : !isWebDesktop;
+    _showBar.value = isSecondary ? false : !isWebDesktop;
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
@@ -487,7 +519,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget _bottomWidget() {
     if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar || gFFI.ffiModel.pi.displays.isEmpty) return const Offstage();
+    if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty) return const Offstage();
     final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     if (isLandscape) return const Offstage();
 
@@ -537,22 +569,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           floatingActionButtonLocation: null,
           floatingActionButton: null,
-          bottomNavigationBar: Obx(() => Stack(
-                alignment: Alignment.bottomCenter,
-                children: [
-                  gFFI.ffiModel.pi.isSet.isTrue &&
-                          gFFI.ffiModel.waitForFirstImage.isTrue
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : () {
-                          gFFI.ffiModel.tryShowAndroidActionsOverlay();
-                          return Offstage();
-                        }(),
-                  _bottomWidget(),
-                  gFFI.ffiModel.pi.isSet.isFalse
-                      ? emptyOverlay(MyTheme.canvasColor)
-                      : Offstage(),
-                ],
-              )),
+          bottomNavigationBar: Obx(() {
+            final isLandscape =
+                MediaQuery.of(context).orientation == Orientation.landscape;
+            if (isLandscape) {
+              return const SizedBox.shrink();
+            }
+            if (_showGestureHelp) {
+              return getGestureHelp();
+            }
+            if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            return getBottomAppBar();
+          }),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
               initialEntries: [
@@ -849,7 +879,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
                     ? null
                     : () {
-                        setState(() => _showBar = !_showBar);
+                        _showBar.value = false;
+                        if (mounted) setState(() {});
                       },
               )),
         ],
@@ -873,7 +904,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onPressed: gFFI.ffiModel.waitForFirstImage.isTrue
                     ? null
                     : () {
-                        setState(() => _showBar = !_showBar);
+                        _showBar.value = false;
+                        if (mounted) setState(() {});
                       },
               )),
         ],
@@ -882,10 +914,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   Widget getBottomAppBar() {
-    return BottomAppBar(
-      elevation: 10,
+    final padding = MediaQuery.of(context).padding;
+    return Container(
       color: MyTheme.accent,
-      child: _controlBarIcons(),
+      height: 48.0 + padding.bottom,
+      padding: EdgeInsets.only(bottom: padding.bottom),
+      child: SizedBox(
+        height: 48.0,
+        child: _controlBarIcons(vertical: false),
+      ),
     );
   }
 
@@ -897,187 +934,179 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Widget _buildKeyHelpTools(bool isTablet, bool keyboardIsVisible) {
     return KeyHelpTools(
         isTablet: isTablet,
-        showBar: _showBar,
+        showBar: _showBar.value,
         keyboardIsVisible: keyboardIsVisible,
         showGestureHelp: _showGestureHelp);
   }
 
   Widget getBodyForMobile() {
-    final keyboardIsVisible = _showEdit || keyboardVisibilityController.isVisible;
-    final isTablet = isTabletLayoutMode(context);
-    final showKeyboardHideFab = isTablet && keyboardIsVisible;
-    final showActionButton = (!keyboardIsVisible || isTablet) &&
-        (!_showBar || showKeyboardHideFab || _showGestureHelp);
-    return Container(
-        color: MyTheme.canvasColor,
-        child: Stack(children: () {
-          final paints = [
-            Listener(
-              behavior: HitTestBehavior.translucent,
-              onPointerDown: (event) {
-                if (_showEdit) {
-                  _mobileFocusNode.requestFocus();
-                }
-              },
-              child: ImagePaint(ffiModel: gFFI.ffiModel),
-            ),
-            Positioned(
-              top: 10,
-              right: 10,
-              child: QualityMonitor(gFFI.qualityMonitorModel),
-            ),
-            _buildKeyHelpTools(isTablet, keyboardIsVisible),
-            SizedBox(
-              width: 0,
-              height: 0,
-              child: !_showEdit
-                  ? Container()
-                  : TextFormField(
-                      textInputAction: TextInputAction.newline,
-                      autocorrect: true,
-                      enableSuggestions: true,
-                      autofocus: true,
-                      focusNode: _mobileFocusNode,
-                      maxLines: null,
-                      controller: _textController,
-                      // trick way to make backspace work always
-                      keyboardType: TextInputType.multiline,
-                      // `onChanged` may be called depending on the input method if this widget is wrapped in
-                      // `Focus(onKeyEvent: ..., child: ...)`
-                      // For `Backspace` button in the soft keyboard:
-                      // en/fr input method:
-                      //      1. The button will not trigger `onKeyEvent` if the text field is not empty.
-                      //      2. The button will trigger `onKeyEvent` if the text field is empty.
-                      // ko/zh/ja input method: the button will trigger `onKeyEvent`
-                      //                     and the event will not popup if `KeyEventResult.handled` is returned.
-                      onChanged: handleSoftKeyboardInput,
-                    ).workaroundFreezeLinuxMint(),
-            ),
-          ];
-          if (showCursorPaint) {
-            paints.add(CursorPaint(widget.id));
-          }
-          if (gFFI.ffiModel.touchMode) {
-            paints.add(FloatingMouse(
-              ffi: gFFI,
-            ));
-          } else {
-            paints.add(FloatingMouseWidgets(
-              ffi: gFFI,
-            ));
-          }
-          final topPadding = MediaQuery.of(context).padding.top;
-          final leftPadding = MediaQuery.of(context).padding.left;
-          final escTop = max(10.0, isAndroid ? topPadding + 4.0 : 10.0);
-          final escLeft = max(10.0, leftPadding + 4.0);
-          paints.add(Positioned(
-            top: escTop,
-            left: escLeft,
-            child: Obx(() => gFFI.canvasModel.showEscKey.value
-                ? _buildFloatingEscKeyContent()
-                : const SizedBox.shrink()),
-          ));
-          final orientation = MediaQuery.of(context).orientation;
-          final isLandscape = orientation == Orientation.landscape;
-          if (isLandscape && _showBar && gFFI.ffiModel.pi.displays.isNotEmpty) {
-            final padding = MediaQuery.of(context).padding;
-            paints.add(Positioned(
-              top: 0,
-              bottom: 0,
-              right: 0,
-              width: 48.0 + padding.right,
-              child: Container(
-                color: MyTheme.accent,
-                padding: EdgeInsets.only(
-                  top: padding.top,
-                  bottom: padding.bottom,
-                  right: padding.right,
-                ),
-                child: _controlBarIcons(vertical: true),
-              ),
-            ));
-          }
-          if (showActionButton) {
-            final size = MediaQuery.of(context).size;
-            final orientation = MediaQuery.of(context).orientation;
-            if (_fabPosition == null) {
-              _loadFabPosition(orientation);
+    return Obx(() {
+      final keyboardIsVisible = _showEdit || keyboardVisibilityController.isVisible;
+      final isTablet = isTabletLayoutMode(context);
+      final showKeyboardHideFab = isTablet && keyboardIsVisible;
+      final showActionButton = (!keyboardIsVisible || isTablet) &&
+          (!_showBar.value || showKeyboardHideFab || _showGestureHelp);
+      final orientation = MediaQuery.of(context).orientation;
+      final isLandscape = orientation == Orientation.landscape;
+      final padding = MediaQuery.of(context).padding;
+      final size = MediaQuery.of(context).size;
+
+      final paints = <Widget>[
+        Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) {
+            if (_showEdit) {
+              _mobileFocusNode.requestFocus();
             }
-            paints.add(Positioned(
-              left: _fabPosition!.dx,
-              top: _fabPosition!.dy,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  setState(() {
-                    if (showKeyboardHideFab) {
-                      _showEdit = false;
-                      gFFI.invokeMethod("enable_soft_keyboard", false);
-                      _mobileFocusNode.unfocus();
-                      _physicalFocusNode.requestFocus();
-                    } else if (_showGestureHelp) {
-                      _showGestureHelp = false;
-                    } else {
-                      _showBar = !_showBar;
-                    }
-                  });
-                },
-                onPanStart: (details) {
-                  _fabDragStart = details.globalPosition;
-                  _isFabDragging = false;
-                },
-                onPanUpdate: (details) {
-                  if (!_isFabDragging && (details.globalPosition - _fabDragStart).distance > 6.0) {
-                    _isFabDragging = true;
-                  }
-                  if (_isFabDragging) {
-                    final maxX = max(8.0, size.width - 48.0 - 8.0);
-                    final maxY = max(8.0, size.height - 48.0 - 8.0);
-                    setState(() {
-                      _fabPosition = Offset(
-                        (_fabPosition!.dx + details.delta.dx).clamp(8.0, maxX),
-                        (_fabPosition!.dy + details.delta.dy).clamp(8.0, maxY),
-                      );
-                    });
-                  }
-                },
-                onPanEnd: (details) {
-                  if (_isFabDragging) {
-                    _saveFabPosition(orientation);
-                    _isFabDragging = false;
-                  }
-                },
-                child: Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: const Color(0x803E424B),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0x60FFFFFF),
-                      width: 1.2,
-                    ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x40000000),
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    (showKeyboardHideFab || _showGestureHelp)
-                        ? Icons.expand_more
-                        : Icons.expand_less,
-                    color: Colors.white,
-                    size: 26,
-                  ),
+          },
+          child: ImagePaint(ffiModel: gFFI.ffiModel),
+        ),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: QualityMonitor(gFFI.qualityMonitorModel),
+        ),
+        _buildKeyHelpTools(isTablet, keyboardIsVisible),
+        SizedBox(
+          width: 0,
+          height: 0,
+          child: !_showEdit
+              ? Container()
+              : TextFormField(
+                  textInputAction: TextInputAction.newline,
+                  autocorrect: true,
+                  enableSuggestions: true,
+                  autofocus: true,
+                  focusNode: _mobileFocusNode,
+                  maxLines: null,
+                  controller: _textController,
+                  // trick way to make backspace work always
+                  keyboardType: TextInputType.multiline,
+                  onChanged: handleSoftKeyboardInput,
+                ).workaroundFreezeLinuxMint(),
+        ),
+      ];
+      if (showCursorPaint) {
+        paints.add(CursorPaint(widget.id));
+      }
+      if (gFFI.ffiModel.touchMode) {
+        paints.add(FloatingMouse(
+          ffi: gFFI,
+        ));
+      } else {
+        paints.add(FloatingMouseWidgets(
+          ffi: gFFI,
+        ));
+      }
+      final topPadding = padding.top;
+      final leftPadding = padding.left;
+      final escTop = max(10.0, isAndroid ? topPadding + 4.0 : 10.0);
+      final escLeft = max(10.0, leftPadding + 4.0);
+      paints.add(Positioned(
+        top: escTop,
+        left: escLeft,
+        child: Obx(() => gFFI.canvasModel.showEscKey.value
+            ? _buildFloatingEscKeyContent()
+            : const SizedBox.shrink()),
+      ));
+      if (isLandscape && _showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
+        paints.add(Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          width: 48.0 + padding.right,
+          child: Container(
+            color: MyTheme.accent,
+            padding: EdgeInsets.only(
+              top: padding.top,
+              bottom: padding.bottom,
+              right: padding.right,
+            ),
+            child: SizedBox(
+              width: 48.0,
+              child: _controlBarIcons(vertical: true),
+            ),
+          ),
+        ));
+      }
+      if (showActionButton) {
+        final fabPos = _getFabPosition(orientation, size, padding);
+        paints.add(Positioned(
+          left: fabPos.dx,
+          top: fabPos.dy,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              if (showKeyboardHideFab) {
+                _showEdit = false;
+                gFFI.invokeMethod("enable_soft_keyboard", false);
+                _mobileFocusNode.unfocus();
+                _physicalFocusNode.requestFocus();
+              } else if (_showGestureHelp) {
+                _showGestureHelp = false;
+              } else {
+                _showBar.value = !_showBar.value;
+              }
+              if (mounted) setState(() {});
+            },
+            onPanStart: (details) {
+              _fabDragStart = details.globalPosition;
+              _isFabDragging = false;
+            },
+            onPanUpdate: (details) {
+              if (!_isFabDragging && (details.globalPosition - _fabDragStart).distance > 6.0) {
+                _isFabDragging = true;
+              }
+              if (_isFabDragging) {
+                setState(() {
+                  _updateFabPosition(
+                    orientation,
+                    Offset(fabPos.dx + details.delta.dx, fabPos.dy + details.delta.dy),
+                    size,
+                  );
+                });
+              }
+            },
+            onPanEnd: (details) {
+              if (_isFabDragging) {
+                _saveFabPosition(orientation);
+                _isFabDragging = false;
+              }
+            },
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: const Color(0x803E424B),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0x60FFFFFF),
+                  width: 1.2,
                 ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 6,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
-            ));
-          }
-          return paints;
-        }()));
+              child: Icon(
+                (showKeyboardHideFab || _showGestureHelp)
+                    ? Icons.expand_more
+                    : Icons.menu,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+        ));
+      }
+      return Container(
+        color: MyTheme.canvasColor,
+        child: Stack(children: paints),
+      );
+    });
   }
 
   Widget _buildFloatingEscKeyContent() {

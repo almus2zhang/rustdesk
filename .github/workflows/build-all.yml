@@ -13,7 +13,7 @@ on:
 
 jobs:
   run-build:
-    uses: ./.github/workflows/flutter-build.yml
+    uses: ./.github/workflows/android-only.yml
     secrets: inherit
     with:
       upload-artifact: true
