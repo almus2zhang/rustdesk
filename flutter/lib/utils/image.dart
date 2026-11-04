@@ -111,7 +111,13 @@ class ImagePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (image == null) return;
-    if (x.isNaN || y.isNaN) return;
+    if (x.isNaN ||
+        y.isNaN ||
+        x.isInfinite ||
+        y.isInfinite ||
+        scale <= 0 ||
+        scale.isNaN ||
+        scale.isInfinite) return;
     canvas.scale(scale, scale);
     // https://github.com/flutter/flutter/issues/76187#issuecomment-784628161
     // https://api.flutter-io.cn/flutter/dart-ui/FilterQuality.html

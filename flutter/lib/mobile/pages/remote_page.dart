@@ -526,7 +526,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     });
   }
 
-
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
     if (displays.isEmpty) return;
 
@@ -565,8 +564,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         return false;
       },
       child: Scaffold(
-          extendBody: false,
-          extendBodyBehindAppBar: false,
+          extendBody: true,
+          extendBodyBehindAppBar: true,
           resizeToAvoidBottomInset: (isAndroid && isTablet) ? false : true,
           floatingActionButtonLocation: null,
           floatingActionButton: null,
@@ -578,7 +577,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           }),
           body: Obx(
             () => getRawPointerAndKeyBody(Overlay(
-              key: _blockableOverlayState.key,
               initialEntries: [
                 OverlayEntry(builder: (context) {
                   return Container(
@@ -590,17 +588,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             bottom: !isAndroid,
                             child:
                                 OrientationBuilder(builder: (ctx, orientation) {
-                              if (_currentOrientation == null) {
-                                _currentOrientation = orientation;
-                                WidgetsBinding.instance
-                                    .addPostFrameCallback((_) {
-                                  gFFI.canvasModel.updateViewStyle();
-                                });
-                              } else if (_currentOrientation != orientation) {
-                                _currentOrientation = orientation;
+                              if (_currentOrientation != orientation) {
                                 Timer(const Duration(milliseconds: 200), () {
                                   gFFI.dialogManager
                                       .resetMobileActionsOverlay(ffi: gFFI);
+                                  _currentOrientation = orientation;
                                   gFFI.canvasModel.updateViewStyle();
                                 });
                               }
@@ -1731,9 +1723,12 @@ class ImagePaint extends StatelessWidget {
     final m = Provider.of<ImageModel>(context);
     final c = Provider.of<CanvasModel>(context);
     var s = c.scale;
+    if (s <= 0 || s.isNaN || s.isInfinite) {
+      s = 1.0;
+    }
     if (ffiModel.isPeerLinux) {
       final displays = ffiModel.pi.getCurDisplays();
-      if (displays.isNotEmpty) {
+      if (displays.isNotEmpty && displays[0].scale > 0) {
         s = s / displays[0].scale;
       }
     }
