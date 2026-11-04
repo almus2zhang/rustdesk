@@ -208,6 +208,24 @@ class FfiModel with ChangeNotifier {
 
   final RxString touchPanMode = 'scroll'.obs;
   final RxString touchZoomMode = 'canvas'.obs;
+  final RxBool showTouchPanInToolbar = false.obs;
+  final RxBool showTouchZoomInToolbar = false.obs;
+
+  void toggleShowTouchPanInToolbar() {
+    showTouchPanInToolbar.value = !showTouchPanInToolbar.value;
+    bind.mainSetLocalOption(
+        key: 'show_touch_pan_in_toolbar',
+        value: showTouchPanInToolbar.value ? 'Y' : 'N');
+    notifyListeners();
+  }
+
+  void toggleShowTouchZoomInToolbar() {
+    showTouchZoomInToolbar.value = !showTouchZoomInToolbar.value;
+    bind.mainSetLocalOption(
+        key: 'show_touch_zoom_in_toolbar',
+        value: showTouchZoomInToolbar.value ? 'Y' : 'N');
+    notifyListeners();
+  }
 
   void toggleTouchPanMode() {
     touchPanMode.value = touchPanMode.value == 'scroll' ? 'select' : 'scroll';
@@ -601,7 +619,8 @@ class FfiModel with ChangeNotifier {
                           sessionId: sessionId,
                           name: 'select_window',
                           value: '0');
-                      parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
+                      parent.target?.ffiModel.pi
+                          .platformAdditions['selected_window'] = 0;
                       parent.target?.canvasModel.isSingleAppMode = false;
                       await bind.sessionPeerOption(
                           sessionId: sessionId,
@@ -613,17 +632,21 @@ class FfiModel with ChangeNotifier {
                   const Divider(),
                   StatefulBuilder(
                     builder: (context, setSwitchState) {
-                      final directMode = bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+                      final directMode = bind.mainGetLocalOption(
+                              key: 'direct_window_capture') !=
+                          'N';
                       return SwitchListTile(
                         dense: true,
                         secondary: const Icon(Icons.crop_free, size: 22),
                         title: Text(
                           translate('Direct Window Capture'),
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(
                           directMode
-                              ? translate('Capture target window directly (isolated, not affected by overlapping windows)')
+                              ? translate(
+                                  'Capture target window directly (isolated, not affected by overlapping windows)')
                               : translate('Crop from desktop coordinates'),
                           style: const TextStyle(fontSize: 11),
                         ),
@@ -672,19 +695,25 @@ class FfiModel with ChangeNotifier {
                             ),
                             onTap: () async {
                               close();
-                              final directMode = bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+                              final directMode = bind.mainGetLocalOption(
+                                      key: 'direct_window_capture') !=
+                                  'N';
                               final modeStr = directMode ? 'direct' : 'crop';
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'select_window',
                                   value: '$hwnd:$modeStr');
-                              parent.target?.ffiModel.pi.platformAdditions['selected_window'] = int.tryParse(hwnd) ?? hwnd;
-                              parent.target?.canvasModel.isSingleAppMode = (hwnd != '0');
+                              parent.target?.ffiModel.pi
+                                      .platformAdditions['selected_window'] =
+                                  int.tryParse(hwnd) ?? hwnd;
+                              parent.target?.canvasModel.isSingleAppMode =
+                                  (hwnd != '0');
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'is_single_app_mode',
                                   value: (hwnd != '0') ? 'Y' : 'N');
-                              await parent.target?.canvasModel.updateViewStyle();
+                              await parent.target?.canvasModel
+                                  .updateViewStyle();
                             },
                           );
                         },
@@ -1523,6 +1552,10 @@ class FfiModel with ChangeNotifier {
       touchZoomMode.value = 'canvas';
       bind.mainSetLocalOption(key: 'touch_zoom_mode', value: 'canvas');
     }
+    showTouchPanInToolbar.value =
+        bind.mainGetLocalOption(key: 'show_touch_pan_in_toolbar') == 'Y';
+    showTouchZoomInToolbar.value =
+        bind.mainGetLocalOption(key: 'show_touch_zoom_in_toolbar') == 'Y';
     if (isMobile) {
       virtualMouseMode.loadOptions();
     }
@@ -2087,7 +2120,8 @@ class ImageModel with ChangeNotifier {
     }
 
     try {
-      await decodeAndUpdate(display, rgba, onBufferCopied: callNextRgba, seq: seq);
+      await decodeAndUpdate(display, rgba,
+          onBufferCopied: callNextRgba, seq: seq);
     } catch (e) {
       debugPrint('onRgba error: $e');
     } finally {
@@ -2095,7 +2129,8 @@ class ImageModel with ChangeNotifier {
     }
   }
 
-  decodeAndUpdate(int display, Uint8List rgba, {VoidCallback? onBufferCopied, int? seq}) async {
+  decodeAndUpdate(int display, Uint8List rgba,
+      {VoidCallback? onBufferCopied, int? seq}) async {
     final pid = parent.target?.id;
     final rect = parent.target?.ffiModel.pi.getDisplayRect(display);
     final image = await img.decodeImageFromPixels(
@@ -2456,7 +2491,8 @@ class CanvasModel with ChangeNotifier {
       // Vertically, subtract the bottom keyboard inset (viewInsets.bottom) and any
       // bottom overlay (e.g. key-help tools) so the canvas is not covered.
       final isTablet = isTabletLayoutMode(null);
-      double keyboardInset = (isAndroid && isTablet) ? 0 : mediaData.viewInsets.bottom;
+      double keyboardInset =
+          (isAndroid && isTablet) ? 0 : mediaData.viewInsets.bottom;
       h = h -
           keyboardInset -
           (parent.target?.cursorModel.keyHelpToolsRectToAdjustCanvas?.bottom ??
@@ -2515,7 +2551,8 @@ class CanvasModel with ChangeNotifier {
     // Apply custom scale percent when in Custom mode
     if (style == kRemoteViewStyleCustom) {
       try {
-        _scale = await getSessionCustomScale(sessionId, peerId: parent.target?.id);
+        _scale =
+            await getSessionCustomScale(sessionId, peerId: parent.target?.id);
       } catch (e, stack) {
         debugPrint('Error in getSessionCustomScale: $e');
         debugPrintStack(stackTrace: stack);

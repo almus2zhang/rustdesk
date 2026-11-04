@@ -113,6 +113,7 @@ class _RawTouchGestureDetectorRegionState
 
   double _twoFingerScrollX = 0;
   double _twoFingerScrollY = 0;
+  double _remoteScaleAccumulator = 0;
   double _oneFingerScrollX = 0;
   double _oneFingerScrollY = 0;
   Timer? _oneFingerInertiaTimer;
@@ -567,6 +568,7 @@ class _RawTouchGestureDetectorRegionState
     _twoFingerIsZooming = false;
     _twoFingerScrollX = 0;
     _twoFingerScrollY = 0;
+    _remoteScaleAccumulator = 0;
 
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
       final size = MediaQueryData.fromView(View.of(context)).size;
@@ -591,13 +593,22 @@ class _RawTouchGestureDetectorRegionState
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
       final scaleDelta = d.scale - _scale;
       _scale = d.scale;
-      final scaleInt = (scaleDelta * 1200).toInt();
-      if (scaleInt != 0 && !widget.isCamera) {
-        await bind.sessionSendPointer(
-            sessionId: sessionId,
-            msg: json.encode(
-                PointerEventToRust(kPointerEventKindTouch, 'scale', scaleInt)
-                    .toJson()));
+      _remoteScaleAccumulator += scaleDelta;
+
+      // In Windows / remote desktop, 1 wheel notch is 120 (WHEEL_DELTA).
+      // Each ~0.08 scale delta represents one gentle, controllable zoom notch.
+      const double stepThreshold = 0.08;
+      if (_remoteScaleAccumulator.abs() >= stepThreshold) {
+        final int steps = (_remoteScaleAccumulator / stepThreshold).truncate();
+        _remoteScaleAccumulator -= steps * stepThreshold;
+        final int sendScale = steps * 120;
+        if (!widget.isCamera) {
+          bind.sessionSendPointer(
+              sessionId: sessionId,
+              msg: json.encode(
+                  PointerEventToRust(kPointerEventKindTouch, 'scale', sendScale)
+                      .toJson()));
+        }
       }
       return;
     }
@@ -688,6 +699,7 @@ class _RawTouchGestureDetectorRegionState
     }
     _scale = 1;
     _twoFingerIsZooming = false;
+    _remoteScaleAccumulator = 0;
     if (!isSpecialHoldDragActive) {
       await inputModel.sendMouse('up', MouseButtons.left);
     }

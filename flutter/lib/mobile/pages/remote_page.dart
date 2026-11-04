@@ -722,6 +722,74 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             setState(() => _showGestureHelp = !_showGestureHelp);
           },
         ),
+      // 5.1 One-Finger Move quick toggle (when enabled in gesture settings)
+      if (ffiModel.showTouchPanInToolbar.value &&
+          !isWebDesktop &&
+          !ffiModel.viewOnly &&
+          ffiModel.keyboard)
+        buildBtn(
+          icon: Icon(
+            ffiModel.touchPanMode.value == 'scroll'
+                ? Icons.swap_vert
+                : Icons.text_fields,
+            color: Colors.white,
+            size: 20,
+          ),
+          tooltip: ffiModel.touchPanMode.value == 'scroll'
+              ? (localeName.startsWith('zh')
+                  ? '单指移动: 滚动屏幕 (点击切换为选择文字)'
+                  : 'One-Finger: Scroll (Tap for select)')
+              : (localeName.startsWith('zh')
+                  ? '单指移动: 选择文字 (点击切换为滚动屏幕)'
+                  : 'One-Finger: Select (Tap for scroll)'),
+          onPressed: () {
+            ffiModel.toggleTouchPanMode();
+            BotToast.showText(
+              text: ffiModel.touchPanMode.value == 'scroll'
+                  ? (localeName.startsWith('zh')
+                      ? '单指移动: 滚动屏幕 (跟手滑动)'
+                      : 'One-Finger: Scroll Screen')
+                  : (localeName.startsWith('zh')
+                      ? '单指移动: 选择文字 (拖拽划词)'
+                      : 'One-Finger: Select Text'),
+            );
+            if (mounted) setState(() {});
+          },
+        ),
+      // 5.2 Two-Finger Zoom quick toggle (when enabled in gesture settings)
+      if (ffiModel.showTouchZoomInToolbar.value &&
+          !isWebDesktop &&
+          !ffiModel.viewOnly &&
+          ffiModel.keyboard)
+        buildBtn(
+          icon: Icon(
+            ffiModel.touchZoomMode.value == 'remote'
+                ? Icons.zoom_in
+                : Icons.zoom_out_map,
+            color: Colors.white,
+            size: 20,
+          ),
+          tooltip: ffiModel.touchZoomMode.value == 'remote'
+              ? (localeName.startsWith('zh')
+                  ? '双指缩放: 远程缩放 (点击切换为缩放画布)'
+                  : 'Pinch: Remote Zoom (Tap for canvas)')
+              : (localeName.startsWith('zh')
+                  ? '双指缩放: 缩放画布 (点击切换为远程缩放)'
+                  : 'Pinch: Canvas Zoom (Tap for remote)'),
+          onPressed: () {
+            ffiModel.toggleTouchZoomMode();
+            BotToast.showText(
+              text: ffiModel.touchZoomMode.value == 'canvas'
+                  ? (localeName.startsWith('zh')
+                      ? '双指缩放: 缩放画布'
+                      : 'Two-Finger: Canvas Zoom')
+                  : (localeName.startsWith('zh')
+                      ? '双指缩放: 远程缩放 (以手机中点缩放应用)'
+                      : 'Two-Finger: Remote Zoom'),
+            );
+            if (mounted) setState(() {});
+          },
+        ),
       // 6. Chat
       if (!isWeb)
         buildBtn(

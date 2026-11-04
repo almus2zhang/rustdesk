@@ -92,8 +92,12 @@ class _GestureHelpState extends State<GestureHelp> {
     });
     BotToast.showText(
       text: _touchPanMode == 'scroll'
-          ? (localeName.startsWith('zh') ? '单指移动: 滚动屏幕 (跟手滑动)' : 'One-Finger Move: Scroll Screen')
-          : (localeName.startsWith('zh') ? '单指移动: 选择文字 (拖拽划词)' : 'One-Finger Move: Select Text'),
+          ? (localeName.startsWith('zh')
+              ? '单指移动: 滚动屏幕 (跟手滑动)'
+              : 'One-Finger Move: Scroll Screen')
+          : (localeName.startsWith('zh')
+              ? '单指移动: 选择文字 (拖拽划词)'
+              : 'One-Finger Move: Select Text'),
     );
   }
 
@@ -104,8 +108,12 @@ class _GestureHelpState extends State<GestureHelp> {
     });
     BotToast.showText(
       text: _touchZoomMode == 'canvas'
-          ? (localeName.startsWith('zh') ? '双指缩放: 缩放画布' : 'Two-Finger Zoom: Canvas Zoom')
-          : (localeName.startsWith('zh') ? '双指缩放: 远程缩放 (以手机中点缩放应用)' : 'Two-Finger Zoom: Remote Zoom'),
+          ? (localeName.startsWith('zh')
+              ? '双指缩放: 缩放画布'
+              : 'Two-Finger Zoom: Canvas Zoom')
+          : (localeName.startsWith('zh')
+              ? '双指缩放: 远程缩放 (以手机中点缩放应用)'
+              : 'Two-Finger Zoom: Remote Zoom'),
     );
   }
 
@@ -190,18 +198,25 @@ class _GestureHelpState extends State<GestureHelp> {
                         Transform.translate(
                           offset: const Offset(-10.0, 0.0),
                           child: InkWell(
-                            onTap: _toggleTouchPanMode,
+                            onTap: () {
+                              gFFI.ffiModel.toggleShowTouchPanInToolbar();
+                              setState(() {});
+                            },
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Checkbox(
-                                  value: _touchPanMode == 'scroll',
-                                  onChanged: (_) => _toggleTouchPanMode(),
+                                  value:
+                                      gFFI.ffiModel.showTouchPanInToolbar.value,
+                                  onChanged: (_) {
+                                    gFFI.ffiModel.toggleShowTouchPanInToolbar();
+                                    setState(() {});
+                                  },
                                 ),
                                 Text(
-                                  _touchPanMode == 'scroll'
-                                      ? '${translate("One-Finger Move")}: ${localeName.startsWith("zh") ? "滚动屏幕" : "Scroll Screen"} (${translate("Tap to switch")})'
-                                      : '${translate("One-Finger Move")}: ${localeName.startsWith("zh") ? "选择文字 / 拖拽" : "Select Text / Drag"} (${translate("Tap to switch")})',
+                                  localeName.startsWith('zh')
+                                      ? '单指移动：显示在控制栏'
+                                      : '${translate("One-Finger Move")}: Show in toolbar',
                                 ),
                               ],
                             ),
@@ -210,18 +225,26 @@ class _GestureHelpState extends State<GestureHelp> {
                         Transform.translate(
                           offset: const Offset(-10.0, -8.0),
                           child: InkWell(
-                            onTap: _toggleTouchZoomMode,
+                            onTap: () {
+                              gFFI.ffiModel.toggleShowTouchZoomInToolbar();
+                              setState(() {});
+                            },
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Checkbox(
-                                  value: _touchZoomMode == 'remote',
-                                  onChanged: (_) => _toggleTouchZoomMode(),
+                                  value: gFFI
+                                      .ffiModel.showTouchZoomInToolbar.value,
+                                  onChanged: (_) {
+                                    gFFI.ffiModel
+                                        .toggleShowTouchZoomInToolbar();
+                                    setState(() {});
+                                  },
                                 ),
                                 Text(
-                                  _touchZoomMode == 'remote'
-                                      ? '${translate("Pinch to Zoom")}: ${localeName.startsWith("zh") ? "远程缩放 (以手机中点缩放应用)" : "Remote Zoom"} (${translate("Tap to switch")})'
-                                      : '${translate("Pinch to Zoom")}: ${localeName.startsWith("zh") ? "缩放画布" : "Canvas Zoom"} (${translate("Tap to switch")})',
+                                  localeName.startsWith('zh')
+                                      ? '双指缩放：显示在控制栏'
+                                      : '${translate("Pinch to Zoom")}: Show in toolbar',
                                 ),
                               ],
                             ),
