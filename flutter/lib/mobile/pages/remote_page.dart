@@ -556,13 +556,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
   }
 
-  Widget _bottomWidget() {
-    if (_showGestureHelp) return getGestureHelp();
-    if (!_showBar.value || gFFI.ffiModel.pi.displays.isEmpty)
-      return const Offstage();
-    return getBottomAppBar();
-  }
-
   @override
   Widget build(BuildContext context) {
     final isTablet = isTabletLayoutMode(context);
@@ -845,7 +838,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final showKeyboardHideFab = isTablet && keyboardIsVisible;
       final showActionButton = !keyboardIsVisible || isTablet;
       final orientation = MediaQuery.of(context).orientation;
-      final isLandscape = orientation == Orientation.landscape;
       final padding = MediaQuery.of(context).padding;
       final size = MediaQuery.of(context).size;
 
