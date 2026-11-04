@@ -125,7 +125,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Offset? _fabPortraitPos;
   Offset? _fabLandscapePos;
   bool _isFabDragging = false;
-  Offset _fabDragStart = Offset.zero;
+  Offset _fabDragFingerStart = Offset.zero;
+  Offset _fabDragInitPos = Offset.zero;
 
   Offset _getFabPosition(
       Orientation orientation, Size size, EdgeInsets padding) {
@@ -609,10 +610,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               }
                               return Container(
                                 color: MyTheme.canvasColor,
-                                child: RawTouchGestureDetectorRegion(
-                                  child: getBodyForMobile(),
-                                  ffi: gFFI,
-                                ),
+                                child: getBodyForMobile(),
                               );
                             }),
                           ),
@@ -642,24 +640,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget _buildFloatingControlBar(
       Orientation orientation, Size size, EdgeInsets padding, Offset fabPos) {
-    const double barHeight = 48.0;
+    final bool isLandscape = orientation == Orientation.landscape;
     final ffiModel = Provider.of<FfiModel>(context);
-    const double iconSize = 20.0;
-    const EdgeInsets btnPadding = EdgeInsets.all(6.0);
-    const BoxConstraints constraints =
-        BoxConstraints(minWidth: 38, minHeight: 38);
 
     Widget buildBtn(
         {required Widget icon,
         required VoidCallback? onPressed,
         String? tooltip}) {
-      final btn = IconButton(
-        iconSize: iconSize,
-        padding: btnPadding,
-        constraints: constraints,
-        color: Colors.white,
-        icon: icon,
-        onPressed: onPressed,
+      Widget btn = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onPressed,
+        child: Container(
+          width: 38,
+          height: 38,
+          alignment: Alignment.center,
+          child: icon,
+        ),
       );
       if (tooltip != null) {
         return Tooltip(message: tooltip, child: btn);
@@ -710,7 +706,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           onPressed: () =>
               gFFI.dialogManager.toggleMobileActionsOverlay(ffi: gFFI),
         ),
-      // 5. Touch / Mouse Mode toggle & Gesture settings (NO Obx crash)
+      // 5. Touch / Mouse Mode toggle & Gesture settings
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
           icon: Icon(ffiModel.touchMode ? Icons.touch_app : Icons.mouse),
@@ -753,7 +749,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ),
       // 8. Collapse Chevron
       buildBtn(
-        icon: const Icon(Icons.expand_more),
+        icon: Icon(isLandscape ? Icons.expand_more : Icons.chevron_right),
         tooltip: translate('Collapse'),
         onPressed: () {
           _showBar.value = false;
@@ -762,30 +758,43 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ),
     ];
 
-    final double maxBarWidth = min(
-        420.0, max(240.0, size.width - padding.left - padding.right - 16.0));
-    const double fabSize = 48.0;
+    final double barWidth = isLandscape
+        ? 48.0
+        : min(370.0, size.width - padding.left - padding.right - 16.0);
+    final double barHeight = isLandscape
+        ? min(370.0, size.height - padding.top - padding.bottom - 16.0)
+        : 48.0;
 
-    // Decide Y position: pop above if in bottom half, pop below if in top half
-    double barY;
-    if (fabPos.dy > size.height / 2) {
-      barY = fabPos.dy - barHeight - 10.0;
-    } else {
-      barY = fabPos.dy + fabSize + 10.0;
-    }
-
-    // Decide X position: align with FAB horizontally
     double barX;
-    if (fabPos.dx > size.width / 2) {
-      barX = fabPos.dx + fabSize - maxBarWidth;
-    } else {
+    double barY;
+
+    if (isLandscape) {
+      // Horizontal align with FAB
       barX = fabPos.dx;
+      // Vertical expansion:
+      // If FAB is in bottom half -> expand UPWARDS, so [收起箭头] (bottom of bar) sits at fabPos.dy
+      // If FAB is in top half -> expand DOWNWARDS, so [X 断开] (top of bar) sits at fabPos.dy
+      if (fabPos.dy > size.height / 2) {
+        barY = fabPos.dy + 48.0 - barHeight;
+      } else {
+        barY = fabPos.dy;
+      }
+    } else {
+      // Vertical align with FAB
+      barY = fabPos.dy;
+      // Horizontal expansion:
+      // If FAB is on right half -> expand LEFTWARDS, so [收起箭头] (right of bar) sits at fabPos.dx + 48.0
+      // If FAB is on left half -> expand RIGHTWARDS, so [X 断开] (left of bar) sits at fabPos.dx
+      if (fabPos.dx > size.width / 2) {
+        barX = fabPos.dx + 48.0 - barWidth;
+      } else {
+        barX = fabPos.dx;
+      }
     }
 
-    // Clamp within safe area so it NEVER overflows the screen
+    // Clamp strictly within safe area so it NEVER overflows the screen
     final minLeft = padding.left + 8.0;
-    final maxLeft =
-        max(minLeft, size.width - padding.right - maxBarWidth - 8.0);
+    final maxLeft = max(minLeft, size.width - padding.right - barWidth - 8.0);
     final minTop = padding.top + 8.0;
     final maxTop = max(minTop, size.height - padding.bottom - barHeight - 8.0);
 
@@ -795,30 +804,50 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     return Positioned(
       left: clampedX,
       top: clampedY,
-      child: Material(
-        color: Colors.transparent,
-        elevation: 8.0,
-        borderRadius: BorderRadius.circular(24.0),
-        child: Container(
-          height: barHeight,
-          constraints: BoxConstraints(maxWidth: maxBarWidth),
-          decoration: BoxDecoration(
-            color: MyTheme.accent,
-            borderRadius: BorderRadius.circular(24.0),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x66000000),
-                blurRadius: 10.0,
-                offset: Offset(0, 3),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {}, // Prevent taps on toolbar from falling through to canvas
+        child: Material(
+          color: Colors.transparent,
+          elevation: 8.0,
+          borderRadius: BorderRadius.circular(24.0),
+          child: Container(
+            width: isLandscape ? barWidth : null,
+            height: isLandscape ? null : barHeight,
+            constraints: BoxConstraints(
+              maxWidth: barWidth,
+              maxHeight: barHeight,
+            ),
+            decoration: BoxDecoration(
+              color: const Color(0xB81E222D), // 半透明灰黑，质感通透
+              borderRadius: BorderRadius.circular(24.0),
+              border: Border.all(
+                color: const Color(0x50FFFFFF),
+                width: 1.0,
               ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 4.0),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: buttons,
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x60000000),
+                  blurRadius: 10.0,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            padding: EdgeInsets.symmetric(
+              horizontal: 4.0,
+              vertical: isLandscape ? 4.0 : 2.0,
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: isLandscape ? Axis.vertical : Axis.horizontal,
+              child: isLandscape
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: buttons,
+                    )
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: buttons,
+                    ),
             ),
           ),
         ),
@@ -851,14 +880,30 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final size = MediaQuery.of(context).size;
 
       final paints = <Widget>[
-        Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (event) {
-            if (_showEdit) {
-              _mobileFocusNode.requestFocus();
-            }
-          },
-          child: ImagePaint(ffiModel: gFFI.ffiModel),
+        RawTouchGestureDetectorRegion(
+          ffi: gFFI,
+          child: Stack(
+            children: [
+              Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (event) {
+                  if (_showEdit) {
+                    _mobileFocusNode.requestFocus();
+                  }
+                },
+                child: ImagePaint(ffiModel: gFFI.ffiModel),
+              ),
+              if (showCursorPaint) CursorPaint(widget.id),
+              if (gFFI.ffiModel.touchMode)
+                FloatingMouse(
+                  ffi: gFFI,
+                )
+              else
+                FloatingMouseWidgets(
+                  ffi: gFFI,
+                ),
+            ],
+          ),
         ),
         Positioned(
           top: 10,
@@ -885,18 +930,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 ).workaroundFreezeLinuxMint(),
         ),
       ];
-      if (showCursorPaint) {
-        paints.add(CursorPaint(widget.id));
-      }
-      if (gFFI.ffiModel.touchMode) {
-        paints.add(FloatingMouse(
-          ffi: gFFI,
-        ));
-      } else {
-        paints.add(FloatingMouseWidgets(
-          ffi: gFFI,
-        ));
-      }
       final topPadding = padding.top;
       final leftPadding = padding.left;
       final escTop = max(10.0, isAndroid ? topPadding + 4.0 : 10.0);
@@ -913,47 +946,53 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         paints
             .add(_buildFloatingControlBar(orientation, size, padding, fabPos));
       }
-      if (showActionButton) {
+      if (!_showBar.value && showActionButton) {
         final fabPos = _getFabPosition(orientation, size, padding);
         paints.add(Positioned(
           left: fabPos.dx,
           top: fabPos.dy,
-          child: GestureDetector(
+          child: Listener(
             behavior: HitTestBehavior.opaque,
-            onTap: () {
-              if (showKeyboardHideFab) {
-                _showEdit = false;
-                gFFI.invokeMethod("enable_soft_keyboard", false);
-                _mobileFocusNode.unfocus();
-                _physicalFocusNode.requestFocus();
-              } else if (_showGestureHelp) {
-                _showGestureHelp = false;
-              } else {
-                _showBar.value = !_showBar.value;
-              }
-              if (mounted) setState(() {});
-            },
-            onPanStart: (details) {
-              _fabDragStart = details.globalPosition;
+            onPointerDown: (event) {
+              _fabDragFingerStart = event.position;
+              _fabDragInitPos = fabPos;
               _isFabDragging = false;
             },
-            onPanUpdate: (details) {
-              if (!_isFabDragging &&
-                  (details.globalPosition - _fabDragStart).distance > 6.0) {
+            onPointerMove: (event) {
+              final delta = event.position - _fabDragFingerStart;
+              if (!_isFabDragging && delta.distance > 4.0) {
                 _isFabDragging = true;
               }
               if (_isFabDragging) {
                 setState(() {
                   _updateFabPosition(
                     orientation,
-                    Offset(fabPos.dx + details.delta.dx,
-                        fabPos.dy + details.delta.dy),
+                    _fabDragInitPos + delta,
                     size,
                   );
                 });
               }
             },
-            onPanEnd: (details) {
+            onPointerUp: (event) {
+              if (_isFabDragging) {
+                _saveFabPosition(orientation);
+                _isFabDragging = false;
+              } else {
+                // Instant tap response with zero arena timeout!
+                if (showKeyboardHideFab) {
+                  _showEdit = false;
+                  gFFI.invokeMethod("enable_soft_keyboard", false);
+                  _mobileFocusNode.unfocus();
+                  _physicalFocusNode.requestFocus();
+                } else if (_showGestureHelp) {
+                  _showGestureHelp = false;
+                } else {
+                  _showBar.value = true;
+                }
+                if (mounted) setState(() {});
+              }
+            },
+            onPointerCancel: (event) {
               if (_isFabDragging) {
                 _saveFabPosition(orientation);
                 _isFabDragging = false;

@@ -453,10 +453,10 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch && ffiModel.touchPanMode.value == 'scroll') {
-      // Android native follow-the-finger smooth drag scroll:
-      // Send smooth trackpad deltas with 1:1 displacement ratio
-      _oneFingerScrollX += d.delta.dx * 1.2;
-      _oneFingerScrollY += d.delta.dy * 1.2;
+      // Smooth & responsive follow-the-finger drag scroll:
+      // Multiplier 2.2 for natural mobile viewport scroll speed, non-blocking FFI dispatch
+      _oneFingerScrollX += d.delta.dx * 2.2;
+      _oneFingerScrollY += d.delta.dy * 2.2;
 
       final sendX = _oneFingerScrollX.truncate();
       final sendY = _oneFingerScrollY.truncate();
@@ -464,7 +464,7 @@ class _RawTouchGestureDetectorRegionState
         _oneFingerScrollX -= sendX;
         _oneFingerScrollY -= sendY;
         if (!widget.isCamera) {
-          await bind.sessionSendMouse(
+          bind.sessionSendMouse(
               sessionId: sessionId,
               msg: json.encode(inputModel.modify({
                 'id': inputModel.id,
@@ -504,15 +504,16 @@ class _RawTouchGestureDetectorRegionState
       if (touchPanMode == 'scroll') {
         _oneFingerScrollX = 0;
         _oneFingerScrollY = 0;
-        // Inertia fling for native Android dragging feel
+        // Inertia fling for silky smooth deceleration feel
         final vy = d.velocity.pixelsPerSecond.dy;
         final vx = d.velocity.pixelsPerSecond.dx;
-        if (vy.abs() > 150 || vx.abs() > 150) {
-          double curVx = vx * 0.016 * 1.2;
-          double curVy = vy * 0.016 * 1.2;
-          _oneFingerInertiaTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) async {
-            curVx *= 0.92;
-            curVy *= 0.92;
+        if (vy.abs() > 100 || vx.abs() > 100) {
+          double curVx = vx * 0.016 * 2.0;
+          double curVy = vy * 0.016 * 2.0;
+          _oneFingerInertiaTimer =
+              Timer.periodic(const Duration(milliseconds: 16), (timer) {
+            curVx *= 0.94;
+            curVy *= 0.94;
             final sendX = curVx.round();
             final sendY = curVy.round();
             if (sendX.abs() <= 0 && sendY.abs() <= 0) {
@@ -520,7 +521,7 @@ class _RawTouchGestureDetectorRegionState
               return;
             }
             if (!widget.isCamera) {
-              await bind.sessionSendMouse(
+              bind.sessionSendMouse(
                   sessionId: sessionId,
                   msg: json.encode(inputModel.modify({
                     'id': inputModel.id,
@@ -680,7 +681,8 @@ class _RawTouchGestureDetectorRegionState
         await bind.sessionSendPointer(
             sessionId: sessionId,
             msg: json.encode(
-                PointerEventToRust(kPointerEventKindTouch, 'scale', 0).toJson()));
+                PointerEventToRust(kPointerEventKindTouch, 'scale', 0)
+                    .toJson()));
       }
     }
     _scale = 1;
