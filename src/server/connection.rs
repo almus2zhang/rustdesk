@@ -4275,29 +4275,14 @@ impl Connection {
                         crate::virtual_display_manager::amyuni_idd::ensure_custom_resolutions(w, h).ok();
                         crate::usb_display::plug_in_usb_display(w, h).ok();
                         crate::usb_display::restore_usb_display_settings(&peer_id);
-                        // plug_in_usb_display() already applied the resolution.
-                        // Do not repeat it here: the old retry path called
-                        // cycle_monitor(), which unplugs/replugs the monitor and
-                        // makes Windows broadcast a display removal, so the
-                        // peer falls back to the first display with a black frame.
-                        let target_switch = display_service::try_get_displays()
-                            .ok()
-                            .and_then(|displays| {
-                                displays.iter().position(|d| {
-                                    crate::usb_display::is_this_usb_display(&d.name())
-                                })
-                            });
-                        if let Some(pos) = target_switch {
-                            if self.display_idx != pos {
-                                log::info!("Switching connection to virtual secondary display idx {}", pos);
-                                if let Some(server) = self.server.upgrade() {
-                                    self.switch_display_to(pos, server);
-                                    if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
-                                        self.send(msg_out).await;
-                                    }
-                                }
-                            }
-                        }
+                        // Do NOT switch the host subscription here. Doing it
+                        // before the client has shown its first frame leaves the
+                        // peer pointed at a display whose capturer is not ready
+                        // (black screen, toolbar never appears). The monitor
+                        // addition is broadcast by display_service; the client
+                        // then sends a normal SwitchDisplay request and
+                        // handle_switch_display() performs the switch.
+                        log::info!("Secondary display ready; waiting for client SwitchDisplay");
                     }
                 }
             }

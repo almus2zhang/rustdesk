@@ -108,6 +108,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final _blockableOverlayState = BlockableOverlayState();
   StreamSubscription? _displaysSubscription;
   bool _hasAutoSwitchedDisplay = false;
+  bool _firstImageReceived = false;
   int _prevDisplayCount = 0;
 
   final keyboardVisibilityController = KeyboardVisibilityController();
@@ -275,8 +276,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     gFFI.imageModel.addCallbackOnFirstImage((String peerId) {
       gFFI.dialogManager.dismissAll();
       if (isSecondary) {
+        _firstImageReceived = true;
+        // Only request the virtual display here. The host creates it after
+        // receiving this message, and the resulting display-list change
+        // triggers the switch via the standard sessionSwitchDisplay path.
         _sendPhysicalResolutionToServer();
-        _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
       }
       gFFI.recordingModel
           .updateStatus(bind.sessionGetIsRecording(sessionId: gFFI.sessionId));
@@ -530,6 +534,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
     if (displays.isEmpty) return;
+    // Never switch before the first frame: the loading dialog is dismissed and
+    // the toolbar is driven by that callback, so an early switch leaves the
+    // page black with no controls.
+    if (!_firstImageReceived) return;
 
     final currentCount = displays.length;
     // Check if a new display was dynamically added (e.g. from 1 to 2, or 2 to 3, etc.)
@@ -538,7 +546,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _prevDisplayCount = currentCount;
 
     if (currentCount > 1) {
-      if (isNewlyAddedDisplay || !_hasAutoSwitchedDisplay) {
+      if (isNewlyAddedDisplay && !_hasAutoSwitchedDisplay) {
         _hasAutoSwitchedDisplay = true;
         // On Windows host, the newly plugged virtual display is appended at the end
         final targetIndex = currentCount - 1;
