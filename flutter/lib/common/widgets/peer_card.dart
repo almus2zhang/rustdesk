@@ -1135,6 +1135,33 @@ class DiscoveredPeerCard extends BasePeerCard {
       _terminalAction(context),
     ];
 
+    // The "discovered" tab is the natural place to invite a LAN peer, and its
+    // peer.ip is populated so the invite can be unicast instead of relying on
+    // a broadcast that Android/AP isolation may drop.
+    if (isDesktop &&
+        (peer.platform == kPeerPlatformAndroid || peer.platform == 'iOS')) {
+      final isZh = localeName.startsWith('zh');
+      menuItems.add(MenuEntryButton<String>(
+        childBuilder: (TextStyle? style) => Text(
+          isZh
+              ? '📱 拓展至此设备作为副屏'
+              : '📱 Extend to this device as secondary display',
+          style: style?.copyWith(
+                  color: Colors.blueAccent, fontWeight: FontWeight.bold) ??
+              const TextStyle(
+                  color: Colors.blueAccent, fontWeight: FontWeight.bold),
+        ),
+        proc: () {
+          final target = peer.ip.isNotEmpty ? '${peer.ip}|${peer.id}' : peer.id;
+          bind.mainSetOption(
+              key: 'send_secondary_display_invite', value: target);
+          showToast(isZh ? '已发送副屏扩展邀请' : 'Secondary display invite sent');
+        },
+        padding: menuPadding,
+        dismissOnClicked: true,
+      ));
+    }
+
     if (peer.platform == kPeerPlatformWindows) {
       menuItems.add(_terminalRunAsAdminAction(context));
     }
