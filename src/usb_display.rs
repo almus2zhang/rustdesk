@@ -141,8 +141,11 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
                 virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(dev_name, width, height);
                 let res = crate::platform::change_resolution(dev_name, width as usize, height as usize);
                 if res.is_err() {
-                    log::warn!("change_resolution directly failed: {:?}, cycling monitor", res);
-                    virtual_display_manager::amyuni_idd::cycle_monitor();
+                    // Never cycle (unplug/replug) the monitor while a session is
+                    // active: Windows broadcasts a display removal and the peer
+                    // switches back to the first display (black screen).
+                    log::warn!("change_resolution failed: {:?}, retrying once", res);
+                    std::thread::sleep(Duration::from_millis(200));
                     crate::platform::change_resolution(dev_name, width as usize, height as usize).ok();
                 }
             }

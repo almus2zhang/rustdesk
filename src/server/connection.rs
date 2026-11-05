@@ -4275,24 +4275,18 @@ impl Connection {
                         crate::virtual_display_manager::amyuni_idd::ensure_custom_resolutions(w, h).ok();
                         crate::usb_display::plug_in_usb_display(w, h).ok();
                         crate::usb_display::restore_usb_display_settings(&peer_id);
-                        let target_switch = {
-                            if let Ok(displays) = display_service::try_get_displays() {
-                                for d in &displays {
-                                    if crate::usb_display::is_this_usb_display(&d.name()) {
-                                        virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(&d.name(), w, h);
-                                        let res = crate::platform::change_resolution(&d.name(), w as usize, h as usize);
-                                        if res.is_err() {
-                                            log::warn!("change_resolution directly failed: {:?}, cycling monitor", res);
-                                            virtual_display_manager::amyuni_idd::cycle_monitor();
-                                            crate::platform::change_resolution(&d.name(), w as usize, h as usize).ok();
-                                        }
-                                    }
-                                }
-                                displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name()))
-                            } else {
-                                None
-                            }
-                        };
+                        // plug_in_usb_display() already applied the resolution.
+                        // Do not repeat it here: the old retry path called
+                        // cycle_monitor(), which unplugs/replugs the monitor and
+                        // makes Windows broadcast a display removal, so the
+                        // peer falls back to the first display with a black frame.
+                        let target_switch = display_service::try_get_displays()
+                            .ok()
+                            .and_then(|displays| {
+                                displays.iter().position(|d| {
+                                    crate::usb_display::is_this_usb_display(&d.name())
+                                })
+                            });
                         if let Some(pos) = target_switch {
                             if self.display_idx != pos {
                                 log::info!("Switching connection to virtual secondary display idx {}", pos);
@@ -4373,9 +4367,11 @@ impl Connection {
                             r.height,
                             e
                         );
+                        // Retry once, but never cycle (unplug/replug) the
+                        // monitor during an active session: that broadcasts a
+                        // display removal and leaves the peer on a black frame.
                         #[cfg(windows)]
                         if virtual_display_manager::amyuni_idd::is_my_display(&name) || crate::usb_display::is_this_usb_display(&name) {
-                            virtual_display_manager::amyuni_idd::cycle_monitor();
                             crate::platform::change_resolution(&name, r.width as _, r.height as _).ok();
                         }
                     }
