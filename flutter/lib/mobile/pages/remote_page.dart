@@ -109,7 +109,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   StreamSubscription? _displaysSubscription;
   bool _hasAutoSwitchedDisplay = false;
   bool _firstImageReceived = false;
-  int _prevDisplayCount = 0;
+  int _initialDisplayCount = 0;
 
   final keyboardVisibilityController = KeyboardVisibilityController();
   late final StreamSubscription<bool> keyboardSubscription;
@@ -277,10 +277,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       gFFI.dialogManager.dismissAll();
       if (isSecondary) {
         _firstImageReceived = true;
+        _initialDisplayCount = gFFI.ffiModel.pi.displays.length;
         // Only request the virtual display here. The host creates it after
         // receiving this message, and the resulting display-list change
         // triggers the switch via the standard sessionSwitchDisplay path.
         _sendPhysicalResolutionToServer();
+        // USB plugs the monitor in before login, so there may be no further
+        // displays event. Apply the remembered choice immediately as well.
+        _checkAndAutoSwitchUsbDisplay(gFFI.ffiModel.pi.displays);
       }
       gFFI.recordingModel
           .updateStatus(bind.sessionGetIsRecording(sessionId: gFFI.sessionId));
@@ -533,34 +537,42 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
+    // Only a secondary-display session restores a display choice. A normal
+    // remote-control connection must never be moved off the primary monitor.
+    if (!isSecondary) return;
     if (displays.isEmpty) return;
     // Never switch before the first frame: the loading dialog is dismissed and
     // the toolbar is driven by that callback, so an early switch leaves the
     // page black with no controls.
     if (!_firstImageReceived) return;
+    if (_hasAutoSwitchedDisplay) return;
 
-    final currentCount = displays.length;
-    // Check if a new display was dynamically added (e.g. from 1 to 2, or 2 to 3, etc.)
-    final bool isNewlyAddedDisplay =
-        _prevDisplayCount > 0 && currentCount > _prevDisplayCount;
-    _prevDisplayCount = currentCount;
+    // USB plugs the monitor in before login, so it is already in the first
+    // frame. A WiFi invite adds it afterwards: wait for that display-list
+    // change, otherwise a host with several physical monitors would be
+    // switched to the wrong one.
+    final usbPrePlugged = widget.id.startsWith("127.0.0.1");
+    final virtualDisplayReady = displays.length >= 2 &&
+        (usbPrePlugged || displays.length > _initialDisplayCount);
+    if (!virtualDisplayReady) return;
 
-    if (currentCount > 1) {
-      if (isNewlyAddedDisplay && !_hasAutoSwitchedDisplay) {
-        _hasAutoSwitchedDisplay = true;
-        // On Windows host, the newly plugged virtual display is appended at the end
-        final targetIndex = currentCount - 1;
-        if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
-          debugPrint(
-              "Auto-switching USB display to newly added monitor $targetIndex (total $currentCount displays)");
-          openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
-          BotToast.showText(
-            text: localeName.startsWith('zh')
-                ? '\xe5\xb7\xb2\xe8\x87\xaa\xe5\x8a\xa8\xe5\x88\x87\xe6\x8d\xa2\xe8\x87\xb3\xe6\x96\xb0\xe5\xa2\x9e\xe8\x99\x9a\xe6\x8b\x9f\xe5\x89\xaf\xe5\xb1\x8f (\xe5\xb1\x8f\xe5\xb9\x95 ${targetIndex + 1})'
-                : 'Auto-switched to new secondary display (Screen ${targetIndex + 1})',
-          );
-        }
-      }
+    _hasAutoSwitchedDisplay = true;
+
+    final saved =
+        bind.mainGetPeerOptionSync(id: widget.id, key: 'usb_selected_display');
+    // '0' means the user last stayed on the primary monitor. An empty value
+    // means no choice has been made yet; a secondary-display session then
+    // defaults to the virtual monitor (appended last by Windows).
+    final stayOnPrimary = saved == '0';
+    final targetIndex = stayOnPrimary ? 0 : displays.length - 1;
+
+    if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
+      debugPrint('Restoring remembered display choice: $targetIndex '
+          '(saved "$saved", ${displays.length} displays)');
+      openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
+      BotToast.showText(
+        text: 'Restored remembered display (Screen ${targetIndex + 1})',
+      );
     }
   }
 

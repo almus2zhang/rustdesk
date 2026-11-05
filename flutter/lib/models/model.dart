@@ -3376,44 +3376,41 @@ class CursorModel with ChangeNotifier {
   }
 
   Offset? getRemotePosInRect(Offset offset) {
+    final s = (scale as num) == 0 ? 1.0 : (scale as num).toDouble();
     final adjust = parent.target?.canvasModel.getAdjustY() ?? 0;
     final newPos = _getNewPos(offset.dx, offset.dy, adjust);
 
-    // The gesture layer spans the whole screen, but CanvasModel.getSize()
-    // subtracts the horizontal safe-area insets and the bottom overlay /
-    // keyboard inset. Widen both acceptance rects by those amounts, so taps
-    // at the right/bottom edge get clamped to the remote border below instead
-    // of being dropped (single taps failed near the edge, double taps worked).
+    // The gesture layer covers the whole window, but CanvasModel.getSize()
+    // subtracts safe-area / keyboard / overlay insets and getVisibleRect() is
+    // built from that smaller size. Rebuild the acceptance rect from the FULL
+    // window size. Sizes are logical screen pixels, so they must be divided
+    // by the canvas scale before being compared with remote coordinates:
+    // adding the raw insets (as before) under-compensates whenever scale < 1,
+    // which is the normal case when a 1920x1200 virtual display is fitted to
+    // a tablet screen.
     final media = MediaQueryData.fromView(ui.window);
-    final extraX =
-        isMobile ? media.padding.left + media.padding.right : 0.0;
-    final helpBottom = parent.target?.cursorModel
-            .keyHelpToolsRectToAdjustCanvas?.bottom ??
-        0.0;
-    final extraY = isMobile ? media.viewInsets.bottom + helpBottom : 0.0;
     final base = getVisibleRect();
-    final visibleRect = Rect.fromLTRB(
+    final visibleRect = Rect.fromLTWH(
       base.left - 0.5,
-      base.top - 0.5,
-      base.right + extraX + 0.5,
-      base.bottom + extraY + 0.5,
+      base.top - adjust / s - 0.5,
+      media.size.width / s + 1.0,
+      media.size.height / s + 1.0,
     );
     if (!isPointInRect(newPos, visibleRect)) {
       return null;
     }
     final rect = parent.target?.ffiModel.rect;
     if (rect != null) {
-      final tolerantRect = Rect.fromLTRB(
-        rect.left - 0.5,
-        rect.top - 0.5,
-        rect.right + extraX + 0.5,
-        rect.bottom + extraY + 0.5,
-      );
+      // Accept a small overshoot at the border, then clamp into the last
+      // VALID pixel. rect.right/bottom are exclusive: clamping to them sent
+      // out-of-range coordinates that Windows silently ignored, which is why
+      // taps on the very edge appeared to do nothing.
+      final tolerantRect = rect.inflate(2.0 / s + 1.0);
       if (!isPointInRect(newPos, tolerantRect)) {
         return null;
       }
-      final clampedX = newPos.dx.clamp(rect.left, rect.right);
-      final clampedY = newPos.dy.clamp(rect.top, rect.bottom);
+      final clampedX = newPos.dx.clamp(rect.left, rect.right - 1);
+      final clampedY = newPos.dy.clamp(rect.top, rect.bottom - 1);
       return Offset(clampedX, clampedY);
     }
     return newPos;

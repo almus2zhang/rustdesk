@@ -1794,22 +1794,31 @@ impl Connection {
                     // But the displays may be updated later, before creating the video capturer.
                     #[cfg(windows)]
                     if is_usb_conn {
-                        let target_idx = displays.iter().position(|d| {
-                            crate::usb_display::is_this_usb_display(&d.name)
-                        }).or_else(|| {
-                            if displays.len() > 1 {
-                                Some(displays.len() - 1)
-                            } else {
-                                None
-                            }
-                        });
+                        let peer_id = self.lr.my_id.clone();
+                        let prefer_primary = crate::ui_interface::get_peer_option(
+                            peer_id.clone(),
+                            "usb_display_target".to_string(),
+                        ) == "primary";
+                        let target_idx = if prefer_primary {
+                            None
+                        } else {
+                            displays.iter().position(|d| {
+                                crate::usb_display::is_this_usb_display(&d.name)
+                            }).or_else(|| {
+                                if displays.len() > 1 {
+                                    Some(displays.len() - 1)
+                                } else {
+                                    None
+                                }
+                            })
+                        };
 
                         if let Some(pos) = target_idx {
                             log::info!("Auto-selecting virtual display index {} ({}) for secondary display peer {}", pos, displays[pos].name, self.lr.my_id);
                             self.display_idx = pos;
+                        } else if prefer_primary {
+                            log::info!("Secondary display peer {} stays on the primary monitor", peer_id);
                         }
-
-                        let peer_id = self.lr.my_id.clone();
                         let saved_pos_str = crate::ui_interface::get_peer_option(peer_id, "usb_display_pos".to_string());
                         if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
                             if let (Ok(x), Ok(y)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
@@ -4068,6 +4077,21 @@ impl Connection {
 
     async fn handle_switch_display(&mut self, s: SwitchDisplay) {
         let display_idx = s.display as usize;
+        #[cfg(windows)]
+        if crate::usb_display::is_usb_display_active() {
+            // Remember whether the next secondary-display session should land
+            // on the virtual monitor or stay on the primary monitor.
+            let choice = if display_idx == 0 {
+                "primary"
+            } else {
+                "secondary"
+            };
+            crate::ui_interface::set_peer_option(
+                self.lr.my_id.clone(),
+                "usb_display_target".to_string(),
+                choice.to_string(),
+            );
+        }
         if self.display_idx != display_idx {
             if let Some(server) = self.server.upgrade() {
                 self.switch_display_to(display_idx, server.clone());

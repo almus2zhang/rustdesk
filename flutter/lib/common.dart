@@ -3393,7 +3393,11 @@ openMonitorInTheSameTab(int i, FFI ffi, PeerInfo pi,
   );
   ffi.ffiModel.switchToNewDisplay(i, ffi.sessionId, ffi.id,
       updateCursorPos: updateCursorPos);
-  if (i != kAllDisplayValue && ffi.id.startsWith("127.0.0.1")) {
+  // Remember the monitor the user last chose. WiFi secondary-display sessions
+  // use a LAN id rather than 127.0.0.1, so do not restrict this to USB. Only
+  // multi-monitor sessions are recorded, and the value is read back only in a
+  // secondary-display session.
+  if (i != kAllDisplayValue && pi.displays.length > 1) {
     bind.mainSetPeerOptionSync(
         id: ffi.id, key: 'usb_selected_display', value: i.toString());
   }

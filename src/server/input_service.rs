@@ -26,6 +26,8 @@ use std::{
     thread,
     time::{self, Duration, Instant},
 };
+#[cfg(windows)]
+use std::sync::{atomic::AtomicU64, Once};
 
 #[cfg(windows)]
 use winapi::um::winuser::WHEEL_DELTA;
@@ -1269,19 +1271,42 @@ pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, 
 
 #[cfg(target_os = "windows")]
 static SCALE_CTRL_DOWN: AtomicBool = AtomicBool::new(false);
+#[cfg(target_os = "windows")]
+static SCALE_LAST_ACTIVE_MS: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "windows")]
+static SCALE_RELEASE_ONCE: Once = Once::new();
+// A quick pinch is often split into two scale gestures by Flutter, and a late
+// `scale` update can arrive after `scale=0`. Releasing Ctrl immediately makes
+// Windows see a second Ctrl press ("double Ctrl"). Keep Ctrl down for a short
+// coalescing window so consecutive gestures share a single press.
+#[cfg(target_os = "windows")]
+const SCALE_CTRL_HOLD_MS: u64 = 250;
 
 #[cfg(target_os = "windows")]
 fn handle_scale(scale: i32) {
-    let mut en = ENIGO.lock().unwrap();
+    SCALE_LAST_ACTIVE_MS.store(get_time() as u64, Ordering::SeqCst);
+    SCALE_RELEASE_ONCE.call_once(|| {
+        thread::spawn(|| loop {
+            thread::sleep(Duration::from_millis(20));
+            let now = get_time() as u64;
+            if now.saturating_sub(SCALE_LAST_ACTIVE_MS.load(Ordering::SeqCst))
+                < SCALE_CTRL_HOLD_MS
+            {
+                continue;
+            }
+            if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
+                ENIGO.lock().unwrap().key_up(Key::Control);
+            }
+        });
+    });
+
     if scale == 0 {
-        // End of the pinch: release Ctrl once.
-        if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
-            en.key_up(Key::Control);
-        }
+        // Release is deferred to the watchdog above.
         return;
     }
-    // One pinch generates many `scale` events. Pressing Ctrl on every one of
-    // them is seen by Windows as a repeated / double Ctrl press.
+
+    let mut en = ENIGO.lock().unwrap();
+    // One pinch generates many `scale` events; press Ctrl only once.
     if !SCALE_CTRL_DOWN.swap(true, Ordering::SeqCst) {
         if en.key_down(Key::Control).is_err() {
             SCALE_CTRL_DOWN.store(false, Ordering::SeqCst);

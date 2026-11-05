@@ -184,10 +184,9 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch) {
-      if (lastTapDownDetails != null &&
-          !ffi.cursorModel.isInRemoteRect(lastTapDownDetails.localPosition)) {
-        return;
-      }
+      // `move()` already validates and clamps the position. Gating on the
+      // tap-down position as well drops taps near the border whenever the
+      // finger moves a pixel between down and up.
       final isMoved =
           await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
       if (isMoved) {
