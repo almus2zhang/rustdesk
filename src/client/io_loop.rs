@@ -1152,11 +1152,12 @@ impl<T: InvokeUiSession> Remote<T> {
             .unwrap_or_default();
         let custom_fps_arc = self.handler.lc.read().unwrap().custom_fps.clone();
         let custom_fps_opt = custom_fps_arc.lock().unwrap().clone();
+        let is_usb_secondary = self.handler.lc.read().unwrap().id.starts_with("127.0.0.1");
         if let Some(target_fps) = custom_fps_opt {
             if target_fps >= 30 {
-                // When custom_fps is explicitly configured, never let auto-fps downgrade
-                // the server's FPS unless there is actual decoding queue backlog (> 1)
-                if max_queue_len <= 1 {
+                // Only the USB/loopback secondary display bypasses auto-fps;
+                // ordinary P2P sessions keep their adaptive throttling.
+                if (direct && is_usb_secondary) || max_queue_len <= 1 {
                     return;
                 }
             }

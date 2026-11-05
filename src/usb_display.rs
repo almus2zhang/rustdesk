@@ -20,6 +20,11 @@ lazy_static::lazy_static! {
     static ref USB_DISPLAY_ACTIVE: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     static ref USB_DISPLAY_INDEX: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
     static ref USB_DISPLAY_DEVICE_NAME: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    static ref USB_DISPLAY_PEER_ID: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    // Number of virtual monitors actually created by this process. Only these
+    // are removed on detach; never touch a monitor added by the user or by
+    // another process.
+    static ref USB_DISPLAY_CREATED: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
 }
 
 /// Check if USB secondary display is currently active
@@ -30,6 +35,70 @@ pub fn is_usb_display_active() -> bool {
 /// Get the device name (e.g. \\.\DISPLAY3) of the active USB virtual display
 pub fn get_usb_display_device_name() -> Option<String> {
     USB_DISPLAY_DEVICE_NAME.lock().unwrap().clone()
+}
+
+/// Remember which peer owns the current USB virtual display. Display settings
+/// are stored per peer so they can be restored on the next connection.
+pub fn set_usb_display_peer_id(peer_id: String) {
+    *USB_DISPLAY_PEER_ID.lock().unwrap() = Some(peer_id);
+}
+
+/// Persist the virtual display geometry while the monitor still exists.
+/// The USB detach poller removes the monitor before `Connection::drop` runs,
+/// so saving only at drop time used to lose every position the user changed.
+#[cfg(windows)]
+pub fn save_usb_display_state() {
+    let peer_id = match USB_DISPLAY_PEER_ID.lock().unwrap().as_ref() {
+        Some(id) => id.clone(),
+        None => return,
+    };
+    let dev_name = match get_usb_display_device_name() {
+        Some(name) => name,
+        None => return,
+    };
+    if let Some((x, y)) = crate::platform::windows::get_display_position(&dev_name) {
+        let pos_str = format!("{},{}", x, y);
+        log::info!("Saving USB display position {} for peer {}", pos_str, peer_id);
+        crate::ui_interface::set_peer_option(
+            peer_id.clone(),
+            "usb_display_pos".to_string(),
+            pos_str,
+        );
+    }
+    if let Ok(r) = crate::platform::windows::current_resolution(&dev_name) {
+        let res_str = format!("{}x{}", r.width, r.height);
+        log::info!("Saving USB display resolution {} for peer {}", res_str, peer_id);
+        crate::ui_interface::set_peer_option(
+            peer_id,
+            "usb_display_resolution".to_string(),
+            res_str,
+        );
+    }
+}
+
+/// Apply the remembered position to the currently active virtual display.
+#[cfg(windows)]
+pub fn restore_usb_display_settings(peer_id: &str) {
+    let pos_str = crate::ui_interface::get_peer_option(
+        peer_id.to_string(),
+        "usb_display_pos".to_string(),
+    );
+    let (x_s, y_s) = match pos_str.split_once(',') {
+        Some(v) => v,
+        None => return,
+    };
+    let (x, y) = match (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
+        (Ok(x), Ok(y)) => (x, y),
+        _ => return,
+    };
+    let dev_name = match get_usb_display_device_name() {
+        Some(name) => name,
+        None => return,
+    };
+    match crate::platform::windows::set_display_position(&dev_name, x, y) {
+        Ok(()) => log::info!("Restored USB display position ({}, {})", x, y),
+        Err(e) => log::warn!("Failed to restore USB display position: {}", e),
+    }
 }
 
 /// Check whether a given monitor display name is the USB virtual display
@@ -80,6 +149,30 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             return Ok(idx);
         }
 
+        // The Amyuni driver keeps its monitors across RustDesk restarts while
+        // USB_DISPLAY_INDEX is only process-local. Reuse the existing monitor
+        // instead of adding another virtual display on every reconnection.
+        if virtual_display_manager::amyuni_idd::get_monitor_count() > 0 {
+            let mut existing = None;
+            if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                for d in displays {
+                    if virtual_display_manager::amyuni_idd::is_my_display(&d.name()) {
+                        existing = Some(d.name().to_string());
+                        break;
+                    }
+                }
+            }
+            if let Some(dev_name) = existing {
+                virtual_display_manager::amyuni_idd::ensure_custom_resolutions(width, height).ok();
+                crate::platform::change_resolution(&dev_name, width as usize, height as usize).ok();
+                *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(dev_name);
+                *idx_lock = Some(0);
+                USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
+                log::info!("Reusing existing USB secondary display");
+                return Ok(0);
+            }
+        }
+
         log::info!("Plugging in USB secondary display with mode {}x{}", width, height);
         let modes = vec![vec![
             virtual_display::MonitorMode {
@@ -101,6 +194,7 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
 
         let indices = virtual_display_manager::plug_in_peer_request(modes)?;
         if let Some(&first_idx) = indices.first() {
+            *USB_DISPLAY_CREATED.lock().unwrap() += 1;
             *idx_lock = Some(first_idx);
             USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
             if let Some(dev_name) = virtual_display_manager::get_device_name_by_peer_index(first_idx) {
@@ -133,12 +227,33 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
 pub fn plug_out_usb_display() -> ResultType<()> {
     #[cfg(windows)]
     {
+        // Must run before the monitor is removed: the USB detach poller gets
+        // here well before `Connection::drop`.
+        save_usb_display_state();
+
         let mut idx_lock = USB_DISPLAY_INDEX.lock().unwrap();
-        if let Some(idx) = idx_lock.take() {
-            log::info!("Plugging out USB secondary display (index: {})", idx);
-            virtual_display_manager::plug_out_monitor_indices(&[idx], false, true)?;
+        idx_lock.take();
+        // Only remove monitors this process actually created. Monitors added
+        // by the user, by another process, or reused from a previous session
+        // must be left alone.
+        let created = {
+            let mut n = USB_DISPLAY_CREATED.lock().unwrap();
+            let v = *n;
+            *n = 0;
+            v
+        };
+        let count = created.min(4);
+        if count > 0 {
+            log::info!(
+                "Plugging out {} secondary display(s) created by this session",
+                count
+            );
+            let indices = vec![0u32; count];
+            virtual_display_manager::plug_out_monitor_indices(&indices, false, true).ok();
         }
+        drop(idx_lock);
         USB_DISPLAY_DEVICE_NAME.lock().unwrap().take();
+        USB_DISPLAY_PEER_ID.lock().unwrap().take();
         USB_DISPLAY_ACTIVE.store(false, Ordering::SeqCst);
         Ok(())
     }

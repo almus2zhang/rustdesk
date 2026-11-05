@@ -1766,15 +1766,13 @@ impl Connection {
 
             #[cfg(windows)]
             let is_usb_conn = self.ip.starts_with("127.0.0.1");
+            // Only USB plugs in the virtual display before login_response.
+            // WiFi connections first show the primary monitor; a remembered
+            // secondary display is restored after login_response is sent.
             #[cfg(windows)]
-            let is_saved_secondary = {
+            if is_usb_conn {
                 let peer_id = self.lr.my_id.clone();
-                let is_sec = crate::ui_interface::get_peer_option(peer_id, "is_secondary_display".to_string());
-                is_usb_conn || is_sec == "Y"
-            };
-            #[cfg(windows)]
-            if is_saved_secondary {
-                let peer_id = self.lr.my_id.clone();
+                crate::usb_display::set_usb_display_peer_id(peer_id.clone());
                 let saved_res_str = crate::ui_interface::get_peer_option(peer_id.clone(), "usb_display_resolution".to_string());
                 let (w, h) = if let Some((w_s, h_s)) = saved_res_str.split_once('x') {
                     (w_s.trim().parse::<u32>().unwrap_or(1920), h_s.trim().parse::<u32>().unwrap_or(1200))
@@ -1795,7 +1793,7 @@ impl Connection {
                     // For compatibility with old versions, we need to send the displays to the peer.
                     // But the displays may be updated later, before creating the video capturer.
                     #[cfg(windows)]
-                    if is_saved_secondary {
+                    if is_usb_conn {
                         let target_idx = displays.iter().position(|d| {
                             crate::usb_display::is_this_usb_display(&d.name)
                         }).or_else(|| {
@@ -1815,9 +1813,21 @@ impl Connection {
                         let saved_pos_str = crate::ui_interface::get_peer_option(peer_id, "usb_display_pos".to_string());
                         if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
                             if let (Ok(x), Ok(y)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
-                                if let Some(target_d) = displays.get(self.display_idx) {
-                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, target_d.name);
-                                    crate::platform::windows::set_display_position(&target_d.name, x, y).ok();
+                                // Restore onto the USB virtual display itself. Falling
+                                // back to the last display used to move a physical
+                                // monitor when the device name lookup failed.
+                                let target = crate::usb_display::get_usb_display_device_name()
+                                    .or_else(|| {
+                                        displays
+                                            .iter()
+                                            .find(|d| crate::usb_display::is_this_usb_display(&d.name))
+                                            .map(|d| d.name.clone())
+                                    });
+                                if let Some(name) = target {
+                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
+                                    if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
+                                        log::warn!("Failed to restore secondary display position: {}", e);
+                                    }
                                 }
                             }
                         }
@@ -1858,14 +1868,24 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
-        let is_secondary = self.ip.starts_with("127.0.0.1") || {
-            let is_sec = crate::ui_interface::get_peer_option(self.lr.my_id.clone(), "is_secondary_display".to_string());
-            is_sec == "Y"
-        };
+        // WiFi: the first frame stays on the primary monitor. A remembered
+        // secondary display is recreated and selected afterwards; peers with
+        // no secondary display history simply stay on the primary monitor.
+        #[cfg(windows)]
+        if !self.ip.starts_with("127.0.0.1") {
+            self.restore_saved_secondary_display().await;
+        }
+        // Low-latency QoS overrides are USB-only; a WiFi secondary display
+        // keeps the normal adaptive behaviour.
+        let is_secondary = self.ip.starts_with("127.0.0.1");
         if is_secondary {
-            log::info!("Secondary display connection detected: auto-optimizing 60 FPS, best quality, and remote cursor");
-            video_service::VIDEO_QOS.lock().unwrap().user_custom_fps(self.inner.id(), 60);
-            video_service::VIDEO_QOS.lock().unwrap().user_image_quality(self.inner.id(), 1);
+            log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
+            let mut qos = video_service::VIDEO_QOS.lock().unwrap();
+            qos.user_custom_fps(self.inner.id(), 60);
+            // `1` is not a valid ImageQuality value; it was parsed as the lowest
+            // custom bitrate. Balanced keeps the USB link's bitrate stable.
+            qos.user_image_quality(self.inner.id(), ImageQuality::Balanced.value());
+            drop(qos);
             self.show_remote_cursor = true;
         }
         if let Some(o) = self.options_in_login.take() {
@@ -3458,10 +3478,17 @@ impl Connection {
                             crate::plugin::handle_client_event(&p.id, &self.lr.my_id, &p.content);
                         self.send(msg).await;
                     }
-                    Some(misc::Union::AutoAdjustFps(fps)) => video_service::VIDEO_QOS
-                        .lock()
-                        .unwrap()
-                        .user_auto_adjust_fps(self.inner.id(), fps),
+                    Some(misc::Union::AutoAdjustFps(fps)) => {
+                        // The USB secondary display is a local loopback link. Client
+                        // auto-fps throttling used to push the server down to 10-20
+                        // FPS, i.e. a 50-100ms per-frame delay.
+                        if !self.ip.starts_with("127.0.0.1") {
+                            video_service::VIDEO_QOS
+                                .lock()
+                                .unwrap()
+                                .user_auto_adjust_fps(self.inner.id(), fps);
+                        }
+                    }
                     Some(misc::Union::ClientRecordStatus(status)) => video_service::VIDEO_QOS
                         .lock()
                         .unwrap()
@@ -4159,6 +4186,60 @@ impl Connection {
         }
     }
 
+    /// Recreate a remembered WiFi secondary display after login_response has
+    /// been sent, so the first frame lands on the primary monitor. Peers that
+    /// never used a secondary display simply keep the primary monitor.
+    #[cfg(windows)]
+    async fn restore_saved_secondary_display(&mut self) {
+        let peer_id = self.lr.my_id.clone();
+        if crate::ui_interface::get_peer_option(
+            peer_id.clone(),
+            "is_secondary_display".to_string(),
+        ) != "Y"
+        {
+            return;
+        }
+        let res_str = crate::ui_interface::get_peer_option(
+            peer_id.clone(),
+            "usb_display_resolution".to_string(),
+        );
+        let (w, h) = match res_str.split_once('x') {
+            Some((w_s, h_s)) => {
+                match (w_s.trim().parse::<u32>(), h_s.trim().parse::<u32>()) {
+                    (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
+                    _ => return,
+                }
+            }
+            None => return,
+        };
+        if crate::usb_display::plug_in_usb_display(w, h).is_err() {
+            return;
+        }
+        crate::usb_display::set_usb_display_peer_id(peer_id.clone());
+        crate::usb_display::restore_usb_display_settings(&peer_id);
+
+        if let Ok(displays) = display_service::try_get_displays() {
+            let target = displays
+                .iter()
+                .position(|d| crate::usb_display::is_this_usb_display(&d.name()));
+            if let Some(pos) = target {
+                if pos != self.display_idx {
+                    log::info!("Switching to remembered secondary display idx {}", pos);
+                    if let Some(server) = self.server.upgrade() {
+                        self.switch_display_to(pos, server);
+                        if let Some(msg_out) = video_service::make_display_changed_msg(
+                            self.display_idx,
+                            None,
+                            self.video_source(),
+                        ) {
+                            self.send(msg_out).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[cfg(windows)]
     async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
         let make_msg = |text: String| {
@@ -4178,6 +4259,11 @@ impl Connection {
             if !virtual_display_manager::is_virtual_display_supported() {
                 self.send(make_msg("idd_not_support_under_win10_2004_tip".to_string()))
                     .await;
+            } else if crate::usb_display::is_usb_display_active() {
+                // Login already created the USB virtual display. Client-side
+                // `virtual-display` replay (first frame / portrait setup) must
+                // not add a second monitor.
+                log::info!("USB secondary display already active, ignoring duplicate plug-in request");
             } else {
                 if let Err(e) = virtual_display_manager::plug_in_monitor(t.display as _, Vec::new())
                 {
@@ -4241,8 +4327,10 @@ impl Connection {
 
                     #[cfg(windows)]
                     {
+                        crate::usb_display::set_usb_display_peer_id(peer_id.clone());
                         crate::virtual_display_manager::amyuni_idd::ensure_custom_resolutions(w, h).ok();
                         crate::usb_display::plug_in_usb_display(w, h).ok();
+                        crate::usb_display::restore_usb_display_settings(&peer_id);
                         let target_switch = {
                             if let Ok(displays) = display_service::try_get_displays() {
                                 for d in &displays {
@@ -4415,10 +4503,17 @@ impl Connection {
             }
         }
         if o.custom_fps > 0 {
+            // Never let the peer's auto-fps value throttle the USB secondary
+            // display below the 60 FPS low-latency target.
+            let fps = if self.ip.starts_with("127.0.0.1") {
+                (o.custom_fps as u32).max(60)
+            } else {
+                o.custom_fps as u32
+            };
             video_service::VIDEO_QOS
                 .lock()
                 .unwrap()
-                .user_custom_fps(self.inner.id(), o.custom_fps as _);
+                .user_custom_fps(self.inner.id(), fps);
         }
         if let Some(q) = o.supported_decoding.clone().take() {
             scrap::codec::Encoder::update(scrap::codec::EncodingUpdate::Update(self.inner.id(), q));
@@ -4777,6 +4872,12 @@ impl Connection {
             return;
         }
         self.closed = true;
+        #[cfg(windows)]
+        if crate::usb_display::is_usb_display_active() {
+            // WiFi secondary display connections never reach the USB detach
+            // poller, so persist geometry here while the monitor still exists.
+            crate::usb_display::save_usb_display_state();
+        }
         // If voice A,B -> C, and A,B has voice call
         // B disconnects, C will reset the voice call input.
         //
@@ -5868,13 +5969,8 @@ impl Drop for Connection {
         if self.ip.starts_with("127.0.0.1") {
             #[cfg(windows)]
             {
-                if let Some(dev_name) = crate::usb_display::get_usb_display_device_name() {
-                    if let Some((cur_x, cur_y)) = crate::platform::windows::get_display_position(&dev_name) {
-                        let pos_str = format!("{},{}", cur_x, cur_y);
-                        log::info!("Saving USB display position {} for peer {}", pos_str, self.lr.my_id);
-                        crate::ui_interface::set_peer_option(self.lr.my_id.clone(), "usb_display_pos".to_string(), pos_str);
-                    }
-                }
+                // plug_out_usb_display() persists the geometry before removing
+                // the monitor (the USB detach poller may already have done so).
                 crate::usb_display::plug_out_usb_display().ok();
             }
         }

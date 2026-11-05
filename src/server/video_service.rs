@@ -134,6 +134,20 @@ pub fn notify_video_frame_fetched_by_conn_id(conn_id: i32, frame_tm: Option<Inst
     }
 }
 
+/// The frame-ack wait is a flow-control bound. Keep the original pacing for
+/// ordinary network sessions and only use the short bound while the USB
+/// secondary display is active.
+#[inline]
+fn frame_ack_wait() -> (u64, u64) {
+    #[cfg(windows)]
+    {
+        if crate::usb_display::is_usb_display_active() {
+            return (5, 1);
+        }
+    }
+    (100, 5)
+}
+
 struct VideoFrameController {
     display_idx: usize,
     cur: Instant,
@@ -164,13 +178,14 @@ impl VideoFrameController {
         }
     }
 
-    #[tokio::main(flavor = "current_thread")]
-    async fn try_wait_next(&mut self, fetched_conn_ids: &mut HashSet<i32>, timeout_millis: u64) {
+    // Runs on the capture thread (a plain std thread). Using try_lock/try_recv
+    // avoids creating a brand new Tokio runtime for every single frame.
+    fn try_wait_next(&mut self, fetched_conn_ids: &mut HashSet<i32>, timeout_millis: u64) {
         if self.send_conn_ids.is_empty() {
             return;
         }
 
-        let timeout_dur = Duration::from_millis(timeout_millis as u64);
+        let timeout_dur = Duration::from_millis(timeout_millis);
         let receiver = {
             match FRAME_FETCHED_NOTIFIERS
                 .lock()
@@ -183,29 +198,20 @@ impl VideoFrameController {
                 }
             }
         };
-        let mut receiver_guard = receiver.lock().await;
-        match tokio::time::timeout(timeout_dur, receiver_guard.recv()).await {
-            Err(_) => {
-                // break if timeout
-                // log::error!("blocking wait frame receiving timeout {}", timeout_millis);
-            }
-            Ok(Some((id, instant))) => {
-                if let Some(tm) = instant {
-                    log::trace!("Channel recv latency: {}", tm.elapsed().as_secs_f32());
+        let wait_begin = Instant::now();
+        loop {
+            if let Ok(mut receiver_guard) = receiver.try_lock() {
+                while let Ok((id, instant)) = receiver_guard.try_recv() {
+                    if let Some(tm) = instant {
+                        log::trace!("Channel recv latency: {}", tm.elapsed().as_secs_f32());
+                    }
+                    fetched_conn_ids.insert(id);
                 }
-                fetched_conn_ids.insert(id);
             }
-            Ok(None) => {
-                // this branch would never be reached
+            if wait_begin.elapsed() >= timeout_dur {
+                break;
             }
-        }
-        while !receiver_guard.is_empty() {
-            if let Some((id, instant)) = receiver_guard.recv().await {
-                if let Some(tm) = instant {
-                    log::trace!("Channel recv latency: {}", tm.elapsed().as_secs_f32());
-                }
-                fetched_conn_ids.insert(id);
-            }
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 }
@@ -822,10 +828,10 @@ fn run(vs: VideoService) -> ResultType<()> {
                     send_counter += 1;
 
                     let mut fetched_conn_ids = HashSet::new();
-                    let timeout_millis = 100u64;
+                    let (timeout_millis, wait_step_millis) = frame_ack_wait();
                     let wait_begin = Instant::now();
                     while wait_begin.elapsed().as_millis() < timeout_millis as _ {
-                        frame_controller.try_wait_next(&mut fetched_conn_ids, 5);
+                        frame_controller.try_wait_next(&mut fetched_conn_ids, wait_step_millis);
                         if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
                             break;
                         }
@@ -1022,13 +1028,13 @@ fn run(vs: VideoService) -> ResultType<()> {
         }
 
         let mut fetched_conn_ids = HashSet::new();
-        let timeout_millis = 100u64;
+        let (timeout_millis, wait_step_millis) = frame_ack_wait();
         let wait_begin = Instant::now();
         while wait_begin.elapsed().as_millis() < timeout_millis as _ {
             if vs.source.is_monitor() {
                 check_privacy_mode_changed(&sp, display_idx, &c)?;
             }
-            frame_controller.try_wait_next(&mut fetched_conn_ids, 5);
+            frame_controller.try_wait_next(&mut fetched_conn_ids, wait_step_millis);
             // break if all connections have received current frame
             if fetched_conn_ids.len() >= frame_controller.send_conn_ids.len() {
                 break;
