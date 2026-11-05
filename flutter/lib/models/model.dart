@@ -3410,8 +3410,16 @@ class CursorModel with ChangeNotifier {
       // rect.right/bottom are exclusive, so clamp into the last VALID pixel;
       // clamping to the boundary used to send out-of-range coordinates that
       // Windows silently ignored.
-      final clampedX = newPos.dx.clamp(rect.left, rect.right - 1);
-      final clampedY = newPos.dy.clamp(rect.top, rect.bottom - 1);
+      // Match InputModel.getPointInRemoteRect(): Windows accepts
+      // [0, width] / [0, height] (needed for edge snapping), other platforms
+      // stop at the last pixel. Subtracting 1 on Windows kept the outermost
+      // column/row out of reach.
+      final isWindows =
+          parent.target?.ffiModel.pi.platform == kPeerPlatformWindows;
+      final maxX = rect.right - (isWindows ? 0 : 1);
+      final maxY = rect.bottom - (isWindows ? 0 : 1);
+      final clampedX = newPos.dx.clamp(rect.left, maxX);
+      final clampedY = newPos.dy.clamp(rect.top, maxY);
       return Offset(clampedX, clampedY);
     }
     return newPos;
