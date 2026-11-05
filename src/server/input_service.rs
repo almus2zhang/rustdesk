@@ -1268,15 +1268,27 @@ pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, 
 }
 
 #[cfg(target_os = "windows")]
+static SCALE_CTRL_DOWN: AtomicBool = AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
 fn handle_scale(scale: i32) {
     let mut en = ENIGO.lock().unwrap();
     if scale == 0 {
-        en.key_up(Key::Control);
-    } else {
-        if en.key_down(Key::Control).is_ok() {
-            en.mouse_scroll_y(scale);
+        // End of the pinch: release Ctrl once.
+        if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
+            en.key_up(Key::Control);
+        }
+        return;
+    }
+    // One pinch generates many `scale` events. Pressing Ctrl on every one of
+    // them is seen by Windows as a repeated / double Ctrl press.
+    if !SCALE_CTRL_DOWN.swap(true, Ordering::SeqCst) {
+        if en.key_down(Key::Control).is_err() {
+            SCALE_CTRL_DOWN.store(false, Ordering::SeqCst);
+            return;
         }
     }
+    en.mouse_scroll_y(scale);
 }
 
 pub fn is_enter(evt: &KeyEvent) -> bool {

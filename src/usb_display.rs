@@ -197,6 +197,25 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             *USB_DISPLAY_CREATED.lock().unwrap() += 1;
             *idx_lock = Some(first_idx);
             USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
+
+            // The Amyuni driver adds the monitor asynchronously. Wait until
+            // Windows enumerates it: otherwise the device-name lookup below
+            // fails, and switching to this display before its capturer exists
+            // leaves the client with a grey (empty) frame.
+            for _ in 0..20 {
+                let found = crate::server::display_service::try_get_displays()
+                    .map(|displays| {
+                        displays.iter().any(|d| {
+                            virtual_display_manager::amyuni_idd::is_my_display(&d.name())
+                        })
+                    })
+                    .unwrap_or(false);
+                if found {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+
             if let Some(dev_name) = virtual_display_manager::get_device_name_by_peer_index(first_idx) {
                 *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(dev_name.clone());
                 crate::platform::change_resolution(&dev_name, width as usize, height as usize).ok();

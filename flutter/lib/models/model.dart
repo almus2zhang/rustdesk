@@ -3378,13 +3378,37 @@ class CursorModel with ChangeNotifier {
   Offset? getRemotePosInRect(Offset offset) {
     final adjust = parent.target?.canvasModel.getAdjustY() ?? 0;
     final newPos = _getNewPos(offset.dx, offset.dy, adjust);
-    final visibleRect = getVisibleRect().inflate(0.5);
+
+    // The gesture layer spans the whole screen, but CanvasModel.getSize()
+    // subtracts the horizontal safe-area insets and the bottom overlay /
+    // keyboard inset. Widen both acceptance rects by those amounts, so taps
+    // at the right/bottom edge get clamped to the remote border below instead
+    // of being dropped (single taps failed near the edge, double taps worked).
+    final media = MediaQueryData.fromView(ui.window);
+    final extraX =
+        isMobile ? media.padding.left + media.padding.right : 0.0;
+    final helpBottom = parent.target?.cursorModel
+            .keyHelpToolsRectToAdjustCanvas?.bottom ??
+        0.0;
+    final extraY = isMobile ? media.viewInsets.bottom + helpBottom : 0.0;
+    final base = getVisibleRect();
+    final visibleRect = Rect.fromLTRB(
+      base.left - 0.5,
+      base.top - 0.5,
+      base.right + extraX + 0.5,
+      base.bottom + extraY + 0.5,
+    );
     if (!isPointInRect(newPos, visibleRect)) {
       return null;
     }
     final rect = parent.target?.ffiModel.rect;
     if (rect != null) {
-      final tolerantRect = rect.inflate(0.5);
+      final tolerantRect = Rect.fromLTRB(
+        rect.left - 0.5,
+        rect.top - 0.5,
+        rect.right + extraX + 0.5,
+        rect.bottom + extraY + 0.5,
+      );
       if (!isPointInRect(newPos, tolerantRect)) {
         return null;
       }
