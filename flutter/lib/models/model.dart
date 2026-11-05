@@ -3401,26 +3401,15 @@ class CursorModel with ChangeNotifier {
     }
     final rect = parent.target?.ffiModel.rect;
     if (rect != null) {
-      // Accept a small overshoot at the border, then clamp into the last
-      // VALID pixel. rect.right/bottom are exclusive: clamping to them sent
-      // out-of-range coordinates that Windows silently ignored, which is why
-      // taps on the very edge appeared to do nothing.
-      // getSize() shrinks the canvas by the safe-area / keyboard insets while
-      // the gesture layer still covers the whole window. Those insets have to
-      // be converted into REMOTE pixels before widening the display rect;
-      // a fixed 1-2 pixel tolerance rejects the right/bottom strip again.
-      final canvasSize = parent.target?.canvasModel.size ?? media.size;
-      final extraX = max(0.0, media.size.width - canvasSize.width) / s;
-      final extraY = max(0.0, media.size.height - canvasSize.height) / s;
-      final tolerantRect = Rect.fromLTRB(
-        rect.left - extraX - 1.0,
-        rect.top - extraY - 1.0,
-        rect.right + extraX + 1.0,
-        rect.bottom + extraY + 1.0,
-      );
-      if (!isPointInRect(newPos, tolerantRect)) {
-        return null;
-      }
+      // Mouse mode never validates the remote rect: onTap() simply clicks at
+      // the current cursor position, which is why a mouse can reach the
+      // task/status bar while touch mode could not. Match that behaviour --
+      // any tap inside the window is clamped into the display instead of being
+      // dropped. Overlay widgets (toolbar, key-help, FAB) are already filtered
+      // by CursorModel.shouldBlock() before this point.
+      // rect.right/bottom are exclusive, so clamp into the last VALID pixel;
+      // clamping to the boundary used to send out-of-range coordinates that
+      // Windows silently ignored.
       final clampedX = newPos.dx.clamp(rect.left, rect.right - 1);
       final clampedY = newPos.dy.clamp(rect.top, rect.bottom - 1);
       return Offset(clampedX, clampedY);
