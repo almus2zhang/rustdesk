@@ -1868,15 +1868,10 @@ impl Connection {
         let mut msg_out = Message::new();
         msg_out.set_login_response(res);
         self.send(msg_out).await;
-        // WiFi: the first frame stays on the primary monitor. A remembered
-        // secondary display is recreated and selected afterwards; peers with
-        // no secondary display history simply stay on the primary monitor.
-        #[cfg(windows)]
-        if !self.ip.starts_with("127.0.0.1") {
-            self.restore_saved_secondary_display().await;
-        }
-        // Low-latency QoS overrides are USB-only; a WiFi secondary display
-        // keeps the normal adaptive behaviour.
+        // A secondary display is only created when THIS session asks for it
+        // (the peer sends `secondary_display:WxH`). A plain WiFi connection
+        // stays on the primary monitor, even if this peer used a secondary
+        // display before.
         let is_secondary = self.ip.starts_with("127.0.0.1");
         if is_secondary {
             log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
@@ -4183,60 +4178,6 @@ impl Connection {
                 );
             }
             drop(lock);
-        }
-    }
-
-    /// Recreate a remembered WiFi secondary display after login_response has
-    /// been sent, so the first frame lands on the primary monitor. Peers that
-    /// never used a secondary display simply keep the primary monitor.
-    #[cfg(windows)]
-    async fn restore_saved_secondary_display(&mut self) {
-        let peer_id = self.lr.my_id.clone();
-        if crate::ui_interface::get_peer_option(
-            peer_id.clone(),
-            "is_secondary_display".to_string(),
-        ) != "Y"
-        {
-            return;
-        }
-        let res_str = crate::ui_interface::get_peer_option(
-            peer_id.clone(),
-            "usb_display_resolution".to_string(),
-        );
-        let (w, h) = match res_str.split_once('x') {
-            Some((w_s, h_s)) => {
-                match (w_s.trim().parse::<u32>(), h_s.trim().parse::<u32>()) {
-                    (Ok(w), Ok(h)) if w > 0 && h > 0 => (w, h),
-                    _ => return,
-                }
-            }
-            None => return,
-        };
-        if crate::usb_display::plug_in_usb_display(w, h).is_err() {
-            return;
-        }
-        crate::usb_display::set_usb_display_peer_id(peer_id.clone());
-        crate::usb_display::restore_usb_display_settings(&peer_id);
-
-        if let Ok(displays) = display_service::try_get_displays() {
-            let target = displays
-                .iter()
-                .position(|d| crate::usb_display::is_this_usb_display(&d.name()));
-            if let Some(pos) = target {
-                if pos != self.display_idx {
-                    log::info!("Switching to remembered secondary display idx {}", pos);
-                    if let Some(server) = self.server.upgrade() {
-                        self.switch_display_to(pos, server);
-                        if let Some(msg_out) = video_service::make_display_changed_msg(
-                            self.display_idx,
-                            None,
-                            self.video_source(),
-                        ) {
-                            self.send(msg_out).await;
-                        }
-                    }
-                }
-            }
         }
     }
 

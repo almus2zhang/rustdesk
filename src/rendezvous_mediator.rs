@@ -80,8 +80,12 @@ impl RendezvousMediator {
         });
         #[cfg(target_os = "android")]
         let start_lan_listening = true;
+        // Portable builds are not "installed", but they still need to answer
+        // LAN discovery pings and receive secondary display invites. Whether
+        // pings are answered is still gated by the "enable-lan-discovery"
+        // option inside lan::start_listening().
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        let start_lan_listening = crate::platform::is_installed();
+        let start_lan_listening = true;
         if start_lan_listening {
             std::thread::spawn(move || {
                 allow_err!(super::lan::start_listening());

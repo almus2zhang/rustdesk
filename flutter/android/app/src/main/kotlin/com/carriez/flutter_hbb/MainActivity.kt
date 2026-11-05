@@ -29,6 +29,7 @@ import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
 import android.media.MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.net.wifi.WifiManager
 import android.util.DisplayMetrics
 import androidx.annotation.RequiresApi
 import org.json.JSONArray
@@ -56,6 +57,7 @@ class MainActivity : FlutterActivity() {
     }
 
         private var aoaProxyServer: AoaProxyServer? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
 
     companion object {
         var flutterMethodChannel: MethodChannel? = null
@@ -97,6 +99,26 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
                 Log.e("MainActivity", "Failed to setCodecInfo: ${e.message}", e)
             }
+        }
+    }
+
+    // Android filters out inbound UDP broadcasts unless the app holds a
+    // MulticastLock. Without it the LAN discovery listener on port 21119
+    // never sees pings or secondary display invites.
+    private fun acquireMulticastLock() {
+        try {
+            val wifi = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            if (wifi == null) {
+                Log.w(logTag, "WifiManager unavailable; LAN broadcasts may be filtered")
+                return
+            }
+            multicastLock = wifi.createMulticastLock("rustdesk_lan_discovery").apply {
+                setReferenceCounted(true)
+                acquire()
+            }
+            Log.i(logTag, "WiFi multicast lock acquired for LAN discovery")
+        } catch (e: Exception) {
+            Log.w(logTag, "Failed to acquire WiFi multicast lock: $e")
         }
     }
 
@@ -157,6 +179,7 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setHighRefreshRate()
+        acquireMulticastLock()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -209,6 +232,12 @@ class MainActivity : FlutterActivity() {
         Log.e(logTag, "onDestroy")
         aoaProxyServer?.stop()
         aoaProxyServer = null
+        try {
+            multicastLock?.release()
+        } catch (e: Exception) {
+            // ignore
+        }
+        multicastLock = null
         try {
             unregisterReceiver(usbReceiver)
         } catch (e: Exception) {

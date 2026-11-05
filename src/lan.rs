@@ -382,13 +382,27 @@ pub fn send_secondary_display_invite(target: &str) -> ResultType<()> {
     let id = Config::get_id();
     let hostname = crate::whoami_hostname();
 
-    let (target_ip, target_id) = if let Ok(ip) = target.parse::<IpAddr>() {
+    let (mut target_ip, target_id) = if let Ok(ip) = target.parse::<IpAddr>() {
         (Some(ip), "".to_string())
     } else if let Some((ip_s, id_s)) = target.split_once('|') {
         (ip_s.parse::<IpAddr>().ok(), id_s.to_string())
     } else {
         (None, target.to_string())
     };
+
+    // WiFi broadcasts are frequently dropped (AP isolation, Android multicast
+    // filtering). When only a peer id is known, look up its LAN address so the
+    // invite can be delivered by unicast as well as by broadcast.
+    if target_ip.is_none() && !target_id.is_empty() {
+        for peer in config::LanPeers::load().peers {
+            if peer.id == target_id {
+                if let Some(ip) = peer.ip_mac.keys().find_map(|ip| ip.parse::<IpAddr>().ok()) {
+                    target_ip = Some(ip);
+                    break;
+                }
+            }
+        }
+    }
 
     let mut msg_out = Message::new();
     #[cfg(not(target_os = "ios"))]
