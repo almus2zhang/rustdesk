@@ -87,9 +87,12 @@ impl RendezvousMediator {
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         let start_lan_listening = true;
         if start_lan_listening {
+            log::info!("[LAN] starting discovery listener (start_lan_listening=true)");
             std::thread::spawn(move || {
                 allow_err!(super::lan::start_listening());
             });
+        } else {
+            log::warn!("[LAN] discovery listener disabled (start_lan_listening=false)");
         }
         // It is ok to run xdesktop manager when the headless function is not allowed.
         #[cfg(target_os = "linux")]

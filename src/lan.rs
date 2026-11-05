@@ -26,79 +26,152 @@ type Message = RendezvousMessage;
 #[cfg(not(target_os = "ios"))]
 pub(super) fn start_listening() -> ResultType<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], get_broadcast_port()));
-    let socket = std::net::UdpSocket::bind(addr)?;
+    let socket = match std::net::UdpSocket::bind(addr) {
+        Ok(s) => {
+            log::info!(
+                "[LAN] listener bound to {} (broadcast port {})",
+                addr,
+                get_broadcast_port()
+            );
+            s
+        }
+        Err(e) => {
+            log::error!(
+                "[LAN] failed to bind {}: {}. LAN discovery and secondary display invites will NOT work",
+                addr,
+                e
+            );
+            return Err(e.into());
+        }
+    };
     socket.set_read_timeout(Some(std::time::Duration::from_millis(1000)))?;
-    log::info!("lan discovery listener started");
+    log::info!("[LAN] discovery listener started");
     loop {
         let mut buf = [0; 2048];
-        if let Ok((len, addr)) = socket.recv_from(&mut buf) {
-            if let Ok(msg_in) = Message::parse_from_bytes(&buf[0..len]) {
-                match msg_in.union {
-                    Some(rendezvous_message::Union::PeerDiscovery(p)) => {
-                        if p.cmd == "ping"
-                            && config::option2bool(
-                                "enable-lan-discovery",
-                                &Config::get_option("enable-lan-discovery"),
-                            )
-                        {
-                            let id = Config::get_id();
-                            if p.id == id {
-                                continue;
+        let (len, peer_addr) = match socket.recv_from(&mut buf) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let msg_in = match Message::parse_from_bytes(&buf[0..len]) {
+            Ok(m) => m,
+            Err(e) => {
+                log::debug!("[LAN] ignore malformed packet from {}: {}", peer_addr, e);
+                continue;
+            }
+        };
+        match msg_in.union {
+            Some(rendezvous_message::Union::PeerDiscovery(p)) => {
+                log::info!(
+                    "[LAN] recv cmd='{}' id='{}' mac='{}' host='{}' from={}",
+                    p.cmd,
+                    p.id,
+                    p.mac,
+                    p.hostname,
+                    peer_addr
+                );
+                if p.cmd == "ping" {
+                    let enabled = config::option2bool(
+                        "enable-lan-discovery",
+                        &Config::get_option("enable-lan-discovery"),
+                    );
+                    if !enabled {
+                        log::info!("[LAN] not answering ping: 'enable-lan-discovery' is disabled");
+                    } else {
+                        let id = Config::get_id();
+                        if p.id == id {
+                            log::info!("[LAN] ignore own ping (id={})", id);
+                        } else if let Some(self_addr) = get_ipaddr_by_peer(&peer_addr) {
+                            let mut msg_out = Message::new();
+                            let mut hostname = crate::whoami_hostname();
+                            // The default hostname is "localhost" which is a bit confusing
+                            if hostname == "localhost" {
+                                hostname = "unknown".to_owned();
                             }
-                            if let Some(self_addr) = get_ipaddr_by_peer(&addr) {
-                                let mut msg_out = Message::new();
-                                let mut hostname = crate::whoami_hostname();
-                                // The default hostname is "localhost" which is a bit confusing
-                                if hostname == "localhost" {
-                                    hostname = "unknown".to_owned();
-                                }
-                                let peer = PeerDiscovery {
-                                    cmd: "pong".to_owned(),
-                                    mac: get_mac(&self_addr),
-                                    id,
-                                    hostname,
-                                    username: crate::platform::get_active_username(),
-                                    platform: whoami::platform().to_string(),
-                                    ..Default::default()
-                                };
-                                msg_out.set_peer_discovery(peer);
-                                socket.send_to(&msg_out.write_to_bytes()?, addr).ok();
-                            }
-                        }
-                        if p.cmd == "invite_secondary_display" {
-                            let my_id = Config::get_id();
-                            if !p.mac.is_empty() && p.mac != my_id {
-                                continue;
-                            }
-                            if p.id == my_id {
-                                continue;
-                            }
-                            let host_ip = addr.ip().to_string();
-                            let host_id = p.id;
-                            let host_name = if !p.hostname.is_empty() {
-                                p.hostname
-                            } else {
-                                host_ip.clone()
+                            let peer = PeerDiscovery {
+                                cmd: "pong".to_owned(),
+                                mac: get_mac(&self_addr),
+                                id: id.clone(),
+                                hostname,
+                                username: crate::platform::get_active_username(),
+                                platform: whoami::platform().to_string(),
+                                ..Default::default()
                             };
-                            log::info!("Received secondary display invite from {} ({})", host_name, host_ip);
-                            #[cfg(feature = "flutter")]
-                            {
-                                let data = HashMap::from([
-                                    ("name", "secondary_display_invite".to_string()),
-                                    ("id", host_id),
-                                    ("hostname", host_name),
-                                    ("ip", host_ip),
-                                ]);
-                                if let Ok(event_str) = serde_json::to_string(&data) {
-                                    crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, event_str);
-                                }
+                            msg_out.set_peer_discovery(peer);
+                            match msg_out.write_to_bytes() {
+                                Ok(out) => match socket.send_to(&out, peer_addr) {
+                                    Ok(n) => log::info!(
+                                        "[LAN] sent pong ({} bytes) to {} with id={}",
+                                        n,
+                                        peer_addr,
+                                        id
+                                    ),
+                                    Err(e) => {
+                                        log::warn!("[LAN] failed to send pong to {}: {}", peer_addr, e)
+                                    }
+                                },
+                                Err(e) => log::warn!("[LAN] failed to encode pong: {}", e),
                             }
-                            continue;
+                        } else {
+                            log::warn!(
+                                "[LAN] cannot determine local address for peer {}, not answering ping",
+                                peer_addr
+                            );
                         }
                     }
-                    _ => {}
+                }
+                if p.cmd == "invite_secondary_display" {
+                    let my_id = Config::get_id();
+                    if !p.mac.is_empty() && p.mac != my_id {
+                        log::info!(
+                            "[LAN] ignore invite: targeted mac='{}' != my id='{}'",
+                            p.mac,
+                            my_id
+                        );
+                        continue;
+                    }
+                    if p.id == my_id {
+                        log::info!("[LAN] ignore invite from self (id={})", my_id);
+                        continue;
+                    }
+                    let host_ip = peer_addr.ip().to_string();
+                    let host_id = p.id;
+                    let host_name = if !p.hostname.is_empty() {
+                        p.hostname
+                    } else {
+                        host_ip.clone()
+                    };
+                    log::info!(
+                        "[LAN] accepted secondary display invite from {} ({})",
+                        host_name,
+                        host_ip
+                    );
+                    #[cfg(feature = "flutter")]
+                    {
+                        let data = HashMap::from([
+                            ("name", "secondary_display_invite".to_string()),
+                            ("id", host_id),
+                            ("hostname", host_name),
+                            ("ip", host_ip),
+                        ]);
+                        match serde_json::to_string(&data) {
+                            Ok(event_str) => {
+                                log::info!("[LAN] pushing secondary_display_invite event to Flutter");
+                                crate::flutter::push_global_event(
+                                    crate::flutter::APP_TYPE_MAIN,
+                                    event_str,
+                                );
+                            }
+                            Err(e) => log::warn!("[LAN] failed to serialize invite event: {}", e),
+                        }
+                    }
+                    #[cfg(not(feature = "flutter"))]
+                    {
+                        let _ = (host_id, host_name, host_ip);
+                    }
+                    continue;
                 }
             }
+            _ => {}
         }
     }
 }
@@ -218,6 +291,7 @@ fn create_broadcast_sockets() -> Vec<UdpSocket> {
 fn send_query() -> ResultType<Vec<UdpSocket>> {
     let sockets = create_broadcast_sockets();
     if sockets.is_empty() {
+        log::error!("[LAN] no bindable IPv4 addresses, cannot send discovery ping");
         bail!("Found no bindable ipv4 addresses");
     }
 
@@ -241,10 +315,25 @@ fn send_query() -> ResultType<Vec<UdpSocket>> {
     msg_out.set_peer_discovery(peer);
     let out = msg_out.write_to_bytes()?;
     let maddr = SocketAddr::from(([255, 255, 255, 255], get_broadcast_port()));
+    log::info!(
+        "[LAN] sending discovery ping from {} socket(s) to {}",
+        sockets.len(),
+        maddr
+    );
     for socket in &sockets {
-        allow_err!(socket.send_to(&out, maddr));
+        match socket.send_to(&out, maddr) {
+            Ok(n) => log::info!(
+                "[LAN] ping sent ({} bytes) from {:?}",
+                n,
+                socket.local_addr()
+            ),
+            Err(e) => log::warn!(
+                "[LAN] ping send failed on {:?}: {}",
+                socket.local_addr(),
+                e
+            ),
+        }
     }
-    log::info!("discover ping sent");
     Ok(sockets)
 }
 
@@ -271,6 +360,13 @@ fn wait_response(
                     Some(rendezvous_message::Union::PeerDiscovery(p)) => {
                         last_recv_time = Instant::now();
                         if p.cmd == "pong" {
+                            log::info!(
+                                "[LAN] got pong id='{}' mac='{}' host='{}' from={}",
+                                p.id,
+                                p.mac,
+                                p.hostname,
+                                addr
+                            );
                             let local_mac = if try_get_ip_by_peer {
                                 if let Some(self_addr) = get_ipaddr_by_peer(&addr) {
                                     get_mac(&self_addr)
@@ -293,6 +389,13 @@ fn wait_response(
                             };
 
                             if local_mac.is_empty() && p.mac.is_empty() || local_mac != p.mac {
+                                log::info!(
+                                    "[LAN] accepting peer id='{}' at {} (local_mac='{}', peer_mac='{}')",
+                                    p.id,
+                                    addr.ip(),
+                                    local_mac,
+                                    p.mac
+                                );
                                 allow_err!(tx.send(config::DiscoveryPeer {
                                     id: p.id.clone(),
                                     ip_mac: HashMap::from([
@@ -303,6 +406,12 @@ fn wait_response(
                                     platform: p.platform.clone(),
                                     online: true,
                                 }));
+                            } else {
+                                log::info!(
+                                    "[LAN] ignore pong from {} (own packet, mac='{}')",
+                                    addr,
+                                    p.mac
+                                );
                             }
                         }
                     }
@@ -424,13 +533,34 @@ pub fn send_secondary_display_invite(target: &str) -> ResultType<()> {
 
     let port = get_broadcast_port();
     let bcast_addr = SocketAddr::from(([255, 255, 255, 255], port));
+    log::info!(
+        "[LAN] sending invite: target='{}' unicast={:?} broadcast={} sockets={}",
+        target,
+        target_ip,
+        bcast_addr,
+        sockets.len()
+    );
 
     for socket in &sockets {
-        allow_err!(socket.send_to(&out, bcast_addr));
+        match socket.send_to(&out, bcast_addr) {
+            Ok(n) => log::info!(
+                "[LAN] invite broadcast sent ({} bytes) from {:?}",
+                n,
+                socket.local_addr()
+            ),
+            Err(e) => log::warn!(
+                "[LAN] invite broadcast failed on {:?}: {}",
+                socket.local_addr(),
+                e
+            ),
+        }
         if let Some(ip) = target_ip {
-            allow_err!(socket.send_to(&out, SocketAddr::new(ip, port)));
+            let dst = SocketAddr::new(ip, port);
+            match socket.send_to(&out, dst) {
+                Ok(n) => log::info!("[LAN] invite unicast sent ({} bytes) to {}", n, dst),
+                Err(e) => log::warn!("[LAN] invite unicast failed to {}: {}", dst, e),
+            }
         }
     }
-    log::info!("Sent secondary display invite to target {}", target);
     Ok(())
 }

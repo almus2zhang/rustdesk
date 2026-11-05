@@ -200,15 +200,19 @@ impl VideoFrameController {
         };
         let wait_begin = Instant::now();
         loop {
+            let mut got = false;
             if let Ok(mut receiver_guard) = receiver.try_lock() {
                 while let Ok((id, instant)) = receiver_guard.try_recv() {
+                    got = true;
                     if let Some(tm) = instant {
                         log::trace!("Channel recv latency: {}", tm.elapsed().as_secs_f32());
                     }
                     fetched_conn_ids.insert(id);
                 }
             }
-            if wait_begin.elapsed() >= timeout_dur {
+            // Return as soon as a notification arrives, like the original
+            // async implementation did; do not burn the whole timeout.
+            if got || wait_begin.elapsed() >= timeout_dur {
                 break;
             }
             std::thread::sleep(Duration::from_millis(1));
