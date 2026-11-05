@@ -570,8 +570,9 @@ class _RawTouchGestureDetectorRegionState
     _remoteScaleAccumulator = 0;
 
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
-      final size = MediaQueryData.fromView(View.of(context)).size;
-      await ffi.cursorModel.move(size.width / 2, size.height / 2);
+      // Ctrl+wheel zooms around the cursor. Put the cursor at the pinch
+      // centre (the two fingers' midpoint), not at the screen centre.
+      await ffi.cursorModel.move(d.localFocalPoint.dx, d.localFocalPoint.dy);
     }
   }
 

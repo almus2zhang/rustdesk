@@ -3405,7 +3405,19 @@ class CursorModel with ChangeNotifier {
       // VALID pixel. rect.right/bottom are exclusive: clamping to them sent
       // out-of-range coordinates that Windows silently ignored, which is why
       // taps on the very edge appeared to do nothing.
-      final tolerantRect = rect.inflate(2.0 / s + 1.0);
+      // getSize() shrinks the canvas by the safe-area / keyboard insets while
+      // the gesture layer still covers the whole window. Those insets have to
+      // be converted into REMOTE pixels before widening the display rect;
+      // a fixed 1-2 pixel tolerance rejects the right/bottom strip again.
+      final canvasSize = parent.target?.canvasModel.size ?? media.size;
+      final extraX = max(0.0, media.size.width - canvasSize.width) / s;
+      final extraY = max(0.0, media.size.height - canvasSize.height) / s;
+      final tolerantRect = Rect.fromLTRB(
+        rect.left - extraX - 1.0,
+        rect.top - extraY - 1.0,
+        rect.right + extraX + 1.0,
+        rect.bottom + extraY + 1.0,
+      );
       if (!isPointInRect(newPos, tolerantRect)) {
         return null;
       }

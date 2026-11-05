@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_hbb/common/widgets/remote_input.dart';
 
 enum GestureState {
   none,
@@ -38,128 +37,95 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
   GestureDragEndCallback? onThreeFingerVerticalDragEnd;
 
   var _currentState = GestureState.none;
-  Timer? _debounceTimer;
+  // Only delays the start of a one-finger pan, so a quick two-finger pinch is
+  // not misread as a one-finger drag. It must NOT be cancelled on every update
+  // (the old code did that, so a moving finger never started a pan), and it
+  // must NOT double as the state-reset timer (that left the recognizer stuck
+  // in the previous gesture forever: "pinch became single-finger, single
+  // finger became pinch").
+  Timer? _oneFingerStartTimer;
+  ScaleUpdateDetails? _pendingOneFingerStart;
+
+  void _cancelOneFingerStart() {
+    _oneFingerStartTimer?.cancel();
+    _oneFingerStartTimer = null;
+    _pendingOneFingerStart = null;
+  }
+
+  void _finishCurrentState(ScaleEndDetails d) {
+    switch (_currentState) {
+      case GestureState.oneFingerPan:
+        onOneFingerPanEnd?.call(_getDragEndDetails(d));
+        break;
+      case GestureState.twoFingerScale:
+        onTwoFingerScaleEnd?.call(d);
+        break;
+      case GestureState.threeFingerVerticalDrag:
+        onThreeFingerVerticalDragEnd?.call(_getDragEndDetails(d));
+        break;
+      default:
+        break;
+    }
+    _currentState = GestureState.none;
+  }
 
   void _init() {
-    debugPrint("CustomTouchGestureRecognizer init");
-    // onStart = (d) {};
     onUpdate = (d) {
-      _debounceTimer?.cancel();
-      if (d.pointerCount == 1 && _currentState != GestureState.oneFingerPan) {
-        onOneFingerStartDebounce(d);
-      } else if (d.pointerCount == 2 &&
-          _currentState != GestureState.twoFingerScale) {
-        onTwoFingerStartDebounce(d);
-      } else if (d.pointerCount == 3 &&
+      final count = d.pointerCount;
+      if (count >= 2) {
+        // A second/third finger arrived: never start the pending one-finger pan.
+        _cancelOneFingerStart();
+      }
+      if (count == 1 &&
+          _currentState != GestureState.oneFingerPan &&
+          _currentState != GestureState.none) {
+        // One finger lifted out of a multi-finger gesture: close that gesture
+        // now instead of feeding single-finger updates into the scale handler.
+        _finishCurrentState(ScaleEndDetails());
+      }
+      if (count == 1 && _currentState != GestureState.oneFingerPan) {
+        if (_oneFingerStartTimer == null) {
+          _pendingOneFingerStart = d;
+          _oneFingerStartTimer = Timer(const Duration(milliseconds: 100), () {
+            final pending = _pendingOneFingerStart;
+            _cancelOneFingerStart();
+            if (pending != null && _currentState == GestureState.none) {
+              _currentState = GestureState.oneFingerPan;
+              onOneFingerPanStart?.call(DragStartDetails(
+                  localPosition: pending.localFocalPoint,
+                  globalPosition: pending.focalPoint));
+            }
+          });
+        }
+      } else if (count == 2 && _currentState != GestureState.twoFingerScale) {
+        _currentState = GestureState.twoFingerScale;
+        onTwoFingerScaleStart?.call(ScaleStartDetails(
+            localFocalPoint: d.localFocalPoint, focalPoint: d.focalPoint));
+      } else if (count == 3 &&
           _currentState != GestureState.threeFingerVerticalDrag) {
         _currentState = GestureState.threeFingerVerticalDrag;
-        if (onThreeFingerVerticalDragStart != null) {
-          onThreeFingerVerticalDragStart!(
-              DragStartDetails(globalPosition: d.localFocalPoint));
-        }
-        debugPrint("start threeFingerScale");
+        onThreeFingerVerticalDragStart
+            ?.call(DragStartDetails(globalPosition: d.localFocalPoint));
       }
-      if (_currentState != GestureState.none) {
-        switch (_currentState) {
-          case GestureState.oneFingerPan:
-            if (onOneFingerPanUpdate != null) {
-              onOneFingerPanUpdate!(_getDragUpdateDetails(d));
-            }
-            break;
-          case GestureState.twoFingerScale:
-            if (onTwoFingerScaleUpdate != null) {
-              onTwoFingerScaleUpdate!(d);
-            }
-            break;
-          case GestureState.threeFingerVerticalDrag:
-            if (onThreeFingerVerticalDragUpdate != null) {
-              onThreeFingerVerticalDragUpdate!(_getDragUpdateDetails(d));
-            }
-            break;
-          default:
-            break;
-        }
-        return;
-      }
-    };
-    onEnd = (d) {
-      debugPrint("ScaleGestureRecognizer onEnd");
-      _debounceTimer?.cancel();
-      // end
+
       switch (_currentState) {
         case GestureState.oneFingerPan:
-          debugPrint("OneFingerState.pan onEnd");
-          if (onOneFingerPanEnd != null) {
-            onOneFingerPanEnd!(_getDragEndDetails(d));
-          }
+          onOneFingerPanUpdate?.call(_getDragUpdateDetails(d));
           break;
         case GestureState.twoFingerScale:
-          debugPrint("TwoFingerState.scale onEnd");
-          if (onTwoFingerScaleEnd != null) {
-            onTwoFingerScaleEnd!(d);
-          }
-          if (isSpecialHoldDragActive) {
-            // If we are in special drag mode, we need to reset the state.
-            // Otherwise, the next `onTwoFingerScaleUpdate()` will handle a wrong `focalPoint`.
-            _currentState = GestureState.none;
-            return;
-          }
+          onTwoFingerScaleUpdate?.call(d);
           break;
         case GestureState.threeFingerVerticalDrag:
-          debugPrint("ThreeFingerState.vertical onEnd");
-          if (onThreeFingerVerticalDragEnd != null) {
-            onThreeFingerVerticalDragEnd!(_getDragEndDetails(d));
-          }
+          onThreeFingerVerticalDragUpdate?.call(_getDragUpdateDetails(d));
           break;
         default:
           break;
       }
-      _debounceTimer = Timer(Duration(milliseconds: 200), () {
-        _currentState = GestureState.none;
-      });
     };
-  }
-
-  // FIXME: This debounce logic is not working properly.
-  // If we move our finger very fast, we won't be able to detect the "oneFingerPan" event sometimes.
-  void onOneFingerStartDebounce(ScaleUpdateDetails d) {
-    start(ScaleUpdateDetails d) {
-      _currentState = GestureState.oneFingerPan;
-      if (onOneFingerPanStart != null) {
-        onOneFingerPanStart!(DragStartDetails(
-            localPosition: d.localFocalPoint, globalPosition: d.focalPoint));
-      }
-    }
-
-    if (_currentState != GestureState.none) {
-      _debounceTimer = Timer(Duration(milliseconds: 200), () {
-        start(d);
-        debugPrint("debounce start oneFingerPan");
-      });
-    } else {
-      start(d);
-      debugPrint("start oneFingerPan");
-    }
-  }
-
-  void onTwoFingerStartDebounce(ScaleUpdateDetails d) {
-    start(ScaleUpdateDetails d) {
-      _currentState = GestureState.twoFingerScale;
-      if (onTwoFingerScaleStart != null) {
-        onTwoFingerScaleStart!(ScaleStartDetails(
-            localFocalPoint: d.localFocalPoint, focalPoint: d.focalPoint));
-      }
-    }
-
-    if (_currentState == GestureState.threeFingerVerticalDrag) {
-      _debounceTimer = Timer(Duration(milliseconds: 200), () {
-        start(d);
-        debugPrint("debounce start twoFingerScale");
-      });
-    } else {
-      start(d);
-      debugPrint("start twoFingerScale");
-    }
+    onEnd = (d) {
+      _cancelOneFingerStart();
+      _finishCurrentState(d);
+    };
   }
 
   DragUpdateDetails _getDragUpdateDetails(ScaleUpdateDetails d) =>
@@ -174,6 +140,7 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
   @override
   void rejectGesture(int pointer) {
     super.rejectGesture(pointer);
+    _cancelOneFingerStart();
     switch (_currentState) {
       case GestureState.oneFingerPan:
         if (onOneFingerPanCancel != null) {
