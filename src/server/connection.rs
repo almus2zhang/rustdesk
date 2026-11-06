@@ -4238,7 +4238,7 @@ impl Connection {
                     .map(|displays| {
                         displays
                             .iter()
-                            .any(|d| crate::usb_display::is_this_usb_display(&d.name))
+                            .any(|d| crate::usb_display::is_this_usb_display(&d.name()))
                     })
                     .unwrap_or(false);
                 if crate::usb_display::is_usb_display_active() && has_virtual && t.display == 0 {
