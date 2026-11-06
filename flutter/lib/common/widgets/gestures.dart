@@ -37,20 +37,6 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
   GestureDragEndCallback? onThreeFingerVerticalDragEnd;
 
   var _currentState = GestureState.none;
-  // Only delays the start of a one-finger pan, so a quick two-finger pinch is
-  // not misread as a one-finger drag. It must NOT be cancelled on every update
-  // (the old code did that, so a moving finger never started a pan), and it
-  // must NOT double as the state-reset timer (that left the recognizer stuck
-  // in the previous gesture forever: "pinch became single-finger, single
-  // finger became pinch").
-  Timer? _oneFingerStartTimer;
-  ScaleUpdateDetails? _pendingOneFingerStart;
-
-  void _cancelOneFingerStart() {
-    _oneFingerStartTimer?.cancel();
-    _oneFingerStartTimer = null;
-    _pendingOneFingerStart = null;
-  }
 
   void _finishCurrentState(ScaleEndDetails d) {
     switch (_currentState) {
@@ -69,40 +55,47 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
     _currentState = GestureState.none;
   }
 
+  // A pinch almost always begins with one finger. When the second finger
+  // arrives we must close that one-finger pan explicitly, otherwise the left
+  // button pressed by text-selection mode stays down for the whole pinch.
+  void _endOneFingerForMulti() {
+    onOneFingerPanCancel?.call();
+    _currentState = GestureState.none;
+  }
+
   void _init() {
     onUpdate = (d) {
       final count = d.pointerCount;
-      if (count >= 2) {
-        // A second/third finger arrived: never start the pending one-finger pan.
-        _cancelOneFingerStart();
-      }
-      if (count == 1 &&
-          _currentState != GestureState.oneFingerPan &&
-          _currentState != GestureState.none) {
-        // One finger lifted out of a multi-finger gesture: close that gesture
-        // now instead of feeding single-finger updates into the scale handler.
-        _finishCurrentState(ScaleEndDetails());
-      }
       if (count == 1 && _currentState != GestureState.oneFingerPan) {
-        if (_oneFingerStartTimer == null) {
-          _pendingOneFingerStart = d;
-          _oneFingerStartTimer = Timer(const Duration(milliseconds: 100), () {
-            final pending = _pendingOneFingerStart;
-            _cancelOneFingerStart();
-            if (pending != null && _currentState == GestureState.none) {
-              _currentState = GestureState.oneFingerPan;
-              onOneFingerPanStart?.call(DragStartDetails(
-                  localPosition: pending.localFocalPoint,
-                  globalPosition: pending.focalPoint));
-            }
-          });
+        // Start as soon as the finger actually moves. The old 100ms delayed
+        // start swallowed short swipes and made the cursor feel sluggish.
+        // Still ignore a perfectly still pointer, so a plain tap (or the
+        // first finger of a pinch) does not start a text-selection drag.
+        final hasMoved = d.focalPointDelta.distanceSquared >= 1.0;
+        if (hasMoved || _currentState != GestureState.none) {
+          if (_currentState != GestureState.none) {
+            _finishCurrentState(ScaleEndDetails());
+          }
+          _currentState = GestureState.oneFingerPan;
+          onOneFingerPanStart?.call(DragStartDetails(
+              localPosition: d.localFocalPoint, globalPosition: d.focalPoint));
         }
       } else if (count == 2 && _currentState != GestureState.twoFingerScale) {
+        if (_currentState == GestureState.oneFingerPan) {
+          _endOneFingerForMulti();
+        } else if (_currentState != GestureState.none) {
+          _finishCurrentState(ScaleEndDetails());
+        }
         _currentState = GestureState.twoFingerScale;
         onTwoFingerScaleStart?.call(ScaleStartDetails(
             localFocalPoint: d.localFocalPoint, focalPoint: d.focalPoint));
       } else if (count == 3 &&
           _currentState != GestureState.threeFingerVerticalDrag) {
+        if (_currentState == GestureState.oneFingerPan) {
+          _endOneFingerForMulti();
+        } else if (_currentState != GestureState.none) {
+          _finishCurrentState(ScaleEndDetails());
+        }
         _currentState = GestureState.threeFingerVerticalDrag;
         onThreeFingerVerticalDragStart
             ?.call(DragStartDetails(globalPosition: d.localFocalPoint));
@@ -123,7 +116,6 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
       }
     };
     onEnd = (d) {
-      _cancelOneFingerStart();
       _finishCurrentState(d);
     };
   }
@@ -140,7 +132,6 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
   @override
   void rejectGesture(int pointer) {
     super.rejectGesture(pointer);
-    _cancelOneFingerStart();
     switch (_currentState) {
       case GestureState.oneFingerPan:
         if (onOneFingerPanCancel != null) {
