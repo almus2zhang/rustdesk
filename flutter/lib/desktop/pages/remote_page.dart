@@ -20,6 +20,7 @@ import '../../models/platform_model.dart';
 import '../../common/shared_state.dart';
 import '../../utils/image.dart';
 import '../widgets/remote_toolbar.dart';
+import '../widgets/floating_minimize_button.dart';
 import '../widgets/kb_layout_type_chooser.dart';
 import '../widgets/tabbar_widget.dart';
 
@@ -434,6 +435,12 @@ class _RemotePageState extends State<RemotePage>
               _ffi.ffiModel.pi.isSet.isFalse ? emptyOverlay() : Offstage(),
             ],
           ),
+          if (isWindows || isDesktop)
+            Obx(() => _ffi.canvasModel.showFloatingMinimizeBtn.value
+                ? FloatingMinimizeButton(
+                    windowId: stateGlobal.windowId,
+                  )
+                : const SizedBox.shrink()),
         ],
       );
     }

@@ -2432,6 +2432,8 @@ class CanvasModel with ChangeNotifier {
   final _imageOverflow = false.obs;
   final RxBool showEscKey =
       (bind.mainGetLocalOption(key: kOptionShowEscKey) == 'Y').obs;
+  final RxBool showFloatingMinimizeBtn =
+      (bind.mainGetLocalOption(key: kOptionShowFloatingMinimizeBtn) == 'Y').obs;
 
   WeakReference<FFI> parent;
 
@@ -2519,7 +2521,7 @@ class CanvasModel with ChangeNotifier {
 
   updateSize() => _size = getSize();
 
-  updateViewStyle({refreshMousePos = true, notify = true}) async {
+  updateViewStyle({bool force = false, refreshMousePos = true, notify = true}) async {
     final style = await bind.sessionGetViewStyle(sessionId: sessionId);
     if (style == null) {
       return;
@@ -2541,10 +2543,10 @@ class CanvasModel with ChangeNotifier {
     // ViewStyle fields and is not captured by the equality check. Therefore, we must
     // allow updates to proceed when style == kRemoteViewStyleCustom, even if the
     // rest of the ViewStyle fields are unchanged.
-    if (_lastViewStyle == viewStyle && style != kRemoteViewStyleCustom) {
+    if (!force && _lastViewStyle == viewStyle && style != kRemoteViewStyleCustom) {
       return;
     }
-    if (_lastViewStyle.style != viewStyle.style) {
+    if (_lastViewStyle.style != viewStyle.style || force) {
       _resetScroll();
     }
     _lastViewStyle = viewStyle;

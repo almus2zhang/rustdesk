@@ -233,6 +233,11 @@ List<(String, String)> otherDefaultSettings() {
       ('show_monitors_tip', kKeyShowMonitorsToolbar),
     if ((isDesktop || isWebDesktop))
       ('Collapse toolbar', kOptionCollapseToolbar),
+    if ((isDesktop || isWebDesktop))
+      (
+        localeName.startsWith('zh') ? '显示悬浮最小化按钮' : 'Show floating minimize button',
+        kOptionShowFloatingMinimizeBtn
+      ),
     ('Show remote cursor', kOptionShowRemoteCursor),
     ('Follow remote cursor', kOptionFollowRemoteCursor),
     ('Follow remote window focus', kOptionFollowRemoteWindow),

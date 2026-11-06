@@ -127,6 +127,7 @@ const String kOptionApproveMode = "approve-mode";
 const String kOptionAllowNumericOneTimePassword =
     "allow-numeric-one-time-password";
 const String kOptionCollapseToolbar = "collapse_toolbar";
+const String kOptionShowFloatingMinimizeBtn = "show_floating_minimize_button";
 const String kOptionHideToolbar = "hide-toolbar";
 const String kOptionOneYesServerUrl = "oneyes-server-url";
 const String kOptionOneYesEmail = "oneyes-email";

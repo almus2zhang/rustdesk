@@ -378,7 +378,7 @@ Future<List<TRadioMenu<String>>> toolbarViewStyle(
     if (value == null) return;
     bind
         .sessionSetViewStyle(sessionId: ffi.sessionId, value: value)
-        .then((_) => ffi.canvasModel.updateViewStyle());
+        .then((_) => ffi.canvasModel.updateViewStyle(force: true));
   }
 
   return [
@@ -801,6 +801,21 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
           ffi.canvasModel.updateViewStyle();
         },
         child: Text(translate('Align to top'))));
+  }
+
+  if (isWindows || isDesktop) {
+    final isZh = localeName.startsWith('zh');
+    v.add(TToggleMenu(
+        value: ffi.canvasModel.showFloatingMinimizeBtn.value,
+        onChanged: (value) async {
+          if (value == null) return;
+          await bind.mainSetLocalOption(
+              key: kOptionShowFloatingMinimizeBtn, value: value ? 'Y' : 'N');
+          await bind.mainSetUserDefaultOption(
+              key: kOptionShowFloatingMinimizeBtn, value: value ? 'Y' : 'N');
+          ffi.canvasModel.showFloatingMinimizeBtn.value = value;
+        },
+        child: Text(isZh ? '显示悬浮最小化按钮' : 'Show floating minimize button')));
   }
 
   if (isMobile) {

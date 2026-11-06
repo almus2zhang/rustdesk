@@ -2531,19 +2531,28 @@ class RdoMenuButton<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RadioMenuButton(
-      value: value,
-      groupValue: groupValue,
-      child: child,
+    return MenuItemButton(
       closeOnActivate: closeOnActivate,
-      onChanged: onChanged != null
-          ? (T? value) {
+      onPressed: onChanged != null
+          ? () {
               if (ffi != null && closeOnActivate) {
                 _menuDismissCallback(ffi!);
               }
               onChanged?.call(value);
             }
           : null,
+      leadingIcon: ExcludeFocus(
+        child: IgnorePointer(
+          child: Radio<T>(
+            value: value,
+            groupValue: groupValue,
+            onChanged: null,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          ),
+        ),
+      ),
+      child: child,
     );
   }
 }
