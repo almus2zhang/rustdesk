@@ -1665,6 +1665,43 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     });
   }
 
+  // Win+Shift+Left/Right moves the foreground window to the previous / next
+  // monitor. inputKey() reads the modifier fields at send time, so raising
+  // Win (command) and Shift temporarily works just like sendPrompt().
+  void _sendWinShiftArrow(bool left) {
+    final oldWin = inputModel.command;
+    final oldShift = inputModel.shift;
+    inputModel.command = true;
+    inputModel.shift = true;
+    inputModel.inputKey(left ? 'VK_LEFT' : 'VK_RIGHT');
+    inputModel.command = oldWin;
+    inputModel.shift = oldShift;
+  }
+
+  // Compact glyph: one window outline plus an arrow pointing at the target
+  // monitor, so the two buttons stay narrow and do not widen the key rows.
+  Widget _moveToScreenIcon(bool left) {
+    return SizedBox(
+      width: 26,
+      height: 18,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(Icons.web_asset, size: 22, color: Colors.white70),
+          Positioned(
+            left: left ? 0 : null,
+            right: left ? null : 0,
+            child: Icon(
+              left ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+              size: 11,
+              color: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // Hide doubles as the drag handle for the whole key panel: a short tap
   // collapses it, dragging moves the panel.
   Widget _buildPanelHandle() {
@@ -1724,7 +1761,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
   InputModel get inputModel => gFFI.inputModel;
 
   Widget wrap(String text, void Function() onPressed,
-      {bool? active, IconData? icon}) {
+      {bool? active, IconData? icon, Widget? iconChild}) {
     final isMultiLine = _fn;
     return TextButton(
         style: TextButton.styleFrom(
@@ -1743,16 +1780,17 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           ),
           backgroundColor: active == true ? MyTheme.accent80 : null,
         ),
-        child: icon != null
-            ? Icon(icon,
-                size: widget.embedded ? (isMultiLine ? 14 : 13) : 14,
-                color: Colors.white)
-            : Text(translate(text),
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: widget.embedded ? (isMultiLine ? 12 : 11) : 12,
-                  height: 1.1,
-                )),
+        child: iconChild ??
+            (icon != null
+                ? Icon(icon,
+                    size: widget.embedded ? (isMultiLine ? 14 : 13) : 14,
+                    color: Colors.white)
+                : Text(translate(text),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: widget.embedded ? (isMultiLine ? 12 : 11) : 12,
+                      height: 1.1,
+                    ))),
         onPressed: onPressed);
   }
 
@@ -1859,6 +1897,13 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
           () => sendPrompt(isMac, 'VK_ENTER')),
       key(isMac ? 'Cmd+V' : 'Ctrl+V', () => sendPrompt(isMac, 'VK_V')),
     ];
+    Widget moveScreenKey(bool left) => Tooltip(
+          message: left
+              ? 'Win + Shift + Left (move window to previous monitor)'
+              : 'Win + Shift + Right (move window to next monitor)',
+          child: wrap('', () => _sendWinShiftArrow(left),
+              iconChild: _moveToScreenIcon(left)),
+        );
     final firstTail = <Widget>[
       key('Page up', () => inputModel.inputKey('VK_PRIOR')),
       key(' Alt ', () => setState(() => inputModel.alt = !inputModel.alt),
@@ -1868,6 +1913,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       key('Ins', () => inputModel.inputKey('VK_INSERT')),
       key('Del', () => inputModel.inputKey('VK_DELETE')),
       key('Print', () => inputModel.inputKey('VK_SNAPSHOT')),
+      moveScreenKey(true),
     ];
     final secondTail = <Widget>[
       key('Page down', () => inputModel.inputKey('VK_NEXT')),
@@ -1881,10 +1927,12 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         widget.onExpandToggle?.call(_fn);
       }, active: _fn),
       key('Back', () => inputModel.inputKey('VK_BACK')),
+      moveScreenKey(false),
     ];
 
-    // 13 keys in one row need roughly 88 px each; below that, use four rows.
-    final wide = size.width >= 1150.0;
+    // The widest row now has 14 keys (one narrow icon button), so keep a
+    // little more room before choosing the two-row layout.
+    final wide = size.width >= 1200.0;
     final rows = <List<Widget>>[
       if (wide) ...[
         [...firstHalf, ...firstTail],
