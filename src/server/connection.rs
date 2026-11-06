@@ -1967,12 +1967,20 @@ impl Connection {
                 if !self.audio_enabled() {
                     noperms.push(super::audio_service::NAME);
                 }
-                let mut s = s.write().unwrap();
+                let mut s_lock = s.write().unwrap();
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 let _h = try_start_record_cursor_pos();
                 self.auto_disconnect_timer = Self::get_auto_disconenct_timer();
-                s.try_add_primay_video_service();
-                s.add_connection(self.inner.clone(), &noperms);
+                s_lock.try_add_primay_video_service();
+                s_lock.add_connection(self.inner.clone(), &noperms);
+                drop(s_lock);
+
+                if self.display_idx != *display_service::PRIMARY_DISPLAY_IDX {
+                    let target_idx = self.display_idx;
+                    self.display_idx = *display_service::PRIMARY_DISPLAY_IDX;
+                    log::info!("Initial auto-switch to secondary display index {} for peer {}", target_idx, self.lr.my_id);
+                    self.switch_display_to(target_idx, s.clone());
+                }
             }
         }
     }
@@ -4225,20 +4233,26 @@ impl Connection {
             if !virtual_display_manager::is_virtual_display_supported() {
                 self.send(make_msg("idd_not_support_under_win10_2004_tip".to_string()))
                     .await;
-            } else if crate::usb_display::is_usb_display_active() {
-                // Login already created the USB virtual display. Client-side
-                // `virtual-display` replay (first frame / portrait setup) must
-                // not add a second monitor.
-                log::info!("USB secondary display already active, ignoring duplicate plug-in request");
             } else {
-                if let Err(e) = virtual_display_manager::plug_in_monitor(t.display as _, Vec::new())
-                {
-                    log::error!("Failed to plug in virtual display: {}", e);
-                    self.send(make_msg(format!(
-                        "Failed to plug in virtual display: {}",
-                        e
-                    )))
-                    .await;
+                let has_virtual = crate::server::display_service::try_get_displays()
+                    .map(|displays| {
+                        displays
+                            .iter()
+                            .any(|d| crate::usb_display::is_this_usb_display(&d.name))
+                    })
+                    .unwrap_or(false);
+                if crate::usb_display::is_usb_display_active() && has_virtual && t.display == 0 {
+                    log::info!("USB secondary display already active and present in displays, ignoring duplicate plug-in request");
+                } else {
+                    if let Err(e) = virtual_display_manager::plug_in_monitor(t.display as _, Vec::new())
+                    {
+                        log::error!("Failed to plug in virtual display: {}", e);
+                        self.send(make_msg(format!(
+                            "Failed to plug in virtual display: {}",
+                            e
+                        )))
+                        .await;
+                    }
                 }
             }
         } else {

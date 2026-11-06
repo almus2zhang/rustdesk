@@ -176,6 +176,13 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
                 USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
                 log::info!("Reusing existing USB secondary display");
                 return Ok(0);
+            } else {
+                log::warn!("Amyuni monitor count > 0 but no active display in Windows, resetting stale virtual monitors");
+                let _ = virtual_display_manager::amyuni_idd::plug_out_monitor(
+                    virtual_display_manager::IDD_PLUG_OUT_ALL_INDEX,
+                    true,
+                    false,
+                );
             }
         }
 

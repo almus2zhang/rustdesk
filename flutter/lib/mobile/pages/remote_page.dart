@@ -1521,25 +1521,28 @@ class KeyHelpTools extends StatefulWidget {
 class _KeyHelpToolsState extends State<KeyHelpTools> {
   var _fn = false;
   late bool _collapsed;
-  Offset _panelOffset = Offset.zero;
-  bool _isPanelDragging = false;
-  double _panelDragDistance = 0.0;
-  static const String _panelOffsetKey = 'kht-panel-offset';
   final _key = GlobalKey();
 
-  Offset _position = Offset.zero;
-  bool _isPositionInitialized = false;
+  // Collapsed floating button position
+  Offset _collapsedPos = Offset.zero;
+  bool _isCollapsedPosInit = false;
+  Offset _preSavedCollapsedPos = Offset.zero;
+  bool _isCollapsedDragging = false;
+  Offset _collapsedDragStartPos = Offset.zero;
+
+  // Expanded floating panel position
+  Offset? _panelPos;
+  bool _isPanelDragging = false;
+  Offset _panelDragStartFinger = Offset.zero;
+  Offset _panelDragStartPos = Offset.zero;
+
   Orientation? _previousOrientation;
-  Offset _preSavedPos = Offset.zero;
-  bool _isDragging = false;
-  Offset _dragStartPos = Offset.zero;
 
   @override
   void initState() {
     super.initState();
     _collapsed =
         bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
-    _loadPanelOffset();
     if (widget.onExpandToggle != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onExpandToggle!(_fn);
@@ -1549,7 +1552,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       if (mounted) {
         final currentOrientation = MediaQuery.of(context).orientation;
         _previousOrientation = currentOrientation;
-        _resetPosition(currentOrientation);
+        _loadPositions(currentOrientation);
       }
     });
   }
@@ -1560,114 +1563,80 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final currentOrientation = MediaQuery.of(context).orientation;
     if (_previousOrientation == null ||
         _previousOrientation != currentOrientation) {
-      _resetPosition(currentOrientation);
+      _previousOrientation = currentOrientation;
+      _loadPositions(currentOrientation);
     }
-    _previousOrientation = currentOrientation;
   }
 
   @override
   void dispose() {
-    _trySavePosition();
+    _trySaveCollapsedPos();
+    _savePanelPos();
     super.dispose();
   }
 
-  String _getPositionKey(Orientation ori) {
+  String _getCollapsedPosKey(Orientation ori) {
     final strOri = ori == Orientation.landscape ? 'l' : 'p';
     return 'kht-$strOri-pos';
   }
 
-  static Offset? _loadPositionFromString(String s) {
+  String _getPanelPosKey(Orientation ori) {
+    final strOri = ori == Orientation.landscape ? 'l' : 'p';
+    return 'kht-panel-$strOri-pos';
+  }
+
+  static Offset? _loadOffset(String s) {
     if (s.isEmpty) return null;
     try {
+      final parts = s.split(',');
+      if (parts.length == 2) {
+        return Offset(double.parse(parts[0]), double.parse(parts[1]));
+      }
       final m = jsonDecode(s);
       return Offset((m['x'] as num).toDouble(), (m['y'] as num).toDouble());
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   }
 
-  void _trySavePosition() {
-    if (_previousOrientation == null) return;
-    if ((_position - _preSavedPos).distanceSquared < 0.1) return;
-    final pos = jsonEncode({
-      'x': _position.dx,
-      'y': _position.dy,
-    });
-    bind.setLocalFlutterOption(
-        k: _getPositionKey(_previousOrientation!), v: pos);
-    _preSavedPos = _position;
-  }
-
-  void _restorePosition(Orientation ori) {
-    final ps = bind.getLocalFlutterOption(k: _getPositionKey(ori));
-    final pos = _loadPositionFromString(ps);
-    if (pos == null) {
-      final size = MediaQuery.of(context).size;
-      _position = Offset(
-        max(0.0, size.width - 64 - 10),
-        10,
-      );
+  void _loadPositions(Orientation ori) {
+    final cs = bind.getLocalFlutterOption(k: _getCollapsedPosKey(ori));
+    final cp = _loadOffset(cs);
+    if (cp != null) {
+      _collapsedPos = cp;
+      _preSavedCollapsedPos = cp;
+      _isCollapsedPosInit = true;
     } else {
-      _position = pos;
-      _preSavedPos = pos;
+      final size = MediaQuery.of(context).size;
+      _collapsedPos = Offset(max(0.0, size.width - 64 - 10), 10);
+      _isCollapsedPosInit = true;
     }
+
+    final ps = bind.getLocalFlutterOption(k: _getPanelPosKey(ori));
+    _panelPos = _loadOffset(ps);
+    setState(() {});
   }
 
-  void _resetPosition(Orientation ori) {
-    setState(() {
-      _restorePosition(ori);
-      _isPositionInitialized = true;
-    });
-  }
-
-  void _onDragDelta(Offset delta) {
-    final size = MediaQuery.of(context).size;
-    Offset newPosition = _position + delta;
-    const double iconW = 64;
-    const double iconH = 36;
-    double minX = 0;
-    double minY = 0;
-    double maxX = max(0.0, size.width - iconW);
-    double maxY = max(0.0, size.height - iconH);
-    newPosition = Offset(
-      newPosition.dx.clamp(minX, maxX),
-      newPosition.dy.clamp(minY, maxY),
-    );
-    setState(() {
-      _position = newPosition;
-    });
-  }
-
-  void _loadPanelOffset() {
-    final s = bind.getLocalFlutterOption(k: _panelOffsetKey);
-    if (s.isEmpty) return;
-    try {
-      final parts = s.split(',');
-      if (parts.length == 2) {
-        _panelOffset = Offset(double.parse(parts[0]), double.parse(parts[1]));
-      }
-    } catch (_) {}
-  }
-
-  void _savePanelOffset() {
+  void _trySaveCollapsedPos() {
+    if (_previousOrientation == null) return;
+    if ((_collapsedPos - _preSavedCollapsedPos).distanceSquared < 0.1) return;
     bind.setLocalFlutterOption(
-        k: _panelOffsetKey, v: '${_panelOffset.dx},${_panelOffset.dy}');
+      k: _getCollapsedPosKey(_previousOrientation!),
+      v: '${_collapsedPos.dx},${_collapsedPos.dy}',
+    );
+    _preSavedCollapsedPos = _collapsedPos;
   }
 
-  void _addPanelOffset(Offset delta) {
-    final size = MediaQuery.of(context).size;
-    setState(() {
-      _panelOffset = Offset(
-        (_panelOffset.dx + delta.dx).clamp(-size.width * 0.7, size.width * 0.7),
-        (_panelOffset.dy + delta.dy)
-            .clamp(-size.height * 0.7, size.height * 0.7),
-      );
-    });
+  void _savePanelPos() {
+    if (_previousOrientation == null || _panelPos == null) return;
+    bind.setLocalFlutterOption(
+      k: _getPanelPosKey(_previousOrientation!),
+      v: '${_panelPos!.dx},${_panelPos!.dy}',
+    );
   }
 
-  // Win+Shift+Left/Right moves the foreground window to the previous / next
-  // monitor. inputKey() reads the modifier fields at send time, so raising
-  // Win (command) and Shift temporarily works just like sendPrompt().
+  InputModel get inputModel => gFFI.inputModel;
+
   void _sendWinShiftArrow(bool left) {
     final oldWin = inputModel.command;
     final oldShift = inputModel.shift;
@@ -1678,133 +1647,151 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     inputModel.shift = oldShift;
   }
 
-  // Compact glyph: one window outline plus an arrow pointing at the target
-  // monitor, so the two buttons stay narrow and do not widen the key rows.
   Widget _moveToScreenIcon(bool left) {
-    return SizedBox(
-      width: 26,
-      height: 18,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          const Icon(Icons.web_asset, size: 22, color: Colors.white70),
-          Positioned(
-            left: left ? 0 : null,
-            right: left ? null : 0,
-            child: Icon(
-              left ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
-              size: 11,
-              color: Colors.white,
-            ),
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        const Icon(Icons.web_asset, size: 18, color: Colors.white70),
+        Positioned(
+          left: left ? 1 : null,
+          right: left ? null : 1,
+          child: Icon(
+            left ? Icons.arrow_back_ios : Icons.arrow_forward_ios,
+            size: 10,
+            color: Colors.white,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  // Hide doubles as the drag handle for the whole key panel: a short tap
-  // collapses it, dragging moves the panel.
-  Widget _buildPanelHandle() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Listener(
+  Widget _comboKeyChild(IconData icon, String sub) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.white),
+        Text(
+          sub,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 8,
+            height: 1.0,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildKeycap({
+    required double width,
+    required double height,
+    String? label,
+    IconData? icon,
+    Widget? customChild,
+    required VoidCallback onTap,
+    bool active = false,
+    bool isDragHandle = false,
+    Offset curPanelPos = Offset.zero,
+    Size screenSize = Size.zero,
+    double panelW = 0,
+    double panelH = 0,
+    String? tooltip,
+  }) {
+    final itemBody = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: active
+            ? const Color(0xFF1976D2)
+            : const Color(0x38FFFFFF),
+        borderRadius: BorderRadius.circular(4.0),
+        border: Border.all(
+          color: active ? Colors.lightBlueAccent : Colors.white24,
+          width: 0.5,
+        ),
+      ),
+      child: Center(
+        child: customChild ??
+            (icon != null
+                ? Icon(icon, size: 17, color: Colors.white)
+                : Text(
+                    translate(label ?? ''),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: (label?.length ?? 0) > 3 ? 10 : 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )),
+      ),
+    );
+
+    Widget result;
+    if (isDragHandle) {
+      result = Listener(
         behavior: HitTestBehavior.opaque,
-        onPointerDown: (_) {
+        onPointerDown: (event) {
+          _panelDragStartFinger = event.position;
+          _panelDragStartPos = curPanelPos;
           _isPanelDragging = false;
-          _panelDragDistance = 0.0;
         },
         onPointerMove: (event) {
-          _panelDragDistance += event.delta.distance;
-          if (_panelDragDistance > 4.0) {
+          final delta = event.position - _panelDragStartFinger;
+          if (!_isPanelDragging && delta.distance > 4.0) {
             _isPanelDragging = true;
           }
           if (_isPanelDragging) {
-            _addPanelOffset(event.delta);
-          }
-        },
-        onPointerUp: (_) {
-          if (_isPanelDragging) {
-            _savePanelOffset();
-          } else {
+            final newPos = Offset(
+              (_panelDragStartPos.dx + delta.dx)
+                  .clamp(0.0, max(0.0, screenSize.width - panelW)),
+              (_panelDragStartPos.dy + delta.dy)
+                  .clamp(0.0, max(0.0, screenSize.height - panelH)),
+            );
             setState(() {
-              _collapsed = true;
-              bind.mainSetLocalOption(
-                  key: 'key_help_tools_collapsed', value: 'Y');
+              _panelPos = newPos;
             });
           }
-          _isPanelDragging = false;
+        },
+        onPointerUp: (event) {
+          if (_isPanelDragging) {
+            _savePanelPos();
+            _isPanelDragging = false;
+          } else {
+            onTap();
+          }
         },
         onPointerCancel: (_) {
-          if (_isPanelDragging) _savePanelOffset();
+          if (_isPanelDragging) _savePanelPos();
           _isPanelDragging = false;
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: const Color(0x33FFFFFF),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
-              const SizedBox(width: 4),
-              Text(translate('Hide'),
-                  style: const TextStyle(color: Colors.white70, fontSize: 11)),
-            ],
-          ),
+        child: itemBody,
+      );
+    } else {
+      result = Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(4.0),
+          onTap: onTap,
+          child: itemBody,
         ),
-      ),
-    );
-  }
-
-  InputModel get inputModel => gFFI.inputModel;
-
-  Widget wrap(String text, void Function() onPressed,
-      {bool? active, IconData? icon, Widget? iconChild}) {
-    final isMultiLine = _fn;
-    return TextButton(
-        style: TextButton.styleFrom(
-          minimumSize: Size(0, 0),
-          // Slightly larger hit area than before, without stretching the
-          // surrounding panel: the panel wraps its content tightly.
-          padding: EdgeInsets.symmetric(
-            vertical: widget.embedded ? (isMultiLine ? 7.0 : 4.0) : 12.0,
-            horizontal: widget.embedded ? (isMultiLine ? 10.0 : 7.0) : 12.0,
-          ),
-          //adds padding inside the button
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          //limits the touch area to the button area
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(4.0),
-          ),
-          backgroundColor: active == true ? MyTheme.accent80 : null,
-        ),
-        child: iconChild ??
-            (icon != null
-                ? Icon(icon,
-                    size: widget.embedded ? (isMultiLine ? 14 : 13) : 14,
-                    color: Colors.white)
-                : Text(translate(text),
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: widget.embedded ? (isMultiLine ? 12 : 11) : 12,
-                      height: 1.1,
-                    ))),
-        onPressed: onPressed);
-  }
-
-  _updateRect() {
-    RenderObject? renderObject = _key.currentContext?.findRenderObject();
-    if (renderObject == null) {
-      return;
+      );
     }
-    if (renderObject is RenderBox) {
+
+    if (tooltip != null && tooltip.isNotEmpty) {
+      return Tooltip(message: tooltip, child: result);
+    }
+    return result;
+  }
+
+  void _updateRect() {
+    RenderObject? renderObject = _key.currentContext?.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
       final size = renderObject.size;
       Offset pos = renderObject.localToGlobal(Offset.zero);
       gFFI.cursorModel.keyHelpToolsVisibilityChanged(
-          Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height),
-          widget.keyboardIsVisible);
+        Rect.fromLTWH(pos.dx, pos.dy, size.width, size.height),
+        widget.keyboardIsVisible,
+      );
     }
   }
 
@@ -1814,42 +1801,49 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       gFFI.cursorModel
           .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
       final size = MediaQuery.of(context).size;
-      final curPos = _isPositionInitialized
-          ? _position
+      final curPos = _isCollapsedPosInit
+          ? _collapsedPos
           : Offset(max(0.0, size.width - 64 - 10), 10);
       return Positioned(
         left: curPos.dx,
         top: curPos.dy,
         child: Listener(
           onPointerDown: (event) {
-            _dragStartPos = event.position;
-            _isDragging = false;
+            _collapsedDragStartPos = event.position;
+            _isCollapsedDragging = false;
           },
           onPointerMove: (event) {
-            if (!_isDragging && (event.position - _dragStartPos).distance > 5) {
-              _isDragging = true;
+            if (!_isCollapsedDragging &&
+                (event.position - _collapsedDragStartPos).distance > 5) {
+              _isCollapsedDragging = true;
             }
-            if (_isDragging) {
-              _onDragDelta(event.delta);
+            if (_isCollapsedDragging) {
+              final newPos = Offset(
+                (_collapsedPos.dx + event.delta.dx)
+                    .clamp(0.0, max(0.0, size.width - 64)),
+                (_collapsedPos.dy + event.delta.dy)
+                    .clamp(0.0, max(0.0, size.height - 36)),
+              );
+              setState(() {
+                _collapsedPos = newPos;
+              });
             }
           },
           onPointerUp: (event) {
-            if (_isDragging) {
-              _trySavePosition();
-            } else {
+            if (!_isCollapsedDragging) {
               setState(() {
                 _collapsed = false;
                 bind.mainSetLocalOption(
                     key: 'key_help_tools_collapsed', value: 'N');
               });
+            } else {
+              _trySaveCollapsedPos();
             }
-            _isDragging = false;
+            _isCollapsedDragging = false;
           },
-          onPointerCancel: (event) {
-            if (_isDragging) {
-              _trySavePosition();
-            }
-            _isDragging = false;
+          onPointerCancel: (_) {
+            if (_isCollapsedDragging) _trySaveCollapsedPos();
+            _isCollapsedDragging = false;
           },
           child: Material(
             color: const Color(0xBB000000),
@@ -1869,98 +1863,139 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         ),
       );
     }
+
     final size = MediaQuery.of(context).size;
     final isMac = gFFI.ffiModel.pi.platform == kPeerPlatformMacOS;
-    final space = widget.embedded ? 2.0 : 4.0;
+    final ctrlLabel = isMac ? 'Cmd' : 'Ctrl';
 
-    Widget key(String text, void Function() onPressed, {bool? active}) =>
-        wrap(text, onPressed, active: active);
+    const gap = 2.0;
+    final isNarrow = size.width < (13 * 36.0 + 12 * gap + 24.0);
+    final cols = isNarrow ? 7 : 13;
+    final itemW = isNarrow
+        ? ((min(size.width - 20.0, 420.0) - (cols - 1) * gap) / cols).clamp(34.0, 48.0)
+        : 36.0;
+    const itemH = 34.0;
+    final totalGridW = cols * itemW + (cols - 1) * gap;
+    final rowsCount = isNarrow ? 4 : 2;
+    final fnRowsCount = _fn ? 2 : 0;
+    final totalGridH = (rowsCount + fnRowsCount) * itemH + (rowsCount + fnRowsCount - 1) * gap;
+    final totalPanelW = totalGridW + 12.0;
+    final totalPanelH = totalGridH + 24.0;
 
-    // Two rows on a wide screen. On a narrow screen split at
-    // Page up / Page down into four rows so no key gets squeezed.
-    final firstHalf = <Widget>[
-      key('Esc', () => inputModel.inputKey('VK_ESCAPE')),
-      key('Home', () => inputModel.inputKey('VK_HOME')),
-      key('Up', () => inputModel.inputKey('VK_UP')),
-      key('End', () => inputModel.inputKey('VK_END')),
-      key(isMac ? 'Cmd+S' : 'Ctrl+S', () => sendPrompt(isMac, 'VK_S')),
-      key(isMac ? 'Cmd+C' : 'Ctrl+C', () => sendPrompt(isMac, 'VK_C')),
-      key(isMac ? 'Cmd+X' : 'Ctrl+X', () => sendPrompt(isMac, 'VK_X')),
-    ];
-    final secondHalf = <Widget>[
-      key('Tab', () => inputModel.inputKey('VK_TAB')),
-      key('Left', () => inputModel.inputKey('VK_LEFT')),
-      key('Down', () => inputModel.inputKey('VK_DOWN')),
-      key('Right', () => inputModel.inputKey('VK_RIGHT')),
-      key('Enter', () => inputModel.inputKey('VK_ENTER')),
-      key(isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
-          () => sendPrompt(isMac, 'VK_ENTER')),
-      key(isMac ? 'Cmd+V' : 'Ctrl+V', () => sendPrompt(isMac, 'VK_V')),
-    ];
-    Widget moveScreenKey(bool left) => Tooltip(
-          message: left
-              ? 'Win + Shift + Left (move window to previous monitor)'
-              : 'Win + Shift + Right (move window to next monitor)',
-          child: wrap('', () => _sendWinShiftArrow(left),
-              iconChild: _moveToScreenIcon(left)),
-        );
-    final firstTail = <Widget>[
-      key('Page up', () => inputModel.inputKey('VK_PRIOR')),
-      key(' Alt ', () => setState(() => inputModel.alt = !inputModel.alt),
-          active: inputModel.alt),
-      key('Shift', () => setState(() => inputModel.shift = !inputModel.shift),
-          active: inputModel.shift),
-      key('Ins', () => inputModel.inputKey('VK_INSERT')),
-      key('Del', () => inputModel.inputKey('VK_DELETE')),
-      key('Print', () => inputModel.inputKey('VK_SNAPSHOT')),
-      moveScreenKey(true),
-    ];
-    final secondTail = <Widget>[
-      key('Page down', () => inputModel.inputKey('VK_NEXT')),
-      key('Ctrl ', () => setState(() => inputModel.ctrl = !inputModel.ctrl),
-          active: inputModel.ctrl),
-      key(isMac ? ' Cmd ' : ' Win ',
-          () => setState(() => inputModel.command = !inputModel.command),
-          active: inputModel.command),
-      key(' Fn ', () {
-        setState(() => _fn = !_fn);
-        widget.onExpandToggle?.call(_fn);
-      }, active: _fn),
-      key('Back', () => inputModel.inputKey('VK_BACK')),
-      moveScreenKey(false),
-    ];
+    final defaultPos = Offset(
+      max(0.0, (size.width - totalPanelW) / 2),
+      max(0.0, size.height - totalPanelH - 65.0),
+    );
+    final curPos = _panelPos != null
+        ? Offset(
+            _panelPos!.dx.clamp(0.0, max(0.0, size.width - totalPanelW)),
+            _panelPos!.dy.clamp(0.0, max(0.0, size.height - totalPanelH)),
+          )
+        : defaultPos;
 
-    // The widest row now has 14 keys (one narrow icon button), so keep a
-    // little more room before choosing the two-row layout.
-    final wide = size.width >= 1200.0;
-    final rows = <List<Widget>>[
-      if (wide) ...[
-        [...firstHalf, ...firstTail],
-        [...secondHalf, ...secondTail],
-      ] else ...[
-        firstHalf,
-        secondHalf,
-        firstTail,
-        secondTail,
-      ],
-    ];
+    // Helper to build keycap passing dimensions and panel info
+    Widget k({
+      String? label,
+      IconData? icon,
+      Widget? customChild,
+      required VoidCallback onTap,
+      bool active = false,
+      bool isDragHandle = false,
+      String? tooltip,
+    }) {
+      return _buildKeycap(
+        width: itemW,
+        height: itemH,
+        label: label,
+        icon: icon,
+        customChild: customChild,
+        onTap: onTap,
+        active: active,
+        isDragHandle: isDragHandle,
+        curPanelPos: curPos,
+        screenSize: size,
+        panelW: totalPanelW,
+        panelH: totalPanelH,
+        tooltip: tooltip,
+      );
+    }
 
-    Widget rowOf(List<Widget> keys) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < keys.length; i++) ...[
-              if (i > 0) SizedBox(width: space),
-              keys[i],
-            ],
-          ],
-        );
+    // Key definitions
+    final kEsc = k(label: 'Esc', onTap: () => inputModel.inputKey('VK_ESCAPE'));
+    final kHome = k(icon: Icons.first_page, tooltip: 'Home', onTap: () => inputModel.inputKey('VK_HOME'));
+    final kUp = k(icon: Icons.arrow_upward, tooltip: 'Up', onTap: () => inputModel.inputKey('VK_UP'));
+    final kEnd = k(icon: Icons.last_page, tooltip: 'End', onTap: () => inputModel.inputKey('VK_END'));
+    final kCtrlS = k(customChild: _comboKeyChild(Icons.save_outlined, '$ctrlLabel+S'), tooltip: '$ctrlLabel+S', onTap: () => sendPrompt(isMac, 'VK_S'));
+    final kCtrlC = k(customChild: _comboKeyChild(Icons.copy_all, '$ctrlLabel+C'), tooltip: '$ctrlLabel+C', onTap: () => sendPrompt(isMac, 'VK_C'));
+    final kCtrlX = k(customChild: _comboKeyChild(Icons.content_cut, '$ctrlLabel+X'), tooltip: '$ctrlLabel+X', onTap: () => sendPrompt(isMac, 'VK_X'));
+
+    final kTab = k(icon: Icons.keyboard_tab, tooltip: 'Tab', onTap: () => inputModel.inputKey('VK_TAB'));
+    final kLeft = k(icon: Icons.arrow_back, tooltip: 'Left', onTap: () => inputModel.inputKey('VK_LEFT'));
+    final kDown = k(icon: Icons.arrow_downward, tooltip: 'Down', onTap: () => inputModel.inputKey('VK_DOWN'));
+    final kRight = k(icon: Icons.arrow_forward, tooltip: 'Right', onTap: () => inputModel.inputKey('VK_RIGHT'));
+    final kEnter = k(icon: Icons.keyboard_return, tooltip: 'Enter', onTap: () => inputModel.inputKey('VK_ENTER'));
+    final kCtrlEnter = k(customChild: _comboKeyChild(Icons.keyboard_return, '^Enter'), tooltip: '$ctrlLabel+Enter', onTap: () => sendPrompt(isMac, 'VK_ENTER'));
+    final kCtrlV = k(customChild: _comboKeyChild(Icons.content_paste, '$ctrlLabel+V'), tooltip: '$ctrlLabel+V', onTap: () => sendPrompt(isMac, 'VK_V'));
+
+    final kPgUp = k(icon: Icons.keyboard_double_arrow_up, tooltip: 'Page up', onTap: () => inputModel.inputKey('VK_PRIOR'));
+    final kAlt = k(label: 'Alt', active: inputModel.alt, onTap: () => setState(() => inputModel.alt = !inputModel.alt));
+    final kShift = k(label: 'Shift', active: inputModel.shift, onTap: () => setState(() => inputModel.shift = !inputModel.shift));
+    final kIns = k(label: 'Ins', tooltip: 'Insert', onTap: () => inputModel.inputKey('VK_INSERT'));
+    final kDel = k(icon: Icons.delete_outline, tooltip: 'Delete', onTap: () => inputModel.inputKey('VK_DELETE'));
+    final kPrint = k(customChild: _comboKeyChild(Icons.camera_alt_outlined, 'Print'), tooltip: 'PrintScreen', onTap: () => inputModel.inputKey('VK_SNAPSHOT'));
+
+    final kPgDn = k(icon: Icons.keyboard_double_arrow_down, tooltip: 'Page down', onTap: () => inputModel.inputKey('VK_NEXT'));
+    final kCtrl = k(label: 'Ctrl', active: inputModel.ctrl, onTap: () => setState(() => inputModel.ctrl = !inputModel.ctrl));
+    final kWin = k(icon: Icons.window, active: inputModel.command, tooltip: 'Win', onTap: () => setState(() => inputModel.command = !inputModel.command));
+    final kFn = k(label: 'Fn', active: _fn, tooltip: 'Fn (F1-F12)', onTap: () => setState(() {
+      _fn = !_fn;
+      widget.onExpandToggle?.call(_fn);
+    }));
+    final kBack = k(icon: Icons.backspace_outlined, tooltip: 'Backspace', onTap: () => inputModel.inputKey('VK_BACK'));
+
+    final kMoveScreenLeft = k(
+      customChild: _moveToScreenIcon(true),
+      tooltip: 'Win + Shift + Left',
+      onTap: () => _sendWinShiftArrow(true),
+    );
+    final kMoveScreenRight = k(
+      customChild: _moveToScreenIcon(false),
+      tooltip: 'Win + Shift + Right',
+      onTap: () => _sendWinShiftArrow(false),
+    );
+
+    final kHide = k(
+      icon: Icons.keyboard_hide,
+      tooltip: 'Hide (Drag to move)',
+      isDragHandle: true,
+      onTap: () {
+        setState(() {
+          _collapsed = true;
+          bind.mainSetLocalOption(key: 'key_help_tools_collapsed', value: 'Y');
+        });
+      },
+    );
+
+    final List<List<Widget>> gridRows;
+    if (isNarrow) {
+      gridRows = [
+        [kEsc, kHome, kUp, kEnd, kCtrlS, kCtrlC, kCtrlX],
+        [kTab, kLeft, kDown, kRight, kEnter, kCtrlEnter, kCtrlV],
+        [kPgUp, kAlt, kShift, kIns, kDel, kPrint, kMoveScreenLeft],
+        [kPgDn, kCtrl, kWin, kFn, kBack, kMoveScreenRight, kHide],
+      ];
+    } else {
+      gridRows = [
+        [kEsc, kHome, kUp, kEnd, kCtrlS, kCtrlC, kCtrlX, kPgUp, kAlt, kShift, kIns, kDel, kPrint],
+        [kTab, kLeft, kDown, kRight, kEnter, kCtrlEnter, kCtrlV, kPgDn, kCtrl, kWin, kFn, kBack, kHide],
+      ];
+    }
 
     final fnKeys = <Widget>[
       for (var i = 1; i <= 12; ++i)
-        key('F$i', () => inputModel.inputKey('VK_F$i')),
+        k(label: 'F$i', onTap: () => inputModel.inputKey('VK_F$i')),
     ];
 
-    // 500 ms is long enough for this widget to be built!
     Future.delayed(const Duration(milliseconds: 500), () {
       _updateRect();
     });
@@ -1968,30 +2003,108 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final isHighRes = size.width > 2560;
     final panel = Container(
       key: _key,
+      width: totalPanelW,
       decoration: BoxDecoration(
         color: (isHighRes || widget.embedded)
             ? Colors.transparent
-            : const Color(0xAA000000),
-        borderRadius: BorderRadius.circular(6.0),
+            : const Color(0xE61E1E26),
+        borderRadius: BorderRadius.circular(8.0),
+        border: Border.all(color: Colors.white24, width: 0.8),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x66000000),
+            blurRadius: 10.0,
+            offset: Offset(0, 3),
+          ),
+        ],
       ),
-      // Tight padding: the dark background wraps only the keys instead of
-      // stretching across the whole window width or adding empty rows.
-      padding: EdgeInsets.all(widget.embedded ? 1.0 : 4.0),
+      padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 5.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (!widget.embedded) _buildPanelHandle(),
-          if (!widget.embedded) SizedBox(height: space),
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) SizedBox(height: space),
-            rowOf(rows[i]),
+          if (!widget.embedded)
+            Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (event) {
+                _panelDragStartFinger = event.position;
+                _panelDragStartPos = curPos;
+                _isPanelDragging = false;
+              },
+              onPointerMove: (event) {
+                final delta = event.position - _panelDragStartFinger;
+                if (!_isPanelDragging && delta.distance > 4.0) {
+                  _isPanelDragging = true;
+                }
+                if (_isPanelDragging) {
+                  final newPos = Offset(
+                    (_panelDragStartPos.dx + delta.dx)
+                        .clamp(0.0, max(0.0, size.width - totalPanelW)),
+                    (_panelDragStartPos.dy + delta.dy)
+                        .clamp(0.0, max(0.0, size.height - totalPanelH)),
+                  );
+                  setState(() {
+                    _panelPos = newPos;
+                  });
+                }
+              },
+              onPointerUp: (event) {
+                if (_isPanelDragging) {
+                  _savePanelPos();
+                  _isPanelDragging = false;
+                }
+              },
+              onPointerCancel: (_) {
+                if (_isPanelDragging) _savePanelPos();
+                _isPanelDragging = false;
+              },
+              child: Container(
+                width: double.infinity,
+                height: 10.0,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 32.0,
+                  height: 3.0,
+                  decoration: BoxDecoration(
+                    color: Colors.white38,
+                    borderRadius: BorderRadius.circular(2.0),
+                  ),
+                ),
+              ),
+            ),
+          if (!widget.embedded) const SizedBox(height: 3.0),
+          for (var r = 0; r < gridRows.length; r++) ...[
+            if (r > 0) const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var c = 0; c < gridRows[r].length; c++) ...[
+                  if (c > 0) const SizedBox(width: gap),
+                  gridRows[r][c],
+                ],
+              ],
+            ),
           ],
           if (_fn) ...[
-            SizedBox(height: space),
-            rowOf(fnKeys.sublist(0, 6)),
-            SizedBox(height: space),
-            rowOf(fnKeys.sublist(6)),
+            const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < 6; i++) ...[
+                  if (i > 0) const SizedBox(width: gap),
+                  fnKeys[i],
+                ],
+              ],
+            ),
+            const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 6; i < 12; i++) ...[
+                  if (i > 6) const SizedBox(width: gap),
+                  fnKeys[i],
+                ],
+              ],
+            ),
           ],
         ],
       ),
@@ -1999,21 +2112,10 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
     if (widget.embedded) return panel;
 
-    // Align keeps the panel at its natural size (no left:0/right:0 stretch).
-    // Positioned.fill + Align only hit-test the child area, so the rest of
-    // the remote screen still receives input.
-    return Positioned.fill(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: widget.showBar && gFFI.ffiModel.pi.displays.isNotEmpty
-                ? 60.0
-                : 10.0,
-          ),
-          child: Transform.translate(offset: _panelOffset, child: panel),
-        ),
-      ),
+    return Positioned(
+      left: curPos.dx,
+      top: curPos.dy,
+      child: panel,
     );
   }
 }
