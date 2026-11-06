@@ -1519,11 +1519,12 @@ class KeyHelpTools extends StatefulWidget {
 }
 
 class _KeyHelpToolsState extends State<KeyHelpTools> {
-  var _more = true;
   var _fn = false;
-  var _pin = false;
   late bool _collapsed;
-  final _keyboardVisibilityController = KeyboardVisibilityController();
+  Offset _panelOffset = Offset.zero;
+  bool _isPanelDragging = false;
+  double _panelDragDistance = 0.0;
+  static const String _panelOffsetKey = 'kht-panel-offset';
   final _key = GlobalKey();
 
   Offset _position = Offset.zero;
@@ -1538,9 +1539,10 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     super.initState();
     _collapsed =
         bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
+    _loadPanelOffset();
     if (widget.onExpandToggle != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.onExpandToggle!(_more || _fn);
+        widget.onExpandToggle!(_fn);
       });
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1636,17 +1638,102 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     });
   }
 
+  void _loadPanelOffset() {
+    final s = bind.getLocalFlutterOption(k: _panelOffsetKey);
+    if (s.isEmpty) return;
+    try {
+      final parts = s.split(',');
+      if (parts.length == 2) {
+        _panelOffset = Offset(double.parse(parts[0]), double.parse(parts[1]));
+      }
+    } catch (_) {}
+  }
+
+  void _savePanelOffset() {
+    bind.setLocalFlutterOption(
+        k: _panelOffsetKey, v: '${_panelOffset.dx},${_panelOffset.dy}');
+  }
+
+  void _addPanelOffset(Offset delta) {
+    final size = MediaQuery.of(context).size;
+    setState(() {
+      _panelOffset = Offset(
+        (_panelOffset.dx + delta.dx).clamp(-size.width * 0.7, size.width * 0.7),
+        (_panelOffset.dy + delta.dy)
+            .clamp(-size.height * 0.7, size.height * 0.7),
+      );
+    });
+  }
+
+  // Hide doubles as the drag handle for the whole key panel: a short tap
+  // collapses it, dragging moves the panel.
+  Widget _buildPanelHandle() {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (_) {
+          _isPanelDragging = false;
+          _panelDragDistance = 0.0;
+        },
+        onPointerMove: (event) {
+          _panelDragDistance += event.delta.distance;
+          if (_panelDragDistance > 4.0) {
+            _isPanelDragging = true;
+          }
+          if (_isPanelDragging) {
+            _addPanelOffset(event.delta);
+          }
+        },
+        onPointerUp: (_) {
+          if (_isPanelDragging) {
+            _savePanelOffset();
+          } else {
+            setState(() {
+              _collapsed = true;
+              bind.mainSetLocalOption(
+                  key: 'key_help_tools_collapsed', value: 'Y');
+            });
+          }
+          _isPanelDragging = false;
+        },
+        onPointerCancel: (_) {
+          if (_isPanelDragging) _savePanelOffset();
+          _isPanelDragging = false;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0x33FFFFFF),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.keyboard_hide, size: 14, color: Colors.white70),
+              const SizedBox(width: 4),
+              Text(translate('Hide'),
+                  style: const TextStyle(color: Colors.white70, fontSize: 11)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   InputModel get inputModel => gFFI.inputModel;
 
   Widget wrap(String text, void Function() onPressed,
       {bool? active, IconData? icon}) {
-    final isMultiLine = _more || _fn;
+    final isMultiLine = _fn;
     return TextButton(
         style: TextButton.styleFrom(
           minimumSize: Size(0, 0),
+          // Slightly larger hit area than before, without stretching the
+          // surrounding panel: the panel wraps its content tightly.
           padding: EdgeInsets.symmetric(
-            vertical: widget.embedded ? (isMultiLine ? 6.0 : 3.0) : 10.0,
-            horizontal: widget.embedded ? (isMultiLine ? 8.0 : 6.0) : 9.75,
+            vertical: widget.embedded ? (isMultiLine ? 7.0 : 4.0) : 12.0,
+            horizontal: widget.embedded ? (isMultiLine ? 10.0 : 7.0) : 12.0,
           ),
           //adds padding inside the button
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -1663,7 +1750,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
             : Text(translate(text),
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: widget.embedded ? (isMultiLine ? 11 : 10.5) : 11,
+                  fontSize: widget.embedded ? (isMultiLine ? 12 : 11) : 12,
                   height: 1.1,
                 )),
         onPressed: onPressed);
@@ -1745,241 +1832,140 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       );
     }
     final size = MediaQuery.of(context).size;
+    final isMac = gFFI.ffiModel.pi.platform == kPeerPlatformMacOS;
+    final space = widget.embedded ? 2.0 : 4.0;
 
-    final pi = gFFI.ffiModel.pi;
-    final isMac = pi.platform == kPeerPlatformMacOS;
-    final isWin = pi.platform == kPeerPlatformWindows;
-    final isLinux = pi.platform == kPeerPlatformLinux;
-    final modifiers = <Widget>[
-      wrap('Ctrl ', () {
-        setState(() => inputModel.ctrl = !inputModel.ctrl);
-      }, active: inputModel.ctrl),
-      wrap(' Alt ', () {
-        setState(() => inputModel.alt = !inputModel.alt);
-      }, active: inputModel.alt),
-      wrap('Shift', () {
-        setState(() => inputModel.shift = !inputModel.shift);
-      }, active: inputModel.shift),
-      wrap(isMac ? ' Cmd ' : ' Win ', () {
-        setState(() => inputModel.command = !inputModel.command);
-      }, active: inputModel.command),
-      wrap('Tab', () {
-        inputModel.inputKey('VK_TAB');
-      }),
+    Widget key(String text, void Function() onPressed, {bool? active}) =>
+        wrap(text, onPressed, active: active);
+
+    // Two rows on a wide screen. On a narrow screen split at
+    // Page up / Page down into four rows so no key gets squeezed.
+    final firstHalf = <Widget>[
+      key('Esc', () => inputModel.inputKey('VK_ESCAPE')),
+      key('Home', () => inputModel.inputKey('VK_HOME')),
+      key('Up', () => inputModel.inputKey('VK_UP')),
+      key('End', () => inputModel.inputKey('VK_END')),
+      key(isMac ? 'Cmd+S' : 'Ctrl+S', () => sendPrompt(isMac, 'VK_S')),
+      key(isMac ? 'Cmd+C' : 'Ctrl+C', () => sendPrompt(isMac, 'VK_C')),
+      key(isMac ? 'Cmd+X' : 'Ctrl+X', () => sendPrompt(isMac, 'VK_X')),
     ];
-    final keys = <Widget>[
-      wrap(
-          ' Fn ',
-          () => setState(
-                () {
-                  _fn = !_fn;
-                  if (_fn) {
-                    _more = false;
-                  }
-                  widget.onExpandToggle?.call(_more || _fn);
-                },
-              ),
-          active: _fn),
-      wrap(
-          '',
-          () => setState(
-                () => _pin = !_pin,
-              ),
-          active: _pin,
-          icon: Icons.push_pin),
-      wrap(
-          'Hide',
-          () => setState(() {
-                _collapsed = true;
-                bind.mainSetLocalOption(
-                    key: 'key_help_tools_collapsed', value: 'Y');
-              }),
-          icon: Icons.keyboard_hide),
-      wrap('', () {
-        inputModel.inputKey('VK_LEFT');
-      }, icon: Icons.keyboard_arrow_left),
-      wrap('', () {
-        inputModel.inputKey('VK_UP');
-      }, icon: Icons.keyboard_arrow_up),
-      wrap('', () {
-        inputModel.inputKey('VK_DOWN');
-      }, icon: Icons.keyboard_arrow_down),
-      wrap('', () {
-        inputModel.inputKey('VK_RIGHT');
-      }, icon: Icons.keyboard_arrow_right),
-      wrap(isMac ? 'Cmd+C' : 'Ctrl+C', () {
-        sendPrompt(isMac, 'VK_C');
-      }),
-      wrap(isMac ? 'Cmd+V' : 'Ctrl+V', () {
-        sendPrompt(isMac, 'VK_V');
-      }),
-      wrap(isMac ? 'Cmd+S' : 'Ctrl+S', () {
-        sendPrompt(isMac, 'VK_S');
-      }),
-      wrap(
-          ' ... ',
-          () => setState(
-                () {
-                  _more = !_more;
-                  if (_more) {
-                    _fn = false;
-                  }
-                  widget.onExpandToggle?.call(_more || _fn);
-                },
-              ),
-          active: _more),
+    final secondHalf = <Widget>[
+      key('Tab', () => inputModel.inputKey('VK_TAB')),
+      key('Left', () => inputModel.inputKey('VK_LEFT')),
+      key('Down', () => inputModel.inputKey('VK_DOWN')),
+      key('Right', () => inputModel.inputKey('VK_RIGHT')),
+      key('Enter', () => inputModel.inputKey('VK_ENTER')),
+      key(isMac ? 'Cmd+Enter' : 'Ctrl+Enter',
+          () => sendPrompt(isMac, 'VK_ENTER')),
+      key(isMac ? 'Cmd+V' : 'Ctrl+V', () => sendPrompt(isMac, 'VK_V')),
     ];
-    final fn = <Widget>[
-      SizedBox(width: 9999),
+    final firstTail = <Widget>[
+      key('Page up', () => inputModel.inputKey('VK_PRIOR')),
+      key(' Alt ', () => setState(() => inputModel.alt = !inputModel.alt),
+          active: inputModel.alt),
+      key('Shift', () => setState(() => inputModel.shift = !inputModel.shift),
+          active: inputModel.shift),
+      key('Ins', () => inputModel.inputKey('VK_INSERT')),
+      key('Del', () => inputModel.inputKey('VK_DELETE')),
+      key('Print', () => inputModel.inputKey('VK_SNAPSHOT')),
     ];
-    for (var i = 1; i <= 12; ++i) {
-      final name = 'F$i';
-      fn.add(wrap(name, () {
-        inputModel.inputKey('VK_$name');
-      }));
-    }
-    final more = <Widget>[
-      SizedBox(width: 9999),
-      wrap('Esc', () {
-        inputModel.inputKey('VK_ESCAPE');
-      }),
-      wrap('Home', () {
-        inputModel.inputKey('VK_HOME');
-      }),
-      wrap('End', () {
-        inputModel.inputKey('VK_END');
-      }),
-      wrap('Ins', () {
-        inputModel.inputKey('VK_INSERT');
-      }),
-      wrap('Del', () {
-        inputModel.inputKey('VK_DELETE');
-      }),
-      wrap('PgUp', () {
-        inputModel.inputKey('VK_PRIOR');
-      }),
-      wrap('PgDn', () {
-        inputModel.inputKey('VK_NEXT');
-      }),
-      // to-do: support PrtScr on Mac
-      if (isWin || isLinux)
-        wrap('PrtScr', () {
-          inputModel.inputKey('VK_SNAPSHOT');
-        }),
-      if (isWin || isLinux)
-        wrap('ScrollLock', () {
-          inputModel.inputKey('VK_SCROLL');
-        }),
-      if (isWin || isLinux)
-        wrap('Pause', () {
-          inputModel.inputKey('VK_PAUSE');
-        }),
-      if (isWin || isLinux)
-        // Maybe it's better to call it "Menu"
-        // https://en.wikipedia.org/wiki/Menu_key
-        wrap('Menu', () {
-          inputModel.inputKey('Apps');
-        }),
-      wrap('Enter', () {
-        inputModel.inputKey('VK_ENTER');
-      }),
+    final secondTail = <Widget>[
+      key('Page down', () => inputModel.inputKey('VK_NEXT')),
+      key('Ctrl ', () => setState(() => inputModel.ctrl = !inputModel.ctrl),
+          active: inputModel.ctrl),
+      key(isMac ? ' Cmd ' : ' Win ',
+          () => setState(() => inputModel.command = !inputModel.command),
+          active: inputModel.command),
+      key(' Fn ', () {
+        setState(() => _fn = !_fn);
+        widget.onExpandToggle?.call(_fn);
+      }, active: _fn),
+      key('Back', () => inputModel.inputKey('VK_BACK')),
     ];
-    final space = widget.embedded ? 2.0 : (size.width > 320 ? 4.0 : 2.0);
+
+    // 13 keys in one row need roughly 88 px each; below that, use four rows.
+    final wide = size.width >= 1150.0;
+    final rows = <List<Widget>>[
+      if (wide) ...[
+        [...firstHalf, ...firstTail],
+        [...secondHalf, ...secondTail],
+      ] else ...[
+        firstHalf,
+        secondHalf,
+        firstTail,
+        secondTail,
+      ],
+    ];
+
+    Widget rowOf(List<Widget> keys) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < keys.length; i++) ...[
+              if (i > 0) SizedBox(width: space),
+              keys[i],
+            ],
+          ],
+        );
+
+    final fnKeys = <Widget>[
+      for (var i = 1; i <= 12; ++i)
+        key('F$i', () => inputModel.inputKey('VK_F$i')),
+    ];
+
     // 500 ms is long enough for this widget to be built!
-    Future.delayed(Duration(milliseconds: 500), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       _updateRect();
     });
+
     final isHighRes = size.width > 2560;
-    final expandedWidget = Container(
-        key: _key,
+    final panel = Container(
+      key: _key,
+      decoration: BoxDecoration(
         color: (isHighRes || widget.embedded)
             ? Colors.transparent
-            : Color(0xAA000000),
-        padding: EdgeInsets.only(
-            top: widget.embedded
-                ? 1.0
-                : ((isAndroid ||
-                        !_keyboardVisibilityController.isVisible ||
-                        isHighRes)
-                    ? 4
-                    : 24),
-            bottom: widget.embedded ? 1.0 : (isHighRes ? 4 : 8)),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (!widget.embedded)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 6.0, bottom: 2.0),
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _collapsed = true;
-                        bind.mainSetLocalOption(
-                            key: 'key_help_tools_collapsed', value: 'Y');
-                      });
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0x33FFFFFF),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.keyboard_hide,
-                              size: 14, color: Colors.white70),
-                          const SizedBox(width: 4),
-                          Text(
-                            translate('Hide'),
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 11),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            Wrap(
-              spacing: space,
-              runSpacing: space,
-              children: <Widget>[SizedBox(width: 9999)] +
-                  modifiers +
-                  keys +
-                  (_fn ? fn : []) +
-                  (_more
-                      ? more
-                      : [
-                          wrap('Enter', () {
-                            inputModel.inputKey('VK_ENTER');
-                          })
-                        ]),
-            ),
+            : const Color(0xAA000000),
+        borderRadius: BorderRadius.circular(6.0),
+      ),
+      // Tight padding: the dark background wraps only the keys instead of
+      // stretching across the whole window width or adding empty rows.
+      padding: EdgeInsets.all(widget.embedded ? 1.0 : 4.0),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!widget.embedded) _buildPanelHandle(),
+          if (!widget.embedded) SizedBox(height: space),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) SizedBox(height: space),
+            rowOf(rows[i]),
           ],
-        ));
+          if (_fn) ...[
+            SizedBox(height: space),
+            rowOf(fnKeys.sublist(0, 6)),
+            SizedBox(height: space),
+            rowOf(fnKeys.sublist(6)),
+          ],
+        ],
+      ),
+    );
 
-    if (widget.embedded) {
-      return expandedWidget;
-    }
+    if (widget.embedded) return panel;
 
-    if (!widget.isTablet) {
-      return Positioned(
-        top: 0,
-        left: 0,
-        right: 0,
-        child: expandedWidget,
-      );
-    }
-    return Positioned(
-      bottom: widget.showBar && gFFI.ffiModel.pi.displays.isNotEmpty ? 60 : 10,
-      left: 0,
-      right: 0,
-      child: expandedWidget,
+    // Align keeps the panel at its natural size (no left:0/right:0 stretch).
+    // Positioned.fill + Align only hit-test the child area, so the rest of
+    // the remote screen still receives input.
+    return Positioned.fill(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: EdgeInsets.only(
+            bottom: widget.showBar && gFFI.ffiModel.pi.displays.isNotEmpty
+                ? 60.0
+                : 10.0,
+          ),
+          child: Transform.translate(offset: _panelOffset, child: panel),
+        ),
+      ),
     );
   }
 }
