@@ -2487,7 +2487,9 @@ class CanvasModel with ChangeNotifier {
     double h = size.height - topToEdge - bottomToEdge;
     if (isMobile) {
       // Account for horizontal safe area insets on both orientations.
-      w = w - mediaData.padding.left - mediaData.padding.right;
+      if (!isAndroid) {
+        w = w - mediaData.padding.left - mediaData.padding.right;
+      }
       // Vertically, subtract the bottom keyboard inset (viewInsets.bottom) and any
       // bottom overlay (e.g. key-help tools) so the canvas is not covered.
       final isTablet = isTabletLayoutMode(null);

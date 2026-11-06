@@ -616,6 +616,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     child: isWebDesktop
                         ? getBodyForDesktopWithListener()
                         : SafeArea(
+                            left: !isAndroid,
+                            right: !isAndroid,
                             top: !isAndroid,
                             bottom: !isAndroid,
                             child:

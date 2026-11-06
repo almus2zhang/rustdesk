@@ -180,7 +180,6 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onTapUp(TapUpDetails d) async {
-    final TapDownDetails? lastTapDownDetails = _lastTapDownDetails;
     _lastTapDownDetails = null;
     if (isNotTouchBasedDevice()) {
       return;
@@ -197,7 +196,7 @@ class _RawTouchGestureDetectorRegionState
           await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
       if (isMoved) {
         // If pan already handled 'down', don't send it again.
-        if (lastTapDownDetails != null && !_touchModePanStarted) {
+        if (!_touchModePanStarted) {
           await inputModel.tapDown(MouseButtons.left);
         }
         await inputModel.tapUp(MouseButtons.left);
@@ -747,6 +746,9 @@ class _RawTouchGestureDetectorRegionState
         instance
           ..onTapDown = onTapDown
           ..onTapUp = onTapUp
+          ..onTapCancel = () {
+            _lastTapDownDetails = null;
+          }
           ..onTap = onTap;
       }),
       DoubleTapGestureRecognizer:

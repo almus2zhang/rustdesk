@@ -150,9 +150,42 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun updateSystemGestureExclusion() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val decorView = window.decorView
+            decorView.post {
+                val width = decorView.width
+                val height = decorView.height
+                if (width > 0 && height > 0) {
+                    val density = resources.displayMetrics.density
+                    val edgeWidth = (36 * density).toInt().coerceAtMost(width / 4)
+                    val bottomHeight = (48 * density).toInt().coerceAtMost(height / 4)
+
+                    val rects = mutableListOf<android.graphics.Rect>()
+                    rects.add(android.graphics.Rect(0, 0, edgeWidth, height))
+                    rects.add(android.graphics.Rect(width - edgeWidth, 0, width, height))
+                    rects.add(android.graphics.Rect(0, height - bottomHeight, width, height))
+                    try {
+                        decorView.systemGestureExclusionRects = rects
+                    } catch (e: Exception) {
+                        Log.w(logTag, "Failed to set systemGestureExclusionRects: $e")
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            updateSystemGestureExclusion()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         setHighRefreshRate()
+        updateSystemGestureExclusion()
         val inputPer = InputService.isOpen
         activity.runOnUiThread {
             flutterMethodChannel?.invokeMethod(
@@ -183,6 +216,11 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.decorView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                updateSystemGestureExclusion()
+            }
         }
         if (_rdClipboardManager == null) {
             _rdClipboardManager = RdClipboardManager(getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
