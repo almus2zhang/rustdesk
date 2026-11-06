@@ -3234,7 +3234,23 @@ class CursorModel with ChangeNotifier {
   bool _blockEvents = false;
   List<Rect> get blockedRects => List.unmodifiable(_blockedRects);
 
-  set blockEvents(bool v) => _blockEvents = v;
+  Timer? _blockEventsResetTimer;
+
+  set blockEvents(bool v) {
+    _blockEvents = v;
+    _blockEventsResetTimer?.cancel();
+    _blockEventsResetTimer = null;
+    if (v) {
+      // Android may drop the pointer-up/cancel event at the physical screen
+      // edge. A permanently set global block makes CursorModel.move() fail
+      // for every gesture, freezing the remote cursor for good. Fall back to
+      // a timed release so a dropped event can never lock input forever.
+      _blockEventsResetTimer = Timer(const Duration(seconds: 4), () {
+        _blockEvents = false;
+        _blockEventsResetTimer = null;
+      });
+    }
+  }
 
   keyHelpToolsVisibilityChanged(Rect? rect, bool keyboardIsVisible) {
     _keyHelpToolsRect = rect;

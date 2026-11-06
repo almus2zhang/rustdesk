@@ -553,10 +553,21 @@ class _RawTouchGestureDetectorRegionState
   // stuck in the "started" state and cause issues such as the Magic Mouse
   // double-click problem on iPad with magic mouse.
   onOneFingerPanCancel() {
+    final wasPanStarted = _touchModePanStarted;
     _touchModePanStarted = false;
     _oneFingerInertiaTimer?.cancel();
     _oneFingerScrollX = 0;
     _oneFingerScrollY = 0;
+    // Android can cancel the pointer at the physical screen edge. Then
+    // onOneFingerPanEnd never runs, so the left button pressed by 'select'
+    // (text selection) mode stayed down forever and later taps were
+    // swallowed / the cursor appeared frozen.
+    if (wasPanStarted &&
+        handleTouch &&
+        ffiModel.touchPanMode.value == 'select' &&
+        !inputModel.relativeMouseMode.value) {
+      inputModel.sendMouse('up', MouseButtons.left);
+    }
   }
 
   // scale + pan event
