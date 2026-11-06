@@ -8,7 +8,7 @@ pub const AMYUNI_IDD_DEVICE_STRING: &'static str = "USB Mobile Monitor Virtual D
 const IDD_IMPL: &str = IDD_IMPL_AMYUNI;
 const IDD_IMPL_RUSTDESK: &str = "rustdesk_idd";
 const IDD_IMPL_AMYUNI: &str = "amyuni_idd";
-const IDD_PLUG_OUT_ALL_INDEX: i32 = -1;
+pub const IDD_PLUG_OUT_ALL_INDEX: i32 = -1;
 
 pub fn is_amyuni_idd() -> bool {
     IDD_IMPL == IDD_IMPL_AMYUNI
