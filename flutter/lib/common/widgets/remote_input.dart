@@ -168,6 +168,12 @@ class _RawTouchGestureDetectorRegionState
       _lastPosOfDoubleTapDown = d.localPosition;
       // Desktop or mobile "Touch mode"
       _lastTapDownDetails = d;
+      // Move the cursor on DOWN, exactly like onDoubleTapDown does. At the
+      // screen edge Android can cancel the pointer (edge gesture /
+      // accidental-touch suppression) or the gesture arena can reject the
+      // tap, so onTapUp never runs and the cursor stays behind. A double tap
+      // "fixes" it only because its down callback already moved the cursor.
+      await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
     } else {
       _lastTapDownPositionForMouseMode = d.localPosition;
     }
