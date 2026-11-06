@@ -104,7 +104,10 @@ pub fn restore_usb_display_settings(peer_id: &str) {
 /// Check whether a given monitor display name is the USB virtual display
 pub fn is_this_usb_display(name: &str) -> bool {
     if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
-        if name == dev_name || dev_name.contains(name) || name.contains(dev_name) {
+        // Strict match only: "\\.\DISPLAY1" is a prefix of "\\.\DISPLAY10",
+        // so substring matching used to misidentify a physical monitor as the
+        // virtual one. The Amyuni DeviceString check below is the fallback.
+        if name == dev_name {
             return true;
         }
     }

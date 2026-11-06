@@ -1799,17 +1799,15 @@ impl Connection {
                             peer_id.clone(),
                             "usb_display_target".to_string(),
                         ) == "primary";
+                        // Only select the virtual monitor by device name.
+                        // Falling back to `displays.len() - 1` picked the
+                        // second physical monitor whenever the newly added
+                        // virtual display had not been enumerated yet.
                         let target_idx = if prefer_primary {
                             None
                         } else {
                             displays.iter().position(|d| {
                                 crate::usb_display::is_this_usb_display(&d.name)
-                            }).or_else(|| {
-                                if displays.len() > 1 {
-                                    Some(displays.len() - 1)
-                                } else {
-                                    None
-                                }
                             })
                         };
 
@@ -4326,6 +4324,24 @@ impl Connection {
                 let display_idx = d.unwrap_or(self.display_idx);
                 if let Some(display) = displays.get(display_idx) {
                     let name = display.name();
+                    #[cfg(windows)]
+                    if (crate::usb_display::is_usb_display_active()
+                        || self.ip.starts_with("127.0.0.1"))
+                        && !virtual_display_manager::is_virtual_display(&name)
+                    {
+                        // A secondary-display session can still hold a stale
+                        // display index (for example len()-1 before the new
+                        // virtual monitor is enumerated). Never let such a
+                        // request change a physical monitor's mode: the old
+                        // behaviour recorded it in CHANGED_RESOLUTIONS and
+                        // restored it on disconnect, giving the "changed on
+                        // connect, reverted on disconnect" loop.
+                        log::warn!(
+                            "Ignoring resolution change for physical display '{}' while a USB virtual display is active",
+                            &name
+                        );
+                        return;
+                    }
                     #[cfg(windows)]
                     if let Some(_ok) =
                         virtual_display_manager::rustdesk_idd::change_resolution_if_is_virtual_display(
