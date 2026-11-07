@@ -1869,8 +1869,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final ctrlLabel = isMac ? 'Cmd' : 'Ctrl';
 
     const gap = 2.0;
-    final isNarrow = size.width < (13 * 36.0 + 12 * gap + 24.0);
-    final cols = isNarrow ? 7 : 13;
+    final isNarrow = size.width < (14 * 36.0 + 13 * gap + 24.0);
+    final cols = isNarrow ? 7 : 14;
     final itemW = isNarrow
         ? ((min(size.width - 20.0, 420.0) - (cols - 1) * gap) / cols).clamp(34.0, 48.0)
         : 36.0;
@@ -1878,7 +1878,9 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final totalGridW = cols * itemW + (cols - 1) * gap;
     final rowsCount = isNarrow ? 4 : 2;
     final fnRowsCount = _fn ? 2 : 0;
-    final totalGridH = (rowsCount + fnRowsCount) * itemH + (rowsCount + fnRowsCount - 1) * gap;
+    final ctrlRowsCount = inputModel.ctrl ? 3 : 0;
+    final totalRows = rowsCount + fnRowsCount + ctrlRowsCount;
+    final totalGridH = totalRows * itemH + (totalRows - 1) * gap;
     final totalPanelW = totalGridW + 12.0;
     final totalPanelH = totalGridH + 24.0;
 
@@ -1986,8 +1988,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       ];
     } else {
       gridRows = [
-        [kEsc, kHome, kUp, kEnd, kCtrlS, kCtrlC, kCtrlX, kPgUp, kAlt, kShift, kIns, kDel, kPrint],
-        [kTab, kLeft, kDown, kRight, kEnter, kCtrlEnter, kCtrlV, kPgDn, kCtrl, kWin, kFn, kBack, kHide],
+        [kEsc, kHome, kUp, kEnd, kCtrlS, kCtrlC, kCtrlX, kPgUp, kAlt, kShift, kIns, kDel, kPrint, kMoveScreenLeft],
+        [kTab, kLeft, kDown, kRight, kEnter, kCtrlEnter, kCtrlV, kPgDn, kCtrl, kWin, kFn, kBack, kMoveScreenRight, kHide],
       ];
     }
 
@@ -1995,6 +1997,25 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       for (var i = 1; i <= 12; ++i)
         k(label: 'F$i', onTap: () => inputModel.inputKey('VK_F$i')),
     ];
+
+    final qwertyKeyW = isNarrow
+        ? ((totalGridW - 9 * gap) / 10).clamp(24.0, itemW)
+        : itemW;
+    Widget qKey(String letter) {
+      return _buildKeycap(
+        width: qwertyKeyW,
+        height: itemH,
+        label: letter,
+        onTap: () => inputModel.inputKey('VK_$letter'),
+        curPanelPos: curPos,
+        screenSize: size,
+        panelW: totalPanelW,
+        panelH: totalPanelH,
+      );
+    }
+    const qwertyRow1 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'];
+    const qwertyRow2 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'];
+    const qwertyRow3 = ['Z', 'X', 'C', 'V', 'B', 'N', 'M'];
 
     Future.delayed(const Duration(milliseconds: 500), () {
       _updateRect();
@@ -2080,6 +2101,38 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
                 for (var c = 0; c < gridRows[r].length; c++) ...[
                   if (c > 0) const SizedBox(width: gap),
                   gridRows[r][c],
+                ],
+              ],
+            ),
+          ],
+          if (inputModel.ctrl) ...[
+            const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < qwertyRow1.length; i++) ...[
+                  if (i > 0) const SizedBox(width: gap),
+                  qKey(qwertyRow1[i]),
+                ],
+              ],
+            ),
+            const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < qwertyRow2.length; i++) ...[
+                  if (i > 0) const SizedBox(width: gap),
+                  qKey(qwertyRow2[i]),
+                ],
+              ],
+            ),
+            const SizedBox(height: gap),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < qwertyRow3.length; i++) ...[
+                  if (i > 0) const SizedBox(width: gap),
+                  qKey(qwertyRow3[i]),
                 ],
               ],
             ),

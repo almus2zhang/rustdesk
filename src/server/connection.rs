@@ -4137,8 +4137,6 @@ impl Connection {
 
     fn switch_display_to(&mut self, display_idx: usize, server: Arc<RwLock<Server>>) {
         let new_service_name = video_service::get_service_name(self.video_source(), display_idx);
-        let old_service_name =
-            video_service::get_service_name(self.video_source(), self.display_idx);
         let mut lock = server.write().unwrap();
         if display_idx != *display_service::PRIMARY_DISPLAY_IDX {
             if !lock.contains(&new_service_name) {
@@ -4148,12 +4146,9 @@ impl Connection {
                 )));
             }
         }
-        // For versions greater than 1.2.4, a `CaptureDisplays` message will be sent immediately.
-        // Unnecessary capturers will be removed then.
-        if !crate::common::is_support_multi_ui_session(&self.lr.version) {
-            lock.subscribe(&old_service_name, self.inner.clone(), false);
-        }
-        lock.subscribe(&new_service_name, self.inner.clone(), true);
+        // Exclusively subscribe to the target display and unsubscribe all other video services,
+        // preventing dual capturers from sending concurrent frames and causing display flickering.
+        lock.capture_displays(self.inner.clone(), self.video_source(), &[display_idx], true, true);
         self.display_idx = display_idx;
     }
 

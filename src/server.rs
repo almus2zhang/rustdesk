@@ -484,7 +484,7 @@ impl Server {
             .count()
     }
 
-    fn capture_displays(
+    pub(crate) fn capture_displays(
         &mut self,
         conn: ConnInner,
         source: VideoSource,
