@@ -542,11 +542,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Future<void> _initUsbSurface() async {
     if (!isAndroid) return;
     try {
-      final dm = await const MethodChannel('com.carriez.flutter_hbb/service')
+      final dm = await const MethodChannel('mChannel')
           .invokeMethod('get_screen_metrics');
       final w = (dm is Map && dm['width'] is int) ? dm['width'] as int : 1920;
       final h = (dm is Map && dm['height'] is int) ? dm['height'] as int : 1080;
-      final res = await const MethodChannel('com.carriez.flutter_hbb/service')
+      final res = await const MethodChannel('mChannel')
           .invokeMethod('create_usb_surface', {
         'width': w,
         'height': h,
@@ -564,7 +564,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (!isAndroid) return;
     try {
       gFFI.imageModel.usbTextureId = null;
-      await const MethodChannel('com.carriez.flutter_hbb/service')
+      await const MethodChannel('mChannel')
           .invokeMethod('destroy_usb_surface');
     } catch (e) {
       debugPrint('Failed to destroy USB surface texture: $e');

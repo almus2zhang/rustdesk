@@ -231,6 +231,7 @@ pub unsafe fn release_native_window(win: *mut std::ffi::c_void) {
     libc::dlclose(handle);
 }
 
+#[no_mangle]
 pub extern "system" fn Java_ffi_FFI_setClipboardManager(
     env: JNIEnv,
     _class: JClass,
