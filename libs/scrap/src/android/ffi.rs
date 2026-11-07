@@ -213,14 +213,14 @@ pub unsafe fn release_native_window(win: *mut std::ffi::c_void) {
     if win.is_null() {
         return;
     }
-    let handle = libc::dlopen(
+    let handle = hbb_common::libc::dlopen(
         b"libandroid.so\0".as_ptr() as *const _,
-        libc::RTLD_NOW,
+        hbb_common::libc::RTLD_NOW,
     );
     if handle.is_null() {
         return;
     }
-    let sym = libc::dlsym(
+    let sym = hbb_common::libc::dlsym(
         handle,
         b"ANativeWindow_release\0".as_ptr() as *const _,
     );
@@ -228,7 +228,7 @@ pub unsafe fn release_native_window(win: *mut std::ffi::c_void) {
         let func: unsafe extern "C" fn(*mut std::ffi::c_void) = std::mem::transmute(sym);
         func(win);
     }
-    libc::dlclose(handle);
+    hbb_common::libc::dlclose(handle);
 }
 
 #[no_mangle]

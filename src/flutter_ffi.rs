@@ -3193,27 +3193,27 @@ pub mod server_side {
             return;
         }
         let env_ptr = env.get_raw();
-        let handle = libc::dlopen(
+        let handle = hbb_common::libc::dlopen(
             b"libandroid.so\0".as_ptr() as *const _,
-            libc::RTLD_NOW,
+            hbb_common::libc::RTLD_NOW,
         );
         if handle.is_null() {
             log::error!("dlopen libandroid.so failed in registerUsbSurface");
             return;
         }
-        let sym = libc::dlsym(
+        let sym = hbb_common::libc::dlsym(
             handle,
             b"ANativeWindow_fromSurface\0".as_ptr() as *const _,
         );
         if sym.is_null() {
             log::error!("dlsym ANativeWindow_fromSurface failed");
-            libc::dlclose(handle);
+            hbb_common::libc::dlclose(handle);
             return;
         }
         let get_win: unsafe extern "C" fn(*mut jni::sys::JNIEnv, jni::sys::jobject) -> *mut std::ffi::c_void =
             std::mem::transmute(sym);
         let win = get_win(env_ptr, raw_surface);
-        libc::dlclose(handle);
+        hbb_common::libc::dlclose(handle);
 
         if !win.is_null() {
             let old = scrap::android::ffi::USB_NATIVE_WINDOW.swap(win, std::sync::atomic::Ordering::SeqCst);
