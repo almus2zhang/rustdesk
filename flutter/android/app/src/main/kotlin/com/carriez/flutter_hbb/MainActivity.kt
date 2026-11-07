@@ -38,8 +38,6 @@ import com.hjq.permissions.XXPermissions
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import android.view.Surface
-import io.flutter.view.TextureRegistry
 import kotlin.concurrent.thread
 
 
@@ -72,22 +70,6 @@ class MainActivity : FlutterActivity() {
     private val channelTag = "mChannel"
     private val logTag = "mMainActivity"
     private var mainService: MainService? = null
-
-    private var usbSurfaceTextureEntry: TextureRegistry.SurfaceTextureEntry? = null
-    private var usbSurface: Surface? = null
-
-    private fun destroyUsbSurface() {
-        try {
-            FFI.unregisterUsbSurface()
-            usbSurface?.release()
-            usbSurface = null
-            usbSurfaceTextureEntry?.release()
-            usbSurfaceTextureEntry = null
-            Log.i(logTag, "destroyUsbSurface complete")
-        } catch (e: Exception) {
-            Log.e(logTag, "destroyUsbSurface error", e)
-        }
-    }
 
     private var isAudioStart = false
     private val audioRecordHandle = AudioRecordHandle(this, { false }, { isAudioStart })
@@ -286,7 +268,6 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.e(logTag, "onDestroy")
-        destroyUsbSurface()
         aoaProxyServer?.stop()
         aoaProxyServer = null
         try {
@@ -327,36 +308,6 @@ class MainActivity : FlutterActivity() {
                     val map = pendingUsbAttachMap
                     pendingUsbAttachMap = null
                     result.success(map)
-                    return@setMethodCallHandler
-                }
-                "create_usb_surface" -> {
-                    try {
-                        val width = (call.argument<Int>("width") ?: 1920).coerceAtLeast(1)
-                        val height = (call.argument<Int>("height") ?: 1080).coerceAtLeast(1)
-                        destroyUsbSurface()
-                        val entry = flutterEngine?.renderer?.createSurfaceTexture()
-                        if (entry != null) {
-                            usbSurfaceTextureEntry = entry
-                            val st = entry.surfaceTexture()
-                            st.setDefaultBufferSize(width, height)
-                            val surface = Surface(st)
-                            usbSurface = surface
-                            FFI.registerUsbSurface(surface, width, height)
-                            Log.i(logTag, "create_usb_surface success, textureId: ${entry.id()}, size: ${width}x${height}")
-                            result.success(entry.id())
-                        } else {
-                            Log.e(logTag, "create_usb_surface failed: registry.createSurfaceTexture returned null")
-                            result.success(-1L)
-                        }
-                    } catch (e: Exception) {
-                        Log.e(logTag, "create_usb_surface error", e)
-                        result.success(-1L)
-                    }
-                    return@setMethodCallHandler
-                }
-                "destroy_usb_surface" -> {
-                    destroyUsbSurface()
-                    result.success(true)
                     return@setMethodCallHandler
                 }
                 "get_screen_metrics" -> {

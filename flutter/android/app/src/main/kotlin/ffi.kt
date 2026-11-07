@@ -3,7 +3,6 @@
 package ffi
 
 import android.content.Context
-import android.view.Surface
 import java.nio.ByteBuffer
 
 import com.carriez.flutter_hbb.RdClipboardManager
@@ -28,6 +27,4 @@ object FFI {
     external fun getBuildinOption(key: String): String
     external fun onClipboardUpdate(clips: ByteBuffer)
     external fun isServiceClipboardEnabled(): Boolean
-    external fun registerUsbSurface(surface: Surface, width: Int, height: Int)
-    external fun unregisterUsbSurface()
 }

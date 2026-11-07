@@ -235,7 +235,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
 
     if (isSecondary) {
-      _initUsbSurface();
       final savedCodec =
           bind.mainGetPeerOptionSync(id: widget.id, key: 'codec-preference');
       final savedI444 = bind.mainGetPeerOptionSync(id: widget.id, key: 'i444');
@@ -305,7 +304,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Future<void> dispose() async {
     _displaysSubscription?.cancel();
-    _destroyUsbSurface();
     WidgetsBinding.instance.removeObserver(this);
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -537,38 +535,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         _mobileFocusNode.requestFocus();
       });
     });
-  }
-
-  Future<void> _initUsbSurface() async {
-    if (!isAndroid) return;
-    try {
-      final dm = await const MethodChannel('mChannel')
-          .invokeMethod('get_screen_metrics');
-      final w = (dm is Map && dm['width'] is int) ? dm['width'] as int : 1920;
-      final h = (dm is Map && dm['height'] is int) ? dm['height'] as int : 1080;
-      final res = await const MethodChannel('mChannel')
-          .invokeMethod('create_usb_surface', {
-        'width': w,
-        'height': h,
-      });
-      if (res is int && res >= 0) {
-        debugPrint('Direct USB Surface Texture created with id: $res, ${w}x$h');
-        gFFI.imageModel.usbTextureId = res;
-      }
-    } catch (e) {
-      debugPrint('Failed to create USB surface texture: $e');
-    }
-  }
-
-  Future<void> _destroyUsbSurface() async {
-    if (!isAndroid) return;
-    try {
-      gFFI.imageModel.usbTextureId = null;
-      await const MethodChannel('mChannel')
-          .invokeMethod('destroy_usb_surface');
-    } catch (e) {
-      debugPrint('Failed to destroy USB surface texture: $e');
-    }
   }
 
   void _checkAndAutoSwitchUsbDisplay(List<Display> displays) {
@@ -2227,25 +2193,6 @@ class ImagePaint extends StatelessWidget {
       }
     }
     final adjust = c.getAdjustY();
-    final usbTextureId = m.usbTextureId;
-    if (usbTextureId != null && usbTextureId >= 0) {
-      final rect = ffiModel.pi.getDisplayRect(0);
-      final w = (rect != null && rect.width > 0) ? rect.width : 1920.0;
-      final h = (rect != null && rect.height > 0) ? rect.height : 1080.0;
-      return Transform.translate(
-        offset: Offset(c.x, c.y + adjust),
-        child: Transform.scale(
-          scale: s,
-          alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: Texture(textureId: usbTextureId),
-          ),
-        ),
-      );
-    }
-
     return CustomPaint(
       painter: ImagePainter(
           image: m.image, x: c.x / s, y: (c.y + adjust) / s, scale: s),

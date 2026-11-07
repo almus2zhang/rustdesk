@@ -27,7 +27,6 @@ pub static H265_DECODER_SUPPORT: AtomicBool = AtomicBool::new(false);
 pub struct MediaCodecDecoder {
     decoder: MediaCodec,
     name: String,
-    has_surface: bool,
 }
 
 impl Deref for MediaCodecDecoder {
@@ -68,19 +67,6 @@ impl MediaCodecDecoder {
                 log::debug!("Failed to dequeue_input_buffer: No available input_buffer");
             }
         };
-
-        if self.has_surface {
-            return match self.dequeue_output_buffer(Duration::from_millis(0))? {
-                Some(output_buffer) => {
-                    self.release_output_buffer(output_buffer, true)?;
-                    Ok(true)
-                }
-                None => {
-                    log::debug!("Failed to dequeue_output: No available dequeue_output");
-                    Ok(false)
-                }
-            };
-        }
 
         return match self.dequeue_output_buffer(Duration::from_millis(0))? {
             Some(output_buffer) => {
@@ -158,44 +144,19 @@ fn create_media_codec(name: &str, direction: MediaCodecDirection) -> Option<Medi
     media_format.set_i32("low-latency", 1);
     media_format.set_i32("priority", 0);
 
-    #[cfg(target_os = "android")]
-    let surface_ptr = crate::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst);
-    #[cfg(not(target_os = "android"))]
-    let surface_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-
-    let has_surface = !surface_ptr.is_null();
-    if has_surface {
-        log::info!("MediaCodec initializing with direct Surface ANativeWindow");
-        media_format.set_i32("operating-rate", 120);
-        #[cfg(target_os = "android")]
-        {
-            let native_window = unsafe {
-                ndk::native_window::NativeWindow::from_ptr(std::ptr::NonNull::new_unchecked(surface_ptr as _))
-            };
-            let conf_res = codec.configure(&media_format, Some(&native_window), direction);
-            std::mem::forget(native_window);
-            if let Err(e) = conf_res {
-                log::error!("Failed to init decoder with surface: {:?}", e);
-                return None;
-            };
-        }
-    } else {
-        media_format.set_i32("color-format", 19); // COLOR_FormatYUV420Planar
-        if let Err(e) = codec.configure(&media_format, None, direction) {
-            log::error!("Failed to init decoder: {:?}", e);
-            return None;
-        };
-    }
-
+    media_format.set_i32("color-format", 19); // COLOR_FormatYUV420Planar
+    if let Err(e) = codec.configure(&media_format, None, direction) {
+        log::error!("Failed to init decoder: {:?}", e);
+        return None;
+    };
     if let Err(e) = codec.start() {
         log::error!("Failed to start decoder: {:?}", e);
         return None;
     };
-    log::info!("Init decoder succeeded: {:?}, direct_surface: {}", name, has_surface);
+    log::debug!("Init decoder succeeded!: {:?}", name);
     Some(MediaCodecDecoder {
         decoder: codec,
         name: name.to_owned(),
-        has_surface,
     })
 }
 

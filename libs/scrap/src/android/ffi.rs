@@ -206,31 +206,6 @@ pub extern "system" fn Java_ffi_FFI_init(env: JNIEnv, _class: JClass, ctx: JObje
     }
 }
 
-pub static USB_NATIVE_WINDOW: AtomicPtr<std::ffi::c_void> =
-    AtomicPtr::new(std::ptr::null_mut());
-
-pub unsafe fn release_native_window(win: *mut std::ffi::c_void) {
-    if win.is_null() {
-        return;
-    }
-    let handle = hbb_common::libc::dlopen(
-        b"libandroid.so\0".as_ptr() as *const _,
-        hbb_common::libc::RTLD_NOW,
-    );
-    if handle.is_null() {
-        return;
-    }
-    let sym = hbb_common::libc::dlsym(
-        handle,
-        b"ANativeWindow_release\0".as_ptr() as *const _,
-    );
-    if !sym.is_null() {
-        let func: unsafe extern "C" fn(*mut std::ffi::c_void) = std::mem::transmute(sym);
-        func(win);
-    }
-    hbb_common::libc::dlclose(handle);
-}
-
 #[no_mangle]
 pub extern "system" fn Java_ffi_FFI_setClipboardManager(
     env: JNIEnv,
