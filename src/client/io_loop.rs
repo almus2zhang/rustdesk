@@ -1318,7 +1318,15 @@ impl<T: InvokeUiSession> Remote<T> {
                             .send(MediaData::VideoFrame(Box::new(vf)))
                             .ok();
                     } else {
+                        let is_usb_secondary = self.handler.lc.read().unwrap().id.starts_with("127.0.0.1");
                         let video_queue = thread.video_queue.read().unwrap();
+                        if is_usb_secondary {
+                            // For USB secondary display: drain the queue before pushing the latest frame
+                            // to guarantee maximum 1-frame queue depth and eliminate buffer lag.
+                            while video_queue.len() > 0 {
+                                video_queue.pop();
+                            }
+                        }
                         if video_queue.force_push(vf).is_some() {
                             drop(video_queue);
                             self.handler.refresh_video(display as _);

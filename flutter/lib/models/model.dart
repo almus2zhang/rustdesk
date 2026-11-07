@@ -2108,6 +2108,7 @@ class ImageModel with ChangeNotifier {
   }
 
   int _latestRgbaSeq = 0;
+  bool _isDecodingRgba = false;
 
   onRgba(int display, Uint8List rgba) async {
     final seq = ++_latestRgbaSeq;
@@ -2119,12 +2120,22 @@ class ImageModel with ChangeNotifier {
       }
     }
 
+    final isSecondary = parent.target?.id.startsWith('127.0.0.1') ?? false;
+    if (isSecondary && _isDecodingRgba) {
+      // If previous frame is still decoding on USB secondary display,
+      // skip intermediate frame to stay strictly in sync with live display.
+      callNextRgba();
+      return;
+    }
+
+    _isDecodingRgba = true;
     try {
       await decodeAndUpdate(display, rgba,
           onBufferCopied: callNextRgba, seq: seq);
     } catch (e) {
       debugPrint('onRgba error: $e');
     } finally {
+      _isDecodingRgba = false;
       callNextRgba();
     }
   }

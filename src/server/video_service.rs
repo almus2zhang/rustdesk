@@ -142,7 +142,7 @@ fn frame_ack_wait() -> (u64, u64) {
     #[cfg(windows)]
     {
         if crate::usb_display::is_usb_display_active() {
-            return (5, 1);
+            return (2, 1);
         }
     }
     (100, 5)

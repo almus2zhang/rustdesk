@@ -213,12 +213,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
-    // Set 60 FPS & balanced quality defaults for all mobile remote sessions
+    // Set 120 FPS for USB secondary display to minimize sampling/VSync latency, 60 FPS for others
     final savedFps =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-fps');
-    final fpsVal = int.tryParse(savedFps.isNotEmpty ? savedFps : '60') ?? 60;
+    final defaultFps = isSecondary ? '120' : '60';
+    final fpsVal = int.tryParse(savedFps.isNotEmpty ? savedFps : defaultFps) ?? (isSecondary ? 120 : 60);
     if (savedFps.isEmpty) {
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: '60');
+      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: defaultFps);
     }
     bind.sessionSetCustomFps(sessionId: sessionId, fps: fpsVal);
     final savedQuality =

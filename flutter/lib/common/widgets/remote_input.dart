@@ -613,7 +613,7 @@ class _RawTouchGestureDetectorRegionState
 
       // In Windows / remote desktop, 1 wheel notch is 120 (WHEEL_DELTA).
       // Each ~0.08 scale delta represents one gentle, controllable zoom notch.
-      const double stepThreshold = 0.08;
+      const double stepThreshold = 0.16; // Halved zoom sensitivity
       if (_remoteScaleAccumulator.abs() >= stepThreshold) {
         final int steps = (_remoteScaleAccumulator / stepThreshold).truncate();
         _remoteScaleAccumulator -= steps * stepThreshold;
@@ -655,7 +655,8 @@ class _RawTouchGestureDetectorRegionState
 
         if (_twoFingerIsZooming) {
           if (_scale > 0 && d.scale > 0) {
-            ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
+            final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.5;
+            ffi.canvasModel.updateScale(zoomRatio, d.focalPoint);
             _scale = d.scale;
             ffi.canvasModel.panX(d.focalPointDelta.dx);
             ffi.canvasModel.panY(d.focalPointDelta.dy);
@@ -691,7 +692,8 @@ class _RawTouchGestureDetectorRegionState
           }
         }
       } else {
-        ffi.canvasModel.updateScale(d.scale / _scale, d.focalPoint);
+        final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.5;
+        ffi.canvasModel.updateScale(zoomRatio, d.focalPoint);
         _scale = d.scale;
         ffi.canvasModel.panX(d.focalPointDelta.dx);
         ffi.canvasModel.panY(d.focalPointDelta.dy);

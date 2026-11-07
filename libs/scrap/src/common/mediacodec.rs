@@ -53,7 +53,7 @@ impl MediaCodecDecoder {
     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
         // take dst_stride into account please
         let dst_stride = rgb.stride();
-        match self.dequeue_input_buffer(Duration::from_millis(2))? {
+        match self.dequeue_input_buffer(Duration::from_millis(0))? {
             Some(mut input_buffer) => {
                 let mut buf = input_buffer.buffer_mut();
                 if data.len() > buf.len() {
@@ -68,7 +68,7 @@ impl MediaCodecDecoder {
             }
         };
 
-        return match self.dequeue_output_buffer(Duration::from_millis(2))? {
+        return match self.dequeue_output_buffer(Duration::from_millis(0))? {
             Some(output_buffer) => {
                 let res_format = self.output_format();
                 let w = res_format
