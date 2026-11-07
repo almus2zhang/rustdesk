@@ -169,11 +169,12 @@ fn create_media_codec(name: &str, direction: MediaCodecDirection) -> Option<Medi
         media_format.set_i32("operating-rate", 120);
         #[cfg(target_os = "android")]
         {
-            unsafe { crate::android::ffi::ANativeWindow_acquire(surface_ptr) };
             let native_window = unsafe {
                 ndk::native_window::NativeWindow::from_ptr(std::ptr::NonNull::new_unchecked(surface_ptr as _))
             };
-            if let Err(e) = codec.configure(&media_format, Some(&native_window), direction) {
+            let conf_res = codec.configure(&media_format, Some(&native_window), direction);
+            std::mem::forget(native_window);
+            if let Err(e) = conf_res {
                 log::error!("Failed to init decoder with surface: {:?}", e);
                 return None;
             };
