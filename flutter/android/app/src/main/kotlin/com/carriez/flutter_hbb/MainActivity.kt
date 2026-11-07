@@ -334,8 +334,7 @@ class MainActivity : FlutterActivity() {
                         val width = (call.argument<Int>("width") ?: 1920).coerceAtLeast(1)
                         val height = (call.argument<Int>("height") ?: 1080).coerceAtLeast(1)
                         destroyUsbSurface()
-                        val registry = flutterEngine?.textureRegistry ?: flutterEngine?.renderer
-                        val entry = registry?.createSurfaceTexture()
+                        val entry = flutterEngine?.renderer?.createSurfaceTexture()
                         if (entry != null) {
                             usbSurfaceTextureEntry = entry
                             val st = entry.surfaceTexture()
