@@ -2933,17 +2933,7 @@ pub fn start_video_thread<F, T>(
                             }
                             MediaData::VideoQueue => {
                                 let vq = video_queue.read().unwrap();
-                                let vf_opt = if session.lc.read().unwrap().id.starts_with("127.0.0.1") {
-                                    // For USB secondary display: zero-queue latency.
-                                    // Drain stale frames and only decode the latest frame!
-                                    let mut latest = None;
-                                    while let Some(f) = vq.pop() {
-                                        latest = Some(f);
-                                    }
-                                    latest
-                                } else {
-                                    vq.pop()
-                                };
+                                let vf_opt = vq.pop();
                                 if let Some(vf) = vf_opt {
                                     if discard_queue.read().unwrap().clone() {
                                         None

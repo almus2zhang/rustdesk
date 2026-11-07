@@ -1004,7 +1004,22 @@ pub fn codec_thread_num(limit: usize) -> usize {
         res = (((max as f64) - avg.one) * 0.5).round() as usize;
     }
     res = std::cmp::min(res, max / 2);
-    res = std::cmp::min(res, memory as usize / 2);
+    #[cfg(target_os = "android")]
+    {
+        res = (max / 2).clamp(1, 4);
+        if max >= 4 {
+            res = res.max(2);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if memory > 1 {
+            res = std::cmp::min(res, memory as usize);
+        }
+        if max >= 4 {
+            res = res.max(2);
+        }
+    }
     //  Use common thread count
     res = match res {
         _ if res >= 64 => 64,

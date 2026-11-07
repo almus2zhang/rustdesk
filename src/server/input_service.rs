@@ -337,7 +337,7 @@ pub fn new_cursor() -> ServiceTmpl<MouseCursorSub> {
 
 pub fn new_pos() -> GenericService {
     let svc = EmptyExtraFieldService::new(NAME_POS.to_owned(), false);
-    GenericService::repeat::<StatePos, _, _>(&svc.clone(), 33, run_pos);
+    GenericService::repeat::<StatePos, _, _>(&svc.clone(), 8, run_pos);
     svc.sp
 }
 
@@ -519,7 +519,7 @@ pub fn try_start_record_cursor_pos() -> Option<thread::JoinHandle<()>> {
 
     RECORD_CURSOR_POS_RUNNING.store(true, Ordering::SeqCst);
     let handle = thread::spawn(|| {
-        let interval = time::Duration::from_millis(33);
+        let interval = time::Duration::from_millis(8);
         loop {
             if !RECORD_CURSOR_POS_RUNNING.load(Ordering::SeqCst) {
                 break;
