@@ -3033,9 +3033,15 @@ pub fn start_video_thread<F, T>(
                         }
 
                         // check invalid decoders
+                        let is_usb_secondary = session.lc.read().unwrap().id.starts_with("127.0.0.1");
                         let mut should_update_supported = false;
                         if let Some(handler) = video_handler.as_mut() {
-                            if !handler.decoder.valid()
+                            if is_usb_secondary {
+                                if handler.fail_counter >= MAX_DECODE_FAIL_COUNTER {
+                                    handler.fail_counter = 0;
+                                    session.refresh_video(display as _);
+                                }
+                            } else if !handler.decoder.valid()
                                 || handler.fail_counter >= MAX_DECODE_FAIL_COUNTER
                             {
                                 let mut lc = session.lc.write().unwrap();

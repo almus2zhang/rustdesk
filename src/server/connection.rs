@@ -1883,10 +1883,7 @@ impl Connection {
         if is_secondary {
             log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
             let mut qos = video_service::VIDEO_QOS.lock().unwrap();
-            // The client can only decode/render ~50 FPS on a tablet. Sending 60
-            // just fills the receive queue with frames waiting to be displayed,
-            // which shows up as ~100ms glass-to-glass delay. Match the consumer.
-            qos.user_custom_fps(self.inner.id(), 50);
+            qos.user_custom_fps(self.inner.id(), 120);
             // `1` is not a valid ImageQuality value; it was parsed as the lowest
             // custom bitrate. Balanced keeps the USB link's bitrate stable.
             qos.user_image_quality(self.inner.id(), ImageQuality::Balanced.value());
@@ -4477,11 +4474,8 @@ impl Connection {
             }
         }
         if o.custom_fps > 0 {
-            // USB secondary display: keep the rate at the client's measured
-            // decode/render ceiling. Sending faster only grows the receive
-            // queue and adds glass-to-glass delay.
             let fps = if self.ip.starts_with("127.0.0.1") {
-                (o.custom_fps as u32).clamp(45, 50)
+                (o.custom_fps as u32).clamp(30, 120)
             } else {
                 o.custom_fps as u32
             };
