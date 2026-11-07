@@ -191,11 +191,16 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             virtual_display::MonitorMode {
                 width,
                 height,
-                sync: 60,
+                sync: 120,
             },
             virtual_display::MonitorMode {
                 width,
                 height,
+                sync: 60,
+            },
+            virtual_display::MonitorMode {
+                width: 1920,
+                height: 1080,
                 sync: 120,
             },
             virtual_display::MonitorMode {

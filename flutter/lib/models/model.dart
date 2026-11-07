@@ -2109,6 +2109,12 @@ class ImageModel with ChangeNotifier {
 
   int _latestRgbaSeq = 0;
   bool _isDecodingRgba = false;
+  int? _usbTextureId;
+  int? get usbTextureId => _usbTextureId;
+  set usbTextureId(int? val) {
+    _usbTextureId = val;
+    notifyListeners();
+  }
 
   onRgba(int display, Uint8List rgba) async {
     final seq = ++_latestRgbaSeq;
@@ -4190,6 +4196,10 @@ class FFI {
           }
         } else if (message is EventToUI_Rgba) {
           final display = message.field0;
+          if (imageModel.usbTextureId != null && imageModel.usbTextureId! >= 0) {
+            onEvent2UIRgba();
+            return;
+          }
           // Fetch the image buffer from rust codes.
           final sz = platformFFI.getRgbaSize(sessionId, display);
           if (sz == 0) {

@@ -207,6 +207,58 @@ pub extern "system" fn Java_ffi_FFI_init(env: JNIEnv, _class: JClass, ctx: JObje
 }
 
 #[no_mangle]
+
+#[cfg(target_os = "android")]
+#[link(name = "android")]
+extern "C" {
+    pub fn ANativeWindow_fromSurface(
+        env: *mut jni::sys::JNIEnv,
+        surface: jni::sys::jobject,
+    ) -> *mut std::ffi::c_void;
+    pub fn ANativeWindow_release(window: *mut std::ffi::c_void);
+    pub fn ANativeWindow_acquire(window: *mut std::ffi::c_void);
+}
+
+pub static USB_NATIVE_WINDOW: AtomicPtr<std::ffi::c_void> =
+    AtomicPtr::new(std::ptr::null_mut());
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_ffi_FFI_registerUsbSurface(
+    mut env: JNIEnv,
+    _class: JClass,
+    surface: JObject,
+    _width: jni::sys::jint,
+    _height: jni::sys::jint,
+) {
+    let raw_surface = surface.into_raw();
+    if raw_surface.is_null() {
+        return;
+    }
+    let env_ptr = env.get_raw();
+    let win = ANativeWindow_fromSurface(env_ptr, raw_surface);
+    if !win.is_null() {
+        let old = USB_NATIVE_WINDOW.swap(win, SeqCst);
+        if !old.is_null() {
+            ANativeWindow_release(old);
+        }
+        hbb_common::log::info!("Registered USB surface ANativeWindow: {:?}", win);
+    } else {
+        hbb_common::log::error!("Failed to obtain ANativeWindow from Surface");
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn Java_ffi_FFI_unregisterUsbSurface(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    let old = USB_NATIVE_WINDOW.swap(std::ptr::null_mut(), SeqCst);
+    if !old.is_null() {
+        ANativeWindow_release(old);
+        hbb_common::log::info!("Unregistered and released USB surface ANativeWindow");
+    }
+}
+
 pub extern "system" fn Java_ffi_FFI_setClipboardManager(
     env: JNIEnv,
     _class: JClass,
