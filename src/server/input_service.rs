@@ -1284,36 +1284,20 @@ const SCALE_CTRL_HOLD_MS: u64 = 250;
 
 #[cfg(target_os = "windows")]
 fn handle_scale(scale: i32) {
-    SCALE_LAST_ACTIVE_MS.store(get_time() as u64, Ordering::SeqCst);
-    SCALE_RELEASE_ONCE.call_once(|| {
-        thread::spawn(|| loop {
-            thread::sleep(Duration::from_millis(20));
-            let now = get_time() as u64;
-            if now.saturating_sub(SCALE_LAST_ACTIVE_MS.load(Ordering::SeqCst))
-                < SCALE_CTRL_HOLD_MS
-            {
-                continue;
-            }
-            if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
-                ENIGO.lock().unwrap().key_up(Key::Control);
-            }
-        });
-    });
-
     if scale == 0 {
-        // Release is deferred to the watchdog above.
+        if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
+            let _ = ENIGO.lock().unwrap().key_up(Key::Control);
+        }
         return;
     }
 
     let mut en = ENIGO.lock().unwrap();
-    // One pinch generates many `scale` events; press Ctrl only once.
-    if !SCALE_CTRL_DOWN.swap(true, Ordering::SeqCst) {
-        if en.key_down(Key::Control).is_err() {
-            SCALE_CTRL_DOWN.store(false, Ordering::SeqCst);
-            return;
-        }
-    }
+    let _ = en.key_down(Key::Control);
+    thread::sleep(Duration::from_millis(10));
     en.mouse_scroll_y(scale);
+    thread::sleep(Duration::from_millis(15));
+    let _ = en.key_up(Key::Control);
+    SCALE_CTRL_DOWN.store(false, Ordering::SeqCst);
 }
 
 pub fn is_enter(evt: &KeyEvent) -> bool {

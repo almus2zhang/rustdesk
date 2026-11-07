@@ -114,6 +114,7 @@ class _RawTouchGestureDetectorRegionState
   double _twoFingerScrollX = 0;
   double _twoFingerScrollY = 0;
   double _remoteScaleAccumulator = 0;
+  bool _hasTriggeredDiscretePinch = false;
   double _oneFingerScrollX = 0;
   double _oneFingerScrollY = 0;
   Timer? _oneFingerInertiaTimer;
@@ -584,6 +585,7 @@ class _RawTouchGestureDetectorRegionState
     _twoFingerScrollX = 0;
     _twoFingerScrollY = 0;
     _remoteScaleAccumulator = 0;
+    _hasTriggeredDiscretePinch = false;
 
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
       // Ctrl+wheel zooms around the cursor. Put the cursor at the pinch
@@ -607,23 +609,28 @@ class _RawTouchGestureDetectorRegionState
     }
 
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
-      final scaleDelta = d.scale - _scale;
-      _scale = d.scale;
-      _remoteScaleAccumulator += scaleDelta;
-
-      // In Windows / remote desktop, 1 wheel notch is 120 (WHEEL_DELTA).
-      // Each ~0.08 scale delta represents one gentle, controllable zoom notch.
-      const double stepThreshold = 0.16; // Halved zoom sensitivity
-      if (_remoteScaleAccumulator.abs() >= stepThreshold) {
-        final int steps = (_remoteScaleAccumulator / stepThreshold).truncate();
-        _remoteScaleAccumulator -= steps * stepThreshold;
-        final int sendScale = steps * 120;
-        if (!widget.isCamera) {
-          bind.sessionSendPointer(
-              sessionId: sessionId,
-              msg: json.encode(
-                  PointerEventToRust(kPointerEventKindTouch, 'scale', sendScale)
-                      .toJson()));
+      if (!_hasTriggeredDiscretePinch) {
+        // Discrete single-step zoom per pinch gesture:
+        // Spread fingers (scale >= 1.25) -> Zoom in one fixed notch (100% -> 125%)
+        // Pinch fingers (scale <= 0.80) -> Zoom out one fixed notch (100% -> 75%)
+        if (d.scale >= 1.25) {
+          _hasTriggeredDiscretePinch = true;
+          if (!widget.isCamera) {
+            bind.sessionSendPointer(
+                sessionId: sessionId,
+                msg: json.encode(
+                    PointerEventToRust(kPointerEventKindTouch, 'scale', 120)
+                        .toJson()));
+          }
+        } else if (d.scale <= 0.80) {
+          _hasTriggeredDiscretePinch = true;
+          if (!widget.isCamera) {
+            bind.sessionSendPointer(
+                sessionId: sessionId,
+                msg: json.encode(
+                    PointerEventToRust(kPointerEventKindTouch, 'scale', -120)
+                        .toJson()));
+          }
         }
       }
       return;
@@ -718,6 +725,7 @@ class _RawTouchGestureDetectorRegionState
     _scale = 1;
     _twoFingerIsZooming = false;
     _remoteScaleAccumulator = 0;
+    _hasTriggeredDiscretePinch = false;
     if (!isSpecialHoldDragActive) {
       await inputModel.sendMouse('up', MouseButtons.left);
     }

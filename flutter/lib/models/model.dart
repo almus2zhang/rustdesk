@@ -2119,13 +2119,8 @@ class ImageModel with ChangeNotifier {
       }
     }
 
-    final isSecondary = parent.target?.id.startsWith('127.0.0.1') ?? false;
-    if (isSecondary && _isDecodingRgba) {
-      // If previous frame is still decoding on USB secondary display,
-      // skip intermediate frame to stay strictly in sync with live display.
-      callNextRgba();
-      return;
-    }
+    // Do not arbitrarily drop RGBA frames here as it halves effective FPS.
+    // Native backpressure is already maintained via onBufferCopied: callNextRgba.
 
     _isDecodingRgba = true;
     try {

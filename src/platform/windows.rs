@@ -2991,14 +2991,41 @@ pub(super) fn change_resolution_directly(
         dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
         dm.dmPelsWidth = width as _;
         dm.dmPelsHeight = height as _;
-        dm.dmFields = DM_PELSHEIGHT | DM_PELSWIDTH;
-        let res = ChangeDisplaySettingsExW(
+
+        // Find the highest supported refresh rate for this resolution (prefer >= 60Hz)
+        let mut best_freq = 60;
+        let mut enum_dm: DEVMODEW = std::mem::zeroed();
+        enum_dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        let mut mode_idx = 0;
+        while EnumDisplaySettingsW(device_name.as_ptr(), mode_idx, &mut enum_dm) != 0 {
+            if enum_dm.dmPelsWidth == width as _ && enum_dm.dmPelsHeight == height as _ {
+                if enum_dm.dmDisplayFrequency >= best_freq {
+                    best_freq = enum_dm.dmDisplayFrequency;
+                }
+            }
+            mode_idx += 1;
+        }
+        dm.dmDisplayFrequency = best_freq;
+        dm.dmFields = DM_PELSHEIGHT | DM_PELSWIDTH | DM_DISPLAYFREQUENCY;
+
+        let mut res = ChangeDisplaySettingsExW(
             device_name.as_ptr(),
             &mut dm,
             NULL as _,
             CDS_UPDATEREGISTRY | CDS_GLOBAL | CDS_RESET,
             NULL,
         );
+        if res != DISP_CHANGE_SUCCESSFUL {
+            // Fallback without DM_DISPLAYFREQUENCY if driver rejected explicit frequency
+            dm.dmFields = DM_PELSHEIGHT | DM_PELSWIDTH;
+            res = ChangeDisplaySettingsExW(
+                device_name.as_ptr(),
+                &mut dm,
+                NULL as _,
+                CDS_UPDATEREGISTRY | CDS_GLOBAL | CDS_RESET,
+                NULL,
+            );
+        }
         if res == DISP_CHANGE_SUCCESSFUL {
             return Ok(());
         }
