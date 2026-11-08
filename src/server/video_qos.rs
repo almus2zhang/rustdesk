@@ -257,8 +257,13 @@ impl VideoQoS {
         let highest_fps = self.highest_fps();
         let target_ratio = self.latest_quality().ratio();
 
-        let is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false)
-            || (cfg!(windows) && crate::usb_display::is_usb_display_active());
+        let mut is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false);
+        #[cfg(windows)]
+        {
+            if crate::usb_display::is_usb_display_active() {
+                is_secondary = true;
+            }
+        }
 
         // For bad network, small fps means quick reaction and high quality.
         // For USB / secondary display sessions, keep locked to (30, 60).
