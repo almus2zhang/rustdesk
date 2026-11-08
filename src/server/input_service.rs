@@ -878,6 +878,8 @@ fn fix_key_down_timeout(force: bool) {
             release_record_key(record_key);
         }
     }
+    #[cfg(target_os = "windows")]
+    touch_injection::reset_touch_pinch();
 }
 
 // e.g. current state of ctrl is down, but ctrl not in modifier, we should change ctrl to up, to make modifier state sync between remote and local
@@ -1071,6 +1073,8 @@ pub fn handle_mouse_simulation_(evt: &MouseEvent, conn: i32) {
     #[cfg(not(target_os = "macos"))]
     let mut to_release = Vec::new();
     if evt_type == MOUSE_TYPE_DOWN {
+        #[cfg(target_os = "windows")]
+        touch_injection::reset_touch_pinch();
         fix_modifiers(&evt.modifiers[..], &mut en, 0);
         #[cfg(target_os = "macos")]
         en.reset_flag();
@@ -1270,34 +1274,343 @@ pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, 
 }
 
 #[cfg(target_os = "windows")]
-static SCALE_CTRL_DOWN: AtomicBool = AtomicBool::new(false);
-#[cfg(target_os = "windows")]
-static SCALE_LAST_ACTIVE_MS: AtomicU64 = AtomicU64::new(0);
-#[cfg(target_os = "windows")]
-static SCALE_RELEASE_ONCE: Once = Once::new();
-// A quick pinch is often split into two scale gestures by Flutter, and a late
-// `scale` update can arrive after `scale=0`. Releasing Ctrl immediately makes
-// Windows see a second Ctrl press ("double Ctrl"). Keep Ctrl down for a short
-// coalescing window so consecutive gestures share a single press.
-#[cfg(target_os = "windows")]
-const SCALE_CTRL_HOLD_MS: u64 = 250;
+mod touch_injection {
+    use std::mem::zeroed;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    type BOOL = i32;
+    type DWORD = u32;
+    type UINT32 = u32;
+    type INT32 = i32;
+    type UINT64 = u64;
+    type HANDLE = *mut std::ffi::c_void;
+    type HWND = *mut std::ffi::c_void;
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug)]
+    struct POINT {
+        x: i32,
+        y: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug)]
+    struct RECT {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug)]
+    struct POINTER_INFO {
+        pointer_type: u32,
+        pointer_id: UINT32,
+        frame_id: UINT32,
+        pointer_flags: u32,
+        source_device: HANDLE,
+        hwnd_target: HWND,
+        pt_pixel_location: POINT,
+        pt_himetric_location: POINT,
+        pt_pixel_location_raw: POINT,
+        pt_himetric_location_raw: POINT,
+        dw_time: DWORD,
+        history_count: UINT32,
+        input_data: INT32,
+        dw_key_states: DWORD,
+        performance_count: UINT64,
+        button_change_type: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Copy, Clone, Debug)]
+    struct POINTER_TOUCH_INFO {
+        pointer_info: POINTER_INFO,
+        touch_flags: u32,
+        touch_mask: u32,
+        rc_contact: RECT,
+        rc_contact_raw: RECT,
+        orientation: UINT32,
+        pressure: UINT32,
+    }
+
+    type FnInitializeTouchInjection = unsafe extern "system" fn(UINT32, DWORD) -> BOOL;
+    type FnInjectTouchInput = unsafe extern "system" fn(UINT32, *const POINTER_TOUCH_INFO) -> BOOL;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetCursorPos(lp_point: *mut POINT) -> BOOL;
+        fn SetProcessDPIAware() -> BOOL;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetModuleHandleA(lpModuleName: *const i8) -> HANDLE;
+        fn GetProcAddress(hModule: HANDLE, lpProcName: *const i8) -> *mut std::ffi::c_void;
+    }
+
+    const PT_TOUCH: u32 = 2;
+    const TOUCH_FEEDBACK_NONE: DWORD = 3;
+
+    const POINTER_FLAG_INRANGE: u32 = 0x00000002;
+    const POINTER_FLAG_INCONTACT: u32 = 0x00000004;
+    const POINTER_FLAG_DOWN: u32 = 0x00010000;
+    const POINTER_FLAG_UPDATE: u32 = 0x00020000;
+    const POINTER_FLAG_UP: u32 = 0x00040000;
+
+    const TOUCH_MASK_CONTACTAREA: u32 = 0x00000001;
+    const TOUCH_MASK_ORIENTATION: u32 = 0x00000002;
+    const TOUCH_MASK_PRESSURE: u32 = 0x00000004;
+
+    struct TouchInjectApi {
+        inject_touch: FnInjectTouchInput,
+    }
+
+    fn get_touch_api() -> Option<&'static TouchInjectApi> {
+        static TOUCH_API: std::sync::OnceLock<Option<TouchInjectApi>> = std::sync::OnceLock::new();
+        TOUCH_API
+            .get_or_init(|| unsafe {
+                let user32 = GetModuleHandleA(b"user32.dll\0".as_ptr() as _);
+                if user32.is_null() {
+                    return None;
+                }
+                let init_ptr = GetProcAddress(user32, b"InitializeTouchInjection\0".as_ptr() as _);
+                let inject_ptr = GetProcAddress(user32, b"InjectTouchInput\0".as_ptr() as _);
+                if init_ptr.is_null() || inject_ptr.is_null() {
+                    return None;
+                }
+                let init_touch: FnInitializeTouchInjection = std::mem::transmute(init_ptr);
+                let inject_touch: FnInjectTouchInput = std::mem::transmute(inject_ptr);
+                let _ = SetProcessDPIAware();
+                let ret = init_touch(10, TOUCH_FEEDBACK_NONE);
+                log::info!("InitializeTouchInjection initialized: ret={}", ret);
+                Some(TouchInjectApi { inject_touch })
+            })
+            .as_ref()
+    }
+
+    struct PinchState {
+        active: bool,
+        cx: i32,
+        cy: i32,
+        radius: f32,
+        last_time: Option<Instant>,
+    }
+
+    static PINCH_STATE: Mutex<PinchState> = Mutex::new(PinchState {
+        active: false,
+        cx: 0,
+        cy: 0,
+        radius: 150.0,
+        last_time: None,
+    });
+
+    unsafe fn make_contact(id: u32, x: i32, y: i32, flags: u32) -> POINTER_TOUCH_INFO {
+        let mut c: POINTER_TOUCH_INFO = zeroed();
+        c.pointer_info.pointer_type = PT_TOUCH;
+        c.pointer_info.pointer_id = id;
+        c.pointer_info.pt_pixel_location = POINT { x, y };
+        c.pointer_info.pointer_flags = flags;
+        c.touch_mask = TOUCH_MASK_CONTACTAREA | TOUCH_MASK_ORIENTATION | TOUCH_MASK_PRESSURE;
+        c.orientation = 90;
+        c.pressure = if (flags & POINTER_FLAG_UP) != 0 { 0 } else { 32000 };
+        c.rc_contact = RECT {
+            left: x - 2,
+            top: y - 2,
+            right: x + 2,
+            bottom: y + 2,
+        };
+        c
+    }
+
+    pub fn handle_scale(scale: i32) {
+        crate::platform::windows::try_change_desktop();
+
+        let api = match get_touch_api() {
+            Some(api) => api,
+            None => {
+                log::warn!("Windows touch injection API not available");
+                return;
+            }
+        };
+
+        let mut state = match PINCH_STATE.lock() {
+            Ok(s) => s,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        if scale == 0 {
+            if state.active {
+                let cx = state.cx;
+                let cy = state.cy;
+                let r = state.radius.round() as i32;
+                unsafe {
+                    let contacts = [
+                        make_contact(0, cx - r, cy, POINTER_FLAG_UP),
+                        make_contact(1, cx + r, cy, POINTER_FLAG_UP),
+                    ];
+                    (api.inject_touch)(2, contacts.as_ptr());
+                }
+                state.active = false;
+                state.last_time = None;
+            }
+            return;
+        }
+
+        let now = Instant::now();
+        // Watchdog: If touch was active but idle for > 800ms, force release first
+        if state.active {
+            if let Some(last) = state.last_time {
+                if now.duration_since(last) > Duration::from_millis(800) {
+                    let cx = state.cx;
+                    let cy = state.cy;
+                    let r = state.radius.round() as i32;
+                    unsafe {
+                        let contacts = [
+                            make_contact(0, cx - r, cy, POINTER_FLAG_UP),
+                            make_contact(1, cx + r, cy, POINTER_FLAG_UP),
+                        ];
+                        (api.inject_touch)(2, contacts.as_ptr());
+                    }
+                    state.active = false;
+                }
+            }
+        }
+
+        if !state.active {
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe {
+                GetCursorPos(&mut pt);
+            }
+            state.cx = pt.x;
+            state.cy = pt.y;
+            state.radius = 150.0;
+            let cx = state.cx;
+            let cy = state.cy;
+            let r = state.radius.round() as i32;
+            unsafe {
+                let contacts = [
+                    make_contact(
+                        0,
+                        cx - r,
+                        cy,
+                        POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                    make_contact(
+                        1,
+                        cx + r,
+                        cy,
+                        POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                ];
+                let ret = (api.inject_touch)(2, contacts.as_ptr());
+                if ret != 0 {
+                    state.active = true;
+                    state.last_time = Some(now);
+                } else {
+                    log::warn!(
+                        "InjectTouchInput DOWN failed: err={}",
+                        std::io::Error::last_os_error()
+                    );
+                    return;
+                }
+            }
+        }
+
+        // Apply scale delta smoothly
+        let delta_r = ((scale as f32) * 0.25).clamp(-60.0, 60.0);
+        let mut new_r = (state.radius + delta_r).clamp(40.0, 600.0);
+        let cx = state.cx;
+        let cy = state.cy;
+        let old_r = state.radius;
+
+        // Sub-steps for smooth DirectManipulation gesture recognition
+        let steps = 3;
+        for s in 1..=steps {
+            let cur_r = (old_r + (new_r - old_r) * (s as f32 / steps as f32)).round() as i32;
+            unsafe {
+                let contacts = [
+                    make_contact(
+                        0,
+                        cx - cur_r,
+                        cy,
+                        POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                    make_contact(
+                        1,
+                        cx + cur_r,
+                        cy,
+                        POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                ];
+                (api.inject_touch)(2, contacts.as_ptr());
+            }
+            if s < steps {
+                std::thread::sleep(Duration::from_millis(6));
+            }
+        }
+
+        // Seamless boundary wrap around so continuous gestures can zoom indefinitely
+        if new_r >= 550.0 || new_r <= 50.0 {
+            let r_up = new_r.round() as i32;
+            unsafe {
+                let contacts_up = [
+                    make_contact(0, cx - r_up, cy, POINTER_FLAG_UP),
+                    make_contact(1, cx + r_up, cy, POINTER_FLAG_UP),
+                ];
+                (api.inject_touch)(2, contacts_up.as_ptr());
+                std::thread::sleep(Duration::from_millis(8));
+                let reset_r = 150;
+                let contacts_down = [
+                    make_contact(
+                        0,
+                        cx - reset_r,
+                        cy,
+                        POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                    make_contact(
+                        1,
+                        cx + reset_r,
+                        cy,
+                        POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                    ),
+                ];
+                (api.inject_touch)(2, contacts_down.as_ptr());
+            }
+            new_r = 150.0;
+        }
+
+        state.radius = new_r;
+        state.last_time = Some(Instant::now());
+    }
+
+    pub fn reset_touch_pinch() {
+        if let Some(api) = get_touch_api() {
+            if let Ok(mut state) = PINCH_STATE.lock() {
+                if state.active {
+                    let cx = state.cx;
+                    let cy = state.cy;
+                    let r = state.radius.round() as i32;
+                    unsafe {
+                        let contacts = [
+                            make_contact(0, cx - r, cy, POINTER_FLAG_UP),
+                            make_contact(1, cx + r, cy, POINTER_FLAG_UP),
+                        ];
+                        (api.inject_touch)(2, contacts.as_ptr());
+                    }
+                    state.active = false;
+                    state.last_time = None;
+                }
+            }
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 fn handle_scale(scale: i32) {
-    if scale == 0 {
-        if SCALE_CTRL_DOWN.swap(false, Ordering::SeqCst) {
-            let _ = ENIGO.lock().unwrap().key_up(Key::Control);
-        }
-        return;
-    }
-
-    let mut en = ENIGO.lock().unwrap();
-    let _ = en.key_down(Key::Control);
-    thread::sleep(Duration::from_millis(10));
-    en.mouse_scroll_y(scale);
-    thread::sleep(Duration::from_millis(15));
-    let _ = en.key_up(Key::Control);
-    SCALE_CTRL_DOWN.store(false, Ordering::SeqCst);
+    touch_injection::handle_scale(scale);
 }
 
 pub fn is_enter(evt: &KeyEvent) -> bool {
