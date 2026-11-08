@@ -479,13 +479,13 @@ impl Decoder {
         }
         #[cfg(feature = "mediacodec")]
         if enable_hwcodec_option() {
-            decoding.ability_h264 =
+            decoding.ability_h264 |=
                 if H264_DECODER_SUPPORT.load(std::sync::atomic::Ordering::SeqCst) {
                     1
                 } else {
                     0
                 };
-            decoding.ability_h265 =
+            decoding.ability_h265 |=
                 if H265_DECODER_SUPPORT.load(std::sync::atomic::Ordering::SeqCst) {
                     1
                 } else {
@@ -571,14 +571,7 @@ impl Decoder {
                     }
                     valid = h264_ram.is_some();
                 }
-                #[cfg(feature = "mediacodec")]
-                if !valid && enable_hwcodec_option() {
-                    h264_media_codec = MediaCodecDecoder::new(format);
-                    if h264_media_codec.is_none() {
-                        log::error!("create H264 media codec decoder failed");
-                    }
-                    valid = h264_media_codec.is_some();
-                }
+
             }
             CodecFormat::H265 => {
                 #[cfg(feature = "mediacodec")]
@@ -609,14 +602,7 @@ impl Decoder {
                     }
                     valid = h265_ram.is_some();
                 }
-                #[cfg(feature = "mediacodec")]
-                if !valid && enable_hwcodec_option() {
-                    h265_media_codec = MediaCodecDecoder::new(format);
-                    if h265_media_codec.is_none() {
-                        log::error!("create H265 media codec decoder failed");
-                    }
-                    valid = h265_media_codec.is_some();
-                }
+
             }
             CodecFormat::Unknown => {
                 log::error!("unknown codec format, cannot create decoder");

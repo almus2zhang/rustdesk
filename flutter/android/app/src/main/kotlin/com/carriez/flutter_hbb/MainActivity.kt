@@ -38,6 +38,8 @@ import com.hjq.permissions.XXPermissions
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.view.View
+import android.view.ViewGroup
 import android.view.SurfaceView
 import android.view.SurfaceHolder
 import android.widget.FrameLayout
@@ -80,6 +82,18 @@ class MainActivity : FlutterActivity() {
     private var pureSurfaceView: SurfaceView? = null
     private var pureExitButton: ImageButton? = null
 
+    private fun findFlutterView(view: View): View? {
+        if (view.javaClass.name.contains("FlutterView")) return view
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                val child = view.getChildAt(i)
+                val found = findFlutterView(child)
+                if (found != null) return found
+            }
+        }
+        return null
+    }
+
     private fun showPureDisplaySurface(width: Int, height: Int) {
         if (pureSurfaceView != null) return
         activity.runOnUiThread {
@@ -101,8 +115,20 @@ class MainActivity : FlutterActivity() {
                     }
                 })
 
+                var isDispatchingTouch = false
                 surfaceView.setOnTouchListener { _, event ->
-                    window.superDispatchTouchEvent(event)
+                    if (isDispatchingTouch) return@setOnTouchListener false
+                    val fv = findFlutterView(window.decorView) ?: findViewById(android.R.id.content)
+                    if (fv != null) {
+                        isDispatchingTouch = true
+                        try {
+                            fv.dispatchTouchEvent(event)
+                        } finally {
+                            isDispatchingTouch = false
+                        }
+                    } else {
+                        false
+                    }
                 }
 
                 val rootLayout = window.decorView as? FrameLayout

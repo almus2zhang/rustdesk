@@ -164,8 +164,8 @@ fn create_media_codec(name: &str, direction: MediaCodecDirection) -> Option<Medi
     let codec = MediaCodec::from_decoder_type(name)?;
     let media_format = MediaFormat::new();
     media_format.set_str("mime", name);
-    media_format.set_i32("width", 0);
-    media_format.set_i32("height", 0);
+    media_format.set_i32("width", 1920);
+    media_format.set_i32("height", 1080);
     media_format.set_i32("low-latency", 1);
     media_format.set_i32("priority", 0);
 
@@ -212,17 +212,10 @@ fn create_media_codec(name: &str, direction: MediaCodecDirection) -> Option<Medi
 
 pub fn check_mediacodec() {
     std::thread::spawn(move || {
-        // check decoders
-        let h264 = MediaCodecDecoder::new(CodecFormat::H264);
-        let h265 = MediaCodecDecoder::new(CodecFormat::H265);
-        H264_DECODER_SUPPORT.swap(h264.is_some(), Ordering::SeqCst);
-        H265_DECODER_SUPPORT.swap(h265.is_some(), Ordering::SeqCst);
-        if let Some(d) = h264 {
-            let _ = d.stop();
-        }
-        if let Some(d) = h265 {
-            let _ = d.stop();
-        }
-        // TODO encoders
+        let h264_exists = MediaCodec::from_decoder_type(H264_MIME_TYPE).is_some();
+        let h265_exists = MediaCodec::from_decoder_type(H265_MIME_TYPE).is_some();
+        H264_DECODER_SUPPORT.swap(h264_exists, Ordering::SeqCst);
+        H265_DECODER_SUPPORT.swap(h265_exists, Ordering::SeqCst);
+        log::info!("MediaCodec support: h264={}, h265={}", h264_exists, h265_exists);
     });
 }

@@ -2614,6 +2614,11 @@ void showOptions(
             ],
           )),
     ];
+    final rH264 = findRadio(codecRadios, 'h264');
+    final rH265 = findRadio(codecRadios, 'h265');
+    final isCodecCompatible = (rH264 != null && rH264.onChanged != null) ||
+                              (rH265 != null && rH265.onChanged != null);
+
     final directSurfaceButtons = isAndroid
         ? [
             buildSectionTitle(localeName.startsWith('zh')
@@ -2621,6 +2626,7 @@ void showOptions(
                 : 'Direct Surface Mode (Zero Latency)'),
             Obx(() {
               final isDirect = gFFI.ffiModel.isDirectSurface.value;
+              final isCompatible = isCodecCompatible;
               return Row(
                 children: [
                   Expanded(
@@ -2629,12 +2635,31 @@ void showOptions(
                           ? (localeName.startsWith('zh')
                               ? '⚡ 直通运行中 (点击退出)'
                               : '⚡ Active (Tap to Exit)')
-                          : (localeName.startsWith('zh')
-                              ? '⚡ 开启极速直通 (<2ms 最低延时)'
-                              : '⚡ Enable Direct Surface (<2ms)'),
+                          : (isCompatible
+                              ? (localeName.startsWith('zh')
+                                  ? '⚡ 开启极速直通 (<2ms 最低延时)'
+                                  : '⚡ Enable Direct Surface (<2ms)')
+                              : (localeName.startsWith('zh')
+                                  ? '⚡ 极速直通 (当前连接不支持H264/H265)'
+                                  : '⚡ Direct Surface (Requires H264/H265)')),
                       selected: isDirect,
+                      enabled: isCompatible || isDirect,
                       onTap: () async {
+                        if (!isCompatible && !isDirect) {
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '当前连接两端不支持H264/H265编码，无法开启极速直通模式'
+                                : 'Direct Surface requires H264/H265 support',
+                          );
+                          return;
+                        }
                         if (!isDirect) {
+                          if (codec.value != 'h264' && codec.value != 'h265') {
+                            final targetCodec = (rH264 != null && rH264.onChanged != null) ? 'h264' : 'h265';
+                            final r = findRadio(codecRadios, targetCodec);
+                            r?.onChanged?.call(targetCodec);
+                            codec.value = targetCodec;
+                          }
                           final display = gFFI.ffiModel.pi
                               .tryGetDisplayIfNotAllDisplay(
                                   display: gFFI.ffiModel.pi.currentDisplay);
