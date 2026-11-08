@@ -872,6 +872,10 @@ impl InvokeUiSession for FlutterHandler {
     #[inline]
     #[cfg(any(target_os = "android", target_os = "ios"))]
     fn on_rgba(&self, display: usize, rgba: &mut scrap::ImageRgb) {
+        if rgba.raw.is_empty() {
+            // Direct Surface rendering active: hardware renders directly to display overlay
+            return;
+        }
         self.on_rgba_soft_render(display, rgba);
     }
 

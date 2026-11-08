@@ -113,9 +113,9 @@ pub struct Decoder {
     #[cfg(feature = "vram")]
     h265_vram: Option<VRamDecoder>,
     #[cfg(feature = "mediacodec")]
-    h264_media_codec: MediaCodecDecoder,
+    h264_media_codec: Option<MediaCodecDecoder>,
     #[cfg(feature = "mediacodec")]
-    h265_media_codec: MediaCodecDecoder,
+    h265_media_codec: Option<MediaCodecDecoder>,
     format: CodecFormat,
     valid: bool,
     #[cfg(feature = "hwcodec")]
@@ -543,6 +543,18 @@ impl Decoder {
                 valid = av1.is_some();
             }
             CodecFormat::H264 => {
+                #[cfg(feature = "mediacodec")]
+                if !valid && enable_hwcodec_option() {
+                    #[cfg(target_os = "android")]
+                    let prefer_mediacodec = !crate::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst).is_null();
+                    #[cfg(not(target_os = "android"))]
+                    let prefer_mediacodec = false;
+
+                    if prefer_mediacodec {
+                        h264_media_codec = MediaCodecDecoder::new(format);
+                        valid = h264_media_codec.is_some();
+                    }
+                }
                 #[cfg(feature = "vram")]
                 if !valid && enable_vram_option(false) && _luid.clone().unwrap_or_default() != 0 {
                     match VRamDecoder::new(format, _luid) {
@@ -569,6 +581,18 @@ impl Decoder {
                 }
             }
             CodecFormat::H265 => {
+                #[cfg(feature = "mediacodec")]
+                if !valid && enable_hwcodec_option() {
+                    #[cfg(target_os = "android")]
+                    let prefer_mediacodec = !crate::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst).is_null();
+                    #[cfg(not(target_os = "android"))]
+                    let prefer_mediacodec = false;
+
+                    if prefer_mediacodec {
+                        h265_media_codec = MediaCodecDecoder::new(format);
+                        valid = h265_media_codec.is_some();
+                    }
+                }
                 #[cfg(feature = "vram")]
                 if !valid && enable_vram_option(false) && _luid.clone().unwrap_or_default() != 0 {
                     match VRamDecoder::new(format, _luid) {
@@ -632,6 +656,18 @@ impl Decoder {
 
     pub fn valid(&self) -> bool {
         self.valid
+    }
+
+    #[inline]
+    pub fn has_surface(&self) -> bool {
+        #[cfg(feature = "mediacodec")]
+        {
+            if self.h264_media_codec.as_ref().map(|d| d.has_surface()).unwrap_or(false)
+                || self.h265_media_codec.as_ref().map(|d| d.has_surface()).unwrap_or(false) {
+                return true;
+            }
+        }
+        false
     }
 
     // rgb [in/out] fmt and stride must be set in ImageRgb

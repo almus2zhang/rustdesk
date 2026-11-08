@@ -27,4 +27,6 @@ object FFI {
     external fun getBuildinOption(key: String): String
     external fun onClipboardUpdate(clips: ByteBuffer)
     external fun isServiceClipboardEnabled(): Boolean
+    external fun registerUsbSurface(surface: Any, width: Int, height: Int)
+    external fun unregisterUsbSurface()
 }

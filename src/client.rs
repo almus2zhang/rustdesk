@@ -2964,6 +2964,15 @@ pub fn start_video_thread<F, T>(
                         let display = vf.display as usize;
                         let start = std::time::Instant::now();
                         let format = CodecFormat::from(&vf);
+                        #[cfg(target_os = "android")]
+                        {
+                            let surface_ptr = scrap::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst);
+                            if let Some(h) = video_handler.as_mut() {
+                                if h.decoder.has_surface() != !surface_ptr.is_null() {
+                                    video_handler = None;
+                                }
+                            }
+                        }
                         if video_handler.is_none() {
                             let mut handler = VideoHandler::new(format, display);
                             let record_state = session.lc.read().unwrap().record_state;

@@ -38,6 +38,12 @@ import com.hjq.permissions.XXPermissions
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.view.SurfaceView
+import android.view.SurfaceHolder
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.graphics.Color
+import android.view.Gravity
 import kotlin.concurrent.thread
 
 
@@ -70,6 +76,89 @@ class MainActivity : FlutterActivity() {
     private val channelTag = "mChannel"
     private val logTag = "mMainActivity"
     private var mainService: MainService? = null
+
+    private var pureSurfaceView: SurfaceView? = null
+    private var pureExitButton: ImageButton? = null
+
+    private fun showPureDisplaySurface(width: Int, height: Int) {
+        if (pureSurfaceView != null) return
+        activity.runOnUiThread {
+            try {
+                val surfaceView = SurfaceView(this)
+                pureSurfaceView = surfaceView
+                surfaceView.setZOrderMediaOverlay(true)
+                surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+                    override fun surfaceCreated(holder: SurfaceHolder) {
+                        Log.i(logTag, "PureDisplay Surface created: ${holder.surface}")
+                        FFI.registerUsbSurface(holder.surface, width, height)
+                    }
+                    override fun surfaceChanged(holder: SurfaceHolder, format: Int, w: Int, h: Int) {
+                        Log.i(logTag, "PureDisplay Surface changed: ${w}x${h}")
+                    }
+                    override fun surfaceDestroyed(holder: SurfaceHolder) {
+                        Log.i(logTag, "PureDisplay Surface destroyed")
+                        FFI.unregisterUsbSurface()
+                    }
+                })
+
+                surfaceView.setOnTouchListener { _, event ->
+                    window.superDispatchTouchEvent(event)
+                }
+
+                val rootLayout = window.decorView as? FrameLayout
+                if (rootLayout != null) {
+                    val lp = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                    rootLayout.addView(surfaceView, lp)
+
+                    val btn = ImageButton(this).apply {
+                        setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+                        setBackgroundColor(Color.parseColor("#80000000"))
+                        setPadding(24, 24, 24, 24)
+                        setOnClickListener {
+                            hidePureDisplaySurface()
+                            flutterMethodChannel?.invokeMethod("on_exit_direct_surface", null)
+                        }
+                    }
+                    pureExitButton = btn
+                    val btnLp = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        gravity = Gravity.TOP or Gravity.END
+                        topMargin = 40
+                        rightMargin = 40
+                    }
+                    rootLayout.addView(btn, btnLp)
+                    Log.i(logTag, "showPureDisplaySurface attached successfully")
+                }
+            } catch (e: Exception) {
+                Log.e(logTag, "showPureDisplaySurface error", e)
+            }
+        }
+    }
+
+    private fun hidePureDisplaySurface() {
+        activity.runOnUiThread {
+            try {
+                FFI.unregisterUsbSurface()
+                val rootLayout = window.decorView as? FrameLayout
+                pureSurfaceView?.let {
+                    rootLayout?.removeView(it)
+                    pureSurfaceView = null
+                }
+                pureExitButton?.let {
+                    rootLayout?.removeView(it)
+                    pureExitButton = null
+                }
+                Log.i(logTag, "hidePureDisplaySurface detached successfully")
+            } catch (e: Exception) {
+                Log.e(logTag, "hidePureDisplaySurface error", e)
+            }
+        }
+    }
 
     private var isAudioStart = false
     private val audioRecordHandle = AudioRecordHandle(this, { false }, { isAudioStart })
@@ -268,6 +357,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         Log.e(logTag, "onDestroy")
+        hidePureDisplaySurface()
         aoaProxyServer?.stop()
         aoaProxyServer = null
         try {
@@ -304,6 +394,18 @@ class MainActivity : FlutterActivity() {
         flutterMethodChannel.setMethodCallHandler { call, result ->
             // make sure result will be invoked, otherwise flutter will await forever
             when (call.method) {
+                "start_direct_surface" -> {
+                    val width = (call.argument<Int>("width") ?: 1920).coerceAtLeast(1)
+                    val height = (call.argument<Int>("height") ?: 1080).coerceAtLeast(1)
+                    showPureDisplaySurface(width, height)
+                    result.success(true)
+                    return@setMethodCallHandler
+                }
+                "stop_direct_surface" -> {
+                    hidePureDisplaySurface()
+                    result.success(true)
+                    return@setMethodCallHandler
+                }
                 "check_usb_accessory" -> {
                     val map = pendingUsbAttachMap
                     pendingUsbAttachMap = null

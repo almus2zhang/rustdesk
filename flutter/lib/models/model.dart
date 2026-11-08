@@ -130,6 +130,7 @@ class FfiModel with ChangeNotifier {
   Timer? waitForImageTimer;
   RxBool waitForFirstImage = true.obs;
   bool isRefreshing = false;
+  RxBool isDirectSurface = false.obs;
 
   Timer? timerScreenshot;
 
@@ -286,6 +287,10 @@ class FfiModel with ChangeNotifier {
     clearPermissions();
     waitForImageTimer?.cancel();
     timerScreenshot?.cancel();
+    if (isDirectSurface.value) {
+      isDirectSurface.value = false;
+      parent.target?.invokeMethod("stop_direct_surface");
+    }
   }
 
   setConnectionType(

@@ -1025,6 +1025,11 @@ void androidChannelInit() {
             debugPrint("USB Display Accessory Detached");
             break;
           }
+        case "on_exit_direct_surface":
+          {
+            gFFI.ffiModel.isDirectSurface.value = false;
+            break;
+          }
         case "start_capture":
           {
             gFFI.dialogManager.dismissAll();

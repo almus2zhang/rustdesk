@@ -2614,6 +2614,59 @@ void showOptions(
             ],
           )),
     ];
+    final directSurfaceButtons = isAndroid
+        ? [
+            buildSectionTitle(localeName.startsWith('zh')
+                ? '极速硬件直通模式 (Direct Surface)'
+                : 'Direct Surface Mode (Zero Latency)'),
+            Obx(() {
+              final isDirect = gFFI.ffiModel.isDirectSurface.value;
+              return Row(
+                children: [
+                  Expanded(
+                    child: buildSegmentButton(
+                      text: isDirect
+                          ? (localeName.startsWith('zh')
+                              ? '⚡ 直通运行中 (点击退出)'
+                              : '⚡ Active (Tap to Exit)')
+                          : (localeName.startsWith('zh')
+                              ? '⚡ 开启极速直通 (<2ms 最低延时)'
+                              : '⚡ Enable Direct Surface (<2ms)'),
+                      selected: isDirect,
+                      onTap: () async {
+                        if (!isDirect) {
+                          final display = gFFI.ffiModel.pi
+                              .tryGetDisplayIfNotAllDisplay(
+                                  display: gFFI.ffiModel.pi.currentDisplay);
+                          final w = display?.width ?? 1920;
+                          final h = display?.height ?? 1080;
+                          await gFFI.invokeMethod(
+                              "start_direct_surface", {"width": w, "height": h});
+                          gFFI.ffiModel.isDirectSurface.value = true;
+                          close();
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '已开启极速硬件直通模式！点击右上角悬浮按钮可退出'
+                                : 'Direct Surface Mode enabled! Tap top-right button to exit',
+                          );
+                        } else {
+                          await gFFI.invokeMethod("stop_direct_surface");
+                          gFFI.ffiModel.isDirectSurface.value = false;
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '已退出极速硬件直通模式'
+                                : 'Direct Surface Mode disabled',
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ]
+        : <Widget>[];
+
     final colorModeButtons = [
       buildSectionTitle(
           localeName.startsWith('zh') ? '色彩与延时模式' : 'Display Mode & Latency'),
@@ -2998,6 +3051,10 @@ void showOptions(
           ...fpsButtons,
           const SizedBox(height: 4),
           ...colorModeButtons,
+          if (isAndroid) ...[
+            const SizedBox(height: 4),
+            ...directSurfaceButtons,
+          ],
           const SizedBox(height: 4),
           ...codecButtons,
           const SizedBox(height: 4),
