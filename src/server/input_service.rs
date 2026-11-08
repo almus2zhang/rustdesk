@@ -1275,6 +1275,7 @@ pub fn handle_mouse_show_cursor_(evt: &MouseEvent, conn: i32, username: String, 
 
 #[cfg(target_os = "windows")]
 mod touch_injection {
+    use hbb_common::log;
     use std::mem::zeroed;
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
