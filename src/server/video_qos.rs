@@ -28,10 +28,10 @@ delay:
 */
 
 // Constants
-pub const FPS: u32 = 60;
+pub const FPS: u32 = 30;
 pub const MIN_FPS: u32 = 1;
 pub const MAX_FPS: u32 = 120;
-pub const INIT_FPS: u32 = 60;
+pub const INIT_FPS: u32 = 15;
 
 // Bitrate ratio constants for different quality levels
 const BR_MAX: f32 = 40.0; // 2000 * 2 / 100
@@ -93,6 +93,7 @@ struct UserData {
     quality: Option<(i64, Quality)>, // (time, quality)
     delay: UserDelay,
     record: bool,
+    pub is_secondary: bool,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -246,17 +247,30 @@ impl VideoQoS {
         }
     }
 
+    pub fn user_is_secondary(&mut self, id: i32, is_secondary: bool) {
+        if let Some(user) = self.users.get_mut(&id) {
+            user.is_secondary = is_secondary;
+        }
+    }
+
     pub fn user_network_delay(&mut self, id: i32, delay: u32) {
         let highest_fps = self.highest_fps();
         let target_ratio = self.latest_quality().ratio();
 
-        // For bad network, small fps means quick reaction and high quality
-        let (min_fps, normal_fps) = if target_ratio >= BR_BEST {
+        let is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false)
+            || (cfg!(windows) && crate::usb_display::is_usb_display_active());
+
+        // For bad network, small fps means quick reaction and high quality.
+        // For USB / secondary display sessions, keep locked to (30, 60).
+        // For regular sessions, allow adaptive backoff (8~12) under network congestion.
+        let (min_fps, normal_fps) = if is_secondary {
             (30, 60)
+        } else if target_ratio >= BR_BEST {
+            (8, 16)
         } else if target_ratio >= BR_BALANCED {
-            (30, 60)
+            (10, 20)
         } else {
-            (30, 60)
+            (12, 24)
         };
 
         // Calculate minimum acceptable delay-fps product

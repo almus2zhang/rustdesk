@@ -2406,7 +2406,13 @@ impl<T: InvokeUiSession> Remote<T> {
     }
 
     fn new_video_thread(&mut self, display: usize) {
-        let video_queue = Arc::new(RwLock::new(ArrayQueue::new(client::VIDEO_QUEUE_SIZE)));
+        let is_usb_secondary = self.handler.lc.read().unwrap().id.starts_with("127.0.0.1");
+        let q_size = if is_usb_secondary {
+            client::VIDEO_QUEUE_SIZE_USB
+        } else {
+            client::VIDEO_QUEUE_SIZE_NORMAL
+        };
+        let video_queue = Arc::new(RwLock::new(ArrayQueue::new(q_size)));
         let (video_sender, video_receiver) = std::sync::mpsc::channel::<MediaData>();
         let decode_fps = Arc::new(RwLock::new(None));
         let frame_count = Arc::new(RwLock::new(0));

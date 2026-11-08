@@ -1883,6 +1883,7 @@ impl Connection {
         if is_secondary {
             log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
             let mut qos = video_service::VIDEO_QOS.lock().unwrap();
+            qos.user_is_secondary(self.inner.id(), true);
             qos.user_custom_fps(self.inner.id(), 120);
             // `1` is not a valid ImageQuality value; it was parsed as the lowest
             // custom bitrate. Balanced keeps the USB link's bitrate stable.
