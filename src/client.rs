@@ -1633,6 +1633,11 @@ impl VideoHandler {
         }
     }
 
+    #[inline]
+    pub fn has_surface(&self) -> bool {
+        self.decoder.has_surface()
+    }
+
     /// Handle a new video frame.
     #[inline]
     pub fn handle_frame(
@@ -2919,7 +2924,7 @@ pub fn start_video_thread<F, T>(
         #[cfg(windows)]
         sync_cpu_usage();
         get_hwcodec_config();
-        let mut video_handler = None;
+        let mut video_handler: Option<VideoHandler> = None;
         let mut count = 0;
         let mut duration = std::time::Duration::ZERO;
         let mut skip_beginning = 0;
@@ -2968,7 +2973,7 @@ pub fn start_video_thread<F, T>(
                         {
                             let surface_ptr = scrap::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst);
                             if let Some(h) = video_handler.as_mut() {
-                                if h.decoder.has_surface() != !surface_ptr.is_null() {
+                                if h.has_surface() != !surface_ptr.is_null() {
                                     video_handler = None;
                                 }
                             }
