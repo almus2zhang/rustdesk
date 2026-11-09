@@ -694,6 +694,12 @@ fn run(vs: VideoService) -> ResultType<()> {
     #[cfg(windows)]
     let mut try_gdi = 1;
     #[cfg(windows)]
+    let mut dxgi_fail_count = 0u32;
+    #[cfg(all(windows, feature = "vram"))]
+    if !c.is_gdi() {
+        VRamEncoder::set_fallback_gdi(sp.name(), false);
+    }
+    #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
     #[cfg(windows)]
     start_uac_elevation_check();
@@ -964,6 +970,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                         VRamEncoder::set_fallback_gdi(sp.name(), false);
                     }
                     try_gdi = 0;
+                    dxgi_fail_count = 0;
                 }
                 Ok(())
             }
@@ -1027,8 +1034,23 @@ fn run(vs: VideoService) -> ResultType<()> {
 
                 #[cfg(windows)]
                 if !c.is_gdi() {
+                    if err.kind() == std::io::ErrorKind::ConnectionReset || dxgi_fail_count < 15 {
+                        dxgi_fail_count += 1;
+                        log::warn!(
+                            "DXGI capture transient error on display {} (attempt {}/15): {:?}, recovering...",
+                            display_idx,
+                            dxgi_fail_count,
+                            err
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        if c.reacquire() {
+                            log::info!("DXGI capturer recovered on display {}", display_idx);
+                            dxgi_fail_count = 0;
+                        }
+                        continue;
+                    }
                     c.set_gdi();
-                    log::info!("dxgi error, fall back to gdi: {:?}", err);
+                    log::info!("dxgi error exceeded retry limit, fall back to gdi: {:?}", err);
                     continue;
                 }
                 return Err(err.into());
@@ -1138,6 +1160,7 @@ impl Drop for Raii {
         #[cfg(feature = "vram")]
         if self.try_vram {
             VRamEncoder::set_not_use(self.name.clone(), false);
+            VRamEncoder::set_fallback_gdi(self.name.clone(), false);
         }
         #[cfg(feature = "vram")]
         Encoder::update(scrap::codec::EncodingUpdate::Check);

@@ -329,12 +329,72 @@ impl Capturer {
         self.output_texture = texture;
     }
 
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    pub fn reacquire_output_duplication(&mut self) -> io::Result<()> {
+        unsafe {
+            self.surface = ComPtr(ptr::null_mut());
+            self.texture = ComPtr(ptr::null_mut());
+            self.duplication = ComPtr(ptr::null_mut());
+
+            let name = self.display.name();
+            if let Ok(displays) = Displays::new() {
+                for d in displays {
+                    if d.name() == name {
+                        self.display = d;
+                        self.width = self.display.width() as usize;
+                        self.height = self.display.height() as usize;
+                        break;
+                    }
+                }
+            }
+
+            if self.device.0.is_null() || self.display.inner.0.is_null() {
+                return Err(io::Error::new(io::ErrorKind::Other, "Device or display inner is null"));
+            }
+
+            let mut duplication = ptr::null_mut();
+            let hres = (*self.display.inner.0).DuplicateOutput(self.device.0 as *mut _, &mut duplication);
+            if hres == S_OK && !duplication.is_null() {
+                self.duplication = ComPtr(duplication);
+                self.rotate = Self::create_rotations(self.device.0, self.context.0, &self.display);
+                hbb_common::log::info!(
+                    "Successfully reacquired DXGI output duplication for display {:?} ({}x{})",
+                    String::from_utf16_lossy(self.display.name()),
+                    self.width,
+                    self.height
+                );
+                Ok(())
+            } else {
+                wrap_hresult(hres)
+            }
+        }
+    }
+
     unsafe fn load_frame(&mut self, timeout: UINT) -> io::Result<(*const u8, i32)> {
         let mut frame = ptr::null_mut();
         #[allow(invalid_value)]
         let mut info = mem::MaybeUninit::uninit().assume_init();
 
-        wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame))?;
+        if self.duplication.0.is_null() {
+            self.reacquire_output_duplication()?;
+        }
+        let mut acquire_res = wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame));
+        if let Err(ref e) = acquire_res {
+            if e.kind() == std::io::ErrorKind::ConnectionReset {
+                hbb_common::log::warn!("DXGI AcquireNextFrame access lost in load_frame, attempting recovery...");
+                if self.reacquire_output_duplication().is_ok() {
+                    acquire_res = wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame));
+                }
+            }
+        }
+        acquire_res?;
         let frame = ComPtr(frame);
 
         if *info.LastPresentTime.QuadPart() == 0 {
@@ -477,7 +537,16 @@ impl Capturer {
             #[allow(invalid_value)]
             let mut info = mem::MaybeUninit::uninit().assume_init();
 
-            wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame))?;
+            let mut acquire_res = wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame));
+            if let Err(ref e) = acquire_res {
+                if e.kind() == std::io::ErrorKind::ConnectionReset {
+                    hbb_common::log::warn!("DXGI AcquireNextFrame access lost in get_texture, attempting recovery...");
+                    if self.reacquire_output_duplication().is_ok() {
+                        acquire_res = wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame));
+                    }
+                }
+            }
+            acquire_res?;
             let frame = ComPtr(frame);
 
             if info.AccumulatedFrames == 0 || *info.LastPresentTime.QuadPart() == 0 {
