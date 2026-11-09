@@ -36,6 +36,9 @@ pub fn is_virtual_display_supported() -> bool {
 pub fn is_virtual_display(name: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
+        if windows::is_any_virtual_display(name) {
+            return true;
+        }
         match IDD_IMPL {
             IDD_IMPL_RUSTDESK => rustdesk_idd::is_virtual_display(name),
             IDD_IMPL_AMYUNI => amyuni_idd::is_my_display(name),
@@ -867,6 +870,38 @@ mod windows {
     const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
     #[inline]
+    pub(super) fn is_any_virtual_display(name: &str) -> bool {
+        let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+        let mut i_dev_num = 0;
+        loop {
+            let result = unsafe { EnumDisplayDevicesW(null_mut(), i_dev_num, &mut dd, 0) };
+            if result == 0 {
+                break;
+            }
+            i_dev_num += 1;
+            if let (Ok(device_name), Ok(ds)) = (
+                String::from_utf16(&dd.DeviceName),
+                String::from_utf16(&dd.DeviceString),
+            ) {
+                if is_device_name(&device_name, name) {
+                    let ds_lower = ds.to_lowercase();
+                    if ds_lower.contains("virtual")
+                        || ds_lower.contains("idd")
+                        || ds_lower.contains("mobile monitor")
+                        || ds_lower.contains("amyuni")
+                        || ds_lower.contains("gameviewer")
+                        || ds_lower.contains("honor")
+                        || ds_lower.contains("meta")
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     pub(super) fn is_device_name(device_name: &str, name: &str) -> bool {
         if name.len() == device_name.len() {
             name == device_name
