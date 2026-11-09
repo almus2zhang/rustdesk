@@ -360,7 +360,7 @@ impl VideoQoS {
                 avg_delay,
                 is_secondary,
                 crate::server::connection::is_loopback_active(),
-                crate::usb_display::is_usb_display_active(),
+                crate::server::connection::is_usb_display_active(),
                 user.custom_fps,
                 normal_fps,
                 fps,

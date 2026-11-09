@@ -86,6 +86,17 @@ pub fn is_loopback_active() -> bool {
     LOOPBACK_CONN_COUNT.load(std::sync::atomic::Ordering::SeqCst) > 0
 }
 
+pub fn is_usb_display_active() -> bool {
+    #[cfg(windows)]
+    {
+        crate::usb_display::is_usb_display_active()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
 #[cfg(feature = "flutter")]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 lazy_static::lazy_static! {

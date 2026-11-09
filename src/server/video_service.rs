@@ -1085,7 +1085,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 spf.as_secs_f64() * 1000.0,
                 qos_fps,
                 crate::server::connection::is_loopback_active(),
-                crate::usb_display::is_usb_display_active(),
+                crate::server::connection::is_usb_display_active(),
             );
             perf_frames = 0;
             perf_cap_ms = 0.0;
