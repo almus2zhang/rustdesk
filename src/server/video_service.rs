@@ -404,6 +404,7 @@ pub(super) struct CapturerInfo {
     pub current: usize,
     pub privacy_mode_id: i32,
     pub _capturer_privacy_mode_id: i32,
+    pub name: String,
     pub capturer: Box<dyn TraitCapturer>,
 }
 
@@ -524,6 +525,7 @@ fn get_capturer_monitor(
         current,
         privacy_mode_id,
         _capturer_privacy_mode_id: capturer_privacy_mode_id,
+        name,
         capturer,
     })
 }
@@ -566,6 +568,7 @@ fn get_capturer_camera(current: usize) -> ResultType<CapturerInfo> {
         current,
         privacy_mode_id,
         _capturer_privacy_mode_id: privacy_mode_id,
+        name: name.to_string(),
         capturer,
     });
 }
@@ -765,8 +768,10 @@ fn run(vs: VideoService) -> ResultType<()> {
                 try_broadcast_display_changed(&sp, display_idx, &c, true)?;
             }
             #[cfg(windows)]
-            if crate::usb_display::is_this_usb_display(&c.name) {
-                log::info!("refresh on USB display without geometry change, keeping capturer");
+            if crate::usb_display::is_this_usb_display(&c.name)
+                || crate::virtual_display_manager::is_virtual_display(&c.name)
+            {
+                log::info!("refresh on virtual display without geometry change, keeping capturer");
                 continue;
             }
             log::info!("switch to refresh");
