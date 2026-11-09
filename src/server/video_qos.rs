@@ -260,16 +260,16 @@ impl VideoQoS {
         let mut is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false);
         #[cfg(windows)]
         {
-            if crate::usb_display::is_usb_display_active() {
+            if crate::usb_display::is_usb_display_active() || crate::server::connection::is_loopback_active() {
                 is_secondary = true;
             }
         }
 
         // For bad network, small fps means quick reaction and high quality.
-        // For USB / secondary display sessions, keep locked to (30, 60).
+        // For USB / secondary display sessions, keep locked to (60, 120).
         // For regular sessions, allow adaptive backoff (8~12) under network congestion.
         let (min_fps, normal_fps) = if is_secondary {
-            (30, 60)
+            (60, 120)
         } else if target_ratio >= BR_BEST {
             (8, 16)
         } else if target_ratio >= BR_BALANCED {

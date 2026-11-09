@@ -3754,6 +3754,14 @@ class CursorModel with ChangeNotifier {
     }
     _x = double.parse(evt['x']);
     _y = double.parse(evt['y']);
+    if (isAndroid && (parent.target?.ffiModel.isDirectSurface.value ?? false)) {
+      final s = (scale as num) == 0 ? 1.0 : (scale as num).toDouble();
+      final ox = parent.target?.canvasModel.x ?? 0.0;
+      final oy = parent.target?.canvasModel.y ?? 0.0;
+      final screenX = ox + _x * s;
+      final screenY = oy + _y * s;
+      parent.target?.invokeMethod('update_cursor_pos', {'x': screenX, 'y': screenY});
+    }
     try {
       RemoteCursorMovedState.find(id).value = true;
     } catch (e) {

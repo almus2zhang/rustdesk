@@ -46,6 +46,12 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.graphics.Color
 import android.view.Gravity
+import android.widget.ImageView
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.view.MotionEvent
 import kotlin.concurrent.thread
 
 
@@ -81,6 +87,37 @@ class MainActivity : FlutterActivity() {
 
     private var pureSurfaceView: SurfaceView? = null
     private var pureExitButton: ImageButton? = null
+    private var pureCursorView: ImageView? = null
+
+    private fun createCursorBitmap(): Bitmap {
+        val density = resources.displayMetrics.density
+        val w = (24 * density).toInt().coerceAtLeast(24)
+        val h = (24 * density).toInt().coerceAtLeast(24)
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            style = Paint.Style.STROKE
+            strokeWidth = 2f * density
+        }
+        val path = Path().apply {
+            moveTo(2f * density, 2f * density)
+            lineTo(2f * density, 20f * density)
+            lineTo(7f * density, 15f * density)
+            lineTo(12f * density, 21f * density)
+            lineTo(14f * density, 19f * density)
+            lineTo(9f * density, 13f * density)
+            lineTo(16f * density, 13f * density)
+            close()
+        }
+        canvas.drawPath(path, fillPaint)
+        canvas.drawPath(path, strokePaint)
+        return bmp
+    }
 
     private fun findFlutterView(view: View): View? {
         if (view.javaClass.name.contains("FlutterView")) return view
@@ -117,6 +154,11 @@ class MainActivity : FlutterActivity() {
 
                 var isDispatchingTouch = false
                 surfaceView.setOnTouchListener { _, event ->
+                    pureCursorView?.let { cv ->
+                        cv.visibility = View.VISIBLE
+                        cv.x = event.rawX
+                        cv.y = event.rawY
+                    }
                     if (isDispatchingTouch) return@setOnTouchListener false
                     val fv = findFlutterView(window.decorView) ?: findViewById(android.R.id.content)
                     if (fv != null) {
@@ -131,13 +173,56 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                surfaceView.setOnGenericMotionListener { _, event ->
+                    if (event.action == MotionEvent.ACTION_HOVER_MOVE) {
+                        pureCursorView?.let { cv ->
+                            cv.visibility = View.VISIBLE
+                            cv.x = event.rawX
+                            cv.y = event.rawY
+                        }
+                    }
+                    val fv = findFlutterView(window.decorView) ?: findViewById(android.R.id.content)
+                    fv?.dispatchGenericMotionEvent(event) ?: false
+                }
+
                 val rootLayout = window.decorView as? FrameLayout
                 if (rootLayout != null) {
-                    val lp = FrameLayout.LayoutParams(
-                        FrameLayout.LayoutParams.MATCH_PARENT,
-                        FrameLayout.LayoutParams.MATCH_PARENT
-                    )
+                    val dm = resources.displayMetrics
+                    val screenW = dm.widthPixels
+                    val screenH = dm.heightPixels
+
+                    val videoW = if (width > 0) width else 1920
+                    val videoH = if (height > 0) height else 1080
+
+                    val screenRatio = screenW.toFloat() / screenH.toFloat()
+                    val videoRatio = videoW.toFloat() / videoH.toFloat()
+
+                    val targetW: Int
+                    val targetH: Int
+                    if (screenRatio > videoRatio) {
+                        targetH = screenH
+                        targetW = (screenH * videoRatio).toInt()
+                    } else {
+                        targetW = screenW
+                        targetH = (screenW / videoRatio).toInt()
+                    }
+
+                    val lp = FrameLayout.LayoutParams(targetW, targetH).apply {
+                        gravity = Gravity.CENTER
+                    }
                     rootLayout.addView(surfaceView, lp)
+
+                    val cursorView = ImageView(this).apply {
+                        setImageBitmap(createCursorBitmap())
+                        visibility = View.GONE
+                        elevation = 100f
+                    }
+                    pureCursorView = cursorView
+                    val cursorLp = FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                    )
+                    rootLayout.addView(cursorView, cursorLp)
 
                     val btn = ImageButton(this).apply {
                         setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
@@ -178,6 +263,10 @@ class MainActivity : FlutterActivity() {
                 pureExitButton?.let {
                     rootLayout?.removeView(it)
                     pureExitButton = null
+                }
+                pureCursorView?.let {
+                    rootLayout?.removeView(it)
+                    pureCursorView = null
                 }
                 Log.i(logTag, "hidePureDisplaySurface detached successfully")
             } catch (e: Exception) {
@@ -429,6 +518,17 @@ class MainActivity : FlutterActivity() {
                 }
                 "stop_direct_surface" -> {
                     hidePureDisplaySurface()
+                    result.success(true)
+                    return@setMethodCallHandler
+                }
+                "update_cursor_pos" -> {
+                    val x = call.argument<Double>("x")?.toFloat() ?: 0f
+                    val y = call.argument<Double>("y")?.toFloat() ?: 0f
+                    pureCursorView?.let { cv ->
+                        cv.visibility = View.VISIBLE
+                        cv.x = x
+                        cv.y = y
+                    }
                     result.success(true)
                     return@setMethodCallHandler
                 }

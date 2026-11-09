@@ -80,6 +80,12 @@ lazy_static::lazy_static! {
     static ref WAKELOCK_KEEP_AWAKE_OPTION: Arc::<Mutex<Option<bool>>> = Default::default();
 }
 
+static LOOPBACK_CONN_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn is_loopback_active() -> bool {
+    LOOPBACK_CONN_COUNT.load(std::sync::atomic::Ordering::SeqCst) > 0
+}
+
 #[cfg(feature = "flutter")]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 lazy_static::lazy_static! {
@@ -1890,6 +1896,7 @@ impl Connection {
             qos.user_image_quality(self.inner.id(), ImageQuality::Balanced.value());
             drop(qos);
             self.show_remote_cursor = true;
+            LOOPBACK_CONN_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         }
         if let Some(o) = self.options_in_login.take() {
             self.update_options(&o).await;
@@ -4842,6 +4849,13 @@ impl Connection {
             return;
         }
         self.closed = true;
+        if self.ip.starts_with("127.0.0.1") {
+            let _ = LOOPBACK_CONN_COUNT.fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |x| Some(x.saturating_sub(1)),
+            );
+        }
         #[cfg(windows)]
         if crate::usb_display::is_usb_display_active() {
             // WiFi secondary display connections never reach the USB detach

@@ -141,7 +141,7 @@ pub fn notify_video_frame_fetched_by_conn_id(conn_id: i32, frame_tm: Option<Inst
 fn frame_ack_wait() -> (u64, u64) {
     #[cfg(windows)]
     {
-        if crate::usb_display::is_usb_display_active() {
+        if crate::usb_display::is_usb_display_active() || crate::server::connection::is_loopback_active() {
             return (2, 1);
         }
     }
