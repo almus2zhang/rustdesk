@@ -695,10 +695,6 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut try_gdi = 1;
     #[cfg(windows)]
     let mut dxgi_fail_count = 0u32;
-    #[cfg(all(windows, feature = "vram"))]
-    if !c.is_gdi() {
-        VRamEncoder::set_fallback_gdi(sp.name(), false);
-    }
     #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
     #[cfg(windows)]
@@ -981,7 +977,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             Err(ref e) if e.kind() == WouldBlock => {
                 #[cfg(windows)]
                 if try_gdi > 0 && !c.is_gdi() {
-                    if try_gdi > 3 {
+                    if try_gdi > 30 {
                         c.set_gdi();
                         try_gdi = 0;
                         log::info!("No image, fall back to gdi");
@@ -1034,10 +1030,10 @@ fn run(vs: VideoService) -> ResultType<()> {
 
                 #[cfg(windows)]
                 if !c.is_gdi() {
-                    if err.kind() == std::io::ErrorKind::ConnectionReset || dxgi_fail_count < 15 {
+                    if dxgi_fail_count < 5 && (err.kind() == std::io::ErrorKind::ConnectionReset || err.kind() == std::io::ErrorKind::Other) {
                         dxgi_fail_count += 1;
                         log::warn!(
-                            "DXGI capture transient error on display {} (attempt {}/15): {:?}, recovering...",
+                            "DXGI capture transient error on display {} (attempt {}/5): {:?}, recovering...",
                             display_idx,
                             dxgi_fail_count,
                             err
@@ -1160,7 +1156,6 @@ impl Drop for Raii {
         #[cfg(feature = "vram")]
         if self.try_vram {
             VRamEncoder::set_not_use(self.name.clone(), false);
-            VRamEncoder::set_fallback_gdi(self.name.clone(), false);
         }
         #[cfg(feature = "vram")]
         Encoder::update(scrap::codec::EncodingUpdate::Check);

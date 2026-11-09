@@ -58,6 +58,7 @@ pub struct Capturer {
     output_texture: bool,
     adapter_desc1: DXGI_ADAPTER_DESC1,
     rotate: Rotate,
+    has_acquired_frame: bool,
 }
 
 impl Capturer {
@@ -174,6 +175,7 @@ impl Capturer {
             output_texture: false,
             adapter_desc1,
             rotate,
+            has_acquired_frame: false,
         })
     }
 
@@ -342,6 +344,7 @@ impl Capturer {
             self.surface = ComPtr(ptr::null_mut());
             self.texture = ComPtr(ptr::null_mut());
             self.duplication = ComPtr(ptr::null_mut());
+            self.has_acquired_frame = false;
 
             let name = self.display.name();
             if let Ok(displays) = Displays::new() {
@@ -395,6 +398,7 @@ impl Capturer {
             }
         }
         acquire_res?;
+        self.has_acquired_frame = true;
         let frame = ComPtr(frame);
 
         if *info.LastPresentTime.QuadPart() == 0 {
@@ -532,7 +536,10 @@ impl Capturer {
             if self.duplication.0.is_null() {
                 return Err(std::io::ErrorKind::AddrNotAvailable.into());
             }
-            (*self.duplication.0).ReleaseFrame();
+            if self.has_acquired_frame {
+                (*self.duplication.0).ReleaseFrame();
+                self.has_acquired_frame = false;
+            }
             let mut frame = ptr::null_mut();
             #[allow(invalid_value)]
             let mut info = mem::MaybeUninit::uninit().assume_init();
@@ -547,6 +554,7 @@ impl Capturer {
                 }
             }
             acquire_res?;
+            self.has_acquired_frame = true;
             let frame = ComPtr(frame);
 
             if info.AccumulatedFrames == 0 || *info.LastPresentTime.QuadPart() == 0 {
