@@ -3151,6 +3151,12 @@ fn fps_calculate(
     }
     // Clear to get real-time fps
     if *count >= 30 {
+        let ms = duration.as_millis();
+        log::info!(
+            "[PERF_CLIENT_DECODE] 30 frames decoded in {}ms (avg {:.2}ms/frame)",
+            ms,
+            ms as f64 / 30.0
+        );
         *count = 0;
         *duration = Duration::ZERO;
     }
@@ -3218,9 +3224,14 @@ async fn do_sync_cpu_usage() {
 /// * `peer` - The peer.
 pub async fn handle_test_delay(t: TestDelay, peer: &mut Stream) {
     if !t.from_client {
+        let t_start = std::time::Instant::now();
         let mut msg_out = Message::new();
         msg_out.set_test_delay(t);
         allow_err!(peer.send(&msg_out).await);
+        log::info!(
+            "[PERF_CLIENT_DELAY] Echoed TestDelay back to server in {:.2}ms",
+            t_start.elapsed().as_secs_f64() * 1000.0
+        );
     }
 }
 

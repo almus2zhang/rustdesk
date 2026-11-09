@@ -286,7 +286,8 @@ impl<T: InvokeUiSession> Remote<T> {
                             fps_instant = Instant::now();
                             let mut speed = self.data_count.swap(0, Ordering::Relaxed);
                             speed = speed * 1000 / elapsed as usize;
-                            let speed = format!("{:.2}kB/s", speed as f32 / 1024 as f32);
+                            let max_q = self.video_threads.values().map(|v| v.video_queue.read().unwrap().len()).max().unwrap_or(0);
+                            let speed = format!("{:.1}kB/s (q:{})", speed as f32 / 1024 as f32, max_q);
 
                             let fps = self.video_threads.iter().map(|(k, v)| {
                                 // Correcting the inaccuracy of status_timer
@@ -308,6 +309,13 @@ impl<T: InvokeUiSession> Remote<T> {
                             } else {
                                 Some(self.video_format.clone())
                             };
+                            log::info!(
+                                "[PERF_CLIENT] Speed: {}, Display FPS: {:?}, QueueDepth: {}, Direct: {}",
+                                speed,
+                                fps,
+                                max_q,
+                                direct,
+                            );
                             self.handler.update_quality_status(QualityStatus {
                                 speed: Some(speed),
                                 fps,
@@ -1158,6 +1166,13 @@ impl<T: InvokeUiSession> Remote<T> {
                 // Only the USB/loopback secondary display bypasses auto-fps;
                 // ordinary P2P sessions keep their adaptive throttling.
                 if (direct && is_usb_secondary) || max_queue_len <= 1 {
+                    log::info!(
+                        "[PERF_CLIENT_FPS] bypass auto_fps: target_fps={}, direct={}, is_usb_sec={}, max_q={}",
+                        target_fps,
+                        direct,
+                        is_usb_secondary,
+                        max_queue_len
+                    );
                     return;
                 }
             }
@@ -1232,7 +1247,13 @@ impl<T: InvokeUiSession> Remote<T> {
                 let mut msg = Message::new();
                 msg.set_misc(misc);
                 self.sender.send(Data::Message(msg)).ok();
-                log::info!("Set fps to {}", auto_fps);
+                log::info!(
+                    "[PERF_CLIENT_FPS] Changed fps: last={:?} -> new={}, min_decode_fps={:?}, max_queue_len={}",
+                    last_auto_fps,
+                    auto_fps,
+                    min_decode_fps,
+                    max_queue_len
+                );
                 self.handler.lc.write().unwrap().last_auto_fps = Some(auto_fps);
             }
         }

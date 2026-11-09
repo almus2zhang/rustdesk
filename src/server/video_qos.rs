@@ -208,6 +208,12 @@ impl VideoQoS {
         }
         self.fps = fps.clamp(MIN_FPS, MAX_FPS);
         self.adjust_fps();
+        log::info!(
+            "[PERF_QOS] user_custom_fps: id={}, fps={}, resulting qos_fps={}",
+            id,
+            fps,
+            self.fps
+        );
     }
 
     pub fn user_auto_adjust_fps(&mut self, id: i32, fps: u32) {
@@ -347,6 +353,19 @@ impl VideoQoS {
             // first network delay message
             adjust_ratio = user.delay.fps.is_none();
             user.delay.fps = Some(fps);
+            log::info!(
+                "[PERF_QOS] conn #{} | delay:{}ms, avg:{}ms | is_sec:{} (loopback:{}, usb:{}) | custom_fps:{:?} | normal_fps:{} -> calc_fps:{} (qos_fps:{})",
+                id,
+                delay,
+                avg_delay,
+                is_secondary,
+                crate::server::connection::is_loopback_active(),
+                crate::usb_display::is_usb_display_active(),
+                user.custom_fps,
+                normal_fps,
+                fps,
+                self.fps,
+            );
         }
         self.adjust_fps();
         if adjust_ratio && !cfg!(target_os = "linux") {

@@ -730,6 +730,13 @@ fn run(vs: VideoService) -> ResultType<()> {
     #[cfg(windows)]
     let mut window_not_found_count = 0usize;
 
+    let mut perf_last_log = Instant::now();
+    let mut perf_frames = 0usize;
+    let mut perf_cap_ms = 0.0f64;
+    let mut perf_enc_ms = 0.0f64;
+    let mut perf_ack_ms = 0.0f64;
+    let mut perf_sleep_ms = 0.0f64;
+
     while sp.ok() {
         #[cfg(windows)]
         check_uac_switch(c.privacy_mode_id, c._capturer_privacy_mode_id)?;
@@ -884,6 +891,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         let time = now - start;
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
         let c_display_origin = c.display_origin;
+        let t_cap_start = Instant::now();
         let res = match c.frame(spf) {
             Ok(frame) => {
                 repeat_encode_counter = 0;
@@ -932,6 +940,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                     }
 
                     let frame = frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
+                    let t_enc_start = Instant::now();
                     let send_conn_ids = handle_one_frame(
                         display_idx,
                         &sp,
@@ -944,6 +953,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                         capture_width,
                         capture_height,
                     )?;
+                    perf_enc_ms += t_enc_start.elapsed().as_secs_f64() * 1000.0;
                     frame_controller.set_send(now, send_conn_ids);
                     send_counter += 1;
                 }
@@ -1044,13 +1054,45 @@ fn run(vs: VideoService) -> ResultType<()> {
                 break;
             }
         }
+        let ack_dur = wait_begin.elapsed().as_secs_f64() * 1000.0;
         DISPLAY_CONN_IDS.lock().unwrap().remove(&display_idx);
 
         let elapsed = now.elapsed();
         // may need to enable frame(timeout)
         log::trace!("{:?} {:?}", time::Instant::now(), elapsed);
+        let mut sleep_dur = 0.0f64;
         if elapsed < spf {
+            let t_sleep_start = Instant::now();
             std::thread::sleep(spf - elapsed);
+            sleep_dur = t_sleep_start.elapsed().as_secs_f64() * 1000.0;
+        }
+
+        perf_frames += 1;
+        perf_cap_ms += t_cap_start.elapsed().as_secs_f64() * 1000.0;
+        perf_ack_ms += ack_dur;
+        perf_sleep_ms += sleep_dur;
+        if perf_last_log.elapsed() >= Duration::from_secs(1) {
+            let count = perf_frames.max(1) as f64;
+            let qos_fps = VIDEO_QOS.lock().unwrap().fps();
+            log::info!(
+                "[PERF_SERVER] display:{} | sent {} fps | cap:{:.1}ms, enc:{:.1}ms, ack:{:.1}ms, sleep:{:.1}ms | target spf:{:.1}ms (qos_fps:{}) | loopback:{}, usb_disp:{}",
+                display_idx,
+                perf_frames,
+                perf_cap_ms / count,
+                perf_enc_ms / count,
+                perf_ack_ms / count,
+                perf_sleep_ms / count,
+                spf.as_secs_f64() * 1000.0,
+                qos_fps,
+                crate::server::connection::is_loopback_active(),
+                crate::usb_display::is_usb_display_active(),
+            );
+            perf_frames = 0;
+            perf_cap_ms = 0.0;
+            perf_enc_ms = 0.0;
+            perf_ack_ms = 0.0;
+            perf_sleep_ms = 0.0;
+            perf_last_log = Instant::now();
         }
     }
 

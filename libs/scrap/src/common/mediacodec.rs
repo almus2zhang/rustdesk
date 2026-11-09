@@ -89,6 +89,11 @@ impl MediaCodecDecoder {
                 }
             }
             if rendered {
+                static RENDER_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                let c = RENDER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if c % 60 == 0 {
+                    log::info!("[PERF_MEDIACODEC] Decoded 60 frames to Surface (has_surface={})", self.has_surface);
+                }
                 rgb.raw.clear();
                 return Ok(true);
             }

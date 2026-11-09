@@ -1332,6 +1332,13 @@ impl Connection {
             }
         }
         self.ip = addr.ip().to_string();
+        log::info!(
+            "[PERF_CONN] New connection #{} from {} (ip={}, is_loopback={})",
+            self.inner.id,
+            addr,
+            self.ip,
+            addr.ip().is_loopback() || self.ip.starts_with("127.0.0.1"),
+        );
         let mut msg_out = Message::new();
         msg_out.set_hash(self.hash.clone());
         self.send(msg_out).await;
@@ -1886,6 +1893,12 @@ impl Connection {
         // stays on the primary monitor, even if this peer used a secondary
         // display before.
         let is_secondary = self.ip.starts_with("127.0.0.1");
+        log::info!(
+            "[PERF_CONN] Client #{} authed: ip={}, is_secondary={}",
+            self.inner.id,
+            self.ip,
+            is_secondary,
+        );
         if is_secondary {
             log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
             let mut qos = video_service::VIDEO_QOS.lock().unwrap();
@@ -2740,6 +2753,12 @@ impl Connection {
                 if let Some(tm) = self.last_test_delay {
                     self.last_test_delay = None;
                     let new_delay = tm.elapsed().as_millis() as u32;
+                    log::info!(
+                        "[PERF_DELAY] TestDelay reply from conn #{} (ip={}): RTT = {}ms",
+                        self.inner.id(),
+                        self.ip,
+                        new_delay
+                    );
                     video_service::VIDEO_QOS
                         .lock()
                         .unwrap()
@@ -4487,6 +4506,12 @@ impl Connection {
             } else {
                 o.custom_fps as u32
             };
+            log::info!(
+                "[PERF_CONN] Client conn #{} requested custom_fps={}, applied={}",
+                self.inner.id(),
+                o.custom_fps,
+                fps
+            );
             video_service::VIDEO_QOS
                 .lock()
                 .unwrap()
