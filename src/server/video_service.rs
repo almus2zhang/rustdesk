@@ -317,11 +317,17 @@ fn create_capturer(
             #[cfg(windows)]
             {
                 log::debug!("Create capturer dxgi|gdi");
-                return crate::portable_service::client::create_capturer(
+                let display_name = display.name();
+                let mut capturer = crate::portable_service::client::create_capturer(
                     _current,
                     display,
                     _portable_service_running,
-                );
+                )?;
+                if crate::usb_display::is_this_usb_display(&display_name) {
+                    log::info!("Virtual USB display detected ({}), using GDI capturer directly", display_name);
+                    capturer.set_gdi();
+                }
+                return Ok(capturer);
             }
             #[cfg(not(windows))]
             {
@@ -1030,7 +1036,7 @@ fn run(vs: VideoService) -> ResultType<()> {
 
                 #[cfg(windows)]
                 if !c.is_gdi() {
-                    if dxgi_fail_count < 5 && (err.kind() == std::io::ErrorKind::ConnectionReset || err.kind() == std::io::ErrorKind::Other) {
+                    if dxgi_fail_count < 3 && (err.kind() == std::io::ErrorKind::ConnectionReset || err.kind() == std::io::ErrorKind::Other) {
                         dxgi_fail_count += 1;
                         log::warn!(
                             "DXGI capture transient error on display {} (attempt {}/5): {:?}, recovering...",
@@ -1041,7 +1047,6 @@ fn run(vs: VideoService) -> ResultType<()> {
                         std::thread::sleep(std::time::Duration::from_millis(50));
                         if c.reacquire() {
                             log::info!("DXGI capturer recovered on display {}", display_idx);
-                            dxgi_fail_count = 0;
                         }
                         continue;
                     }
