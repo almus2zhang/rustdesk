@@ -760,7 +760,12 @@ fn run(vs: VideoService) -> ResultType<()> {
         if sp.is_option_true(OPTION_REFRESH) {
             sp.set_option_bool(OPTION_REFRESH, false);
             if vs.source.is_monitor() {
-                let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);
+                try_broadcast_display_changed(&sp, display_idx, &c, true)?;
+            }
+            #[cfg(windows)]
+            if crate::usb_display::is_this_usb_display(&c.name) {
+                log::info!("refresh on USB display without geometry change, keeping capturer");
+                continue;
             }
             log::info!("switch to refresh");
             bail!("SWITCH");
@@ -900,7 +905,11 @@ fn run(vs: VideoService) -> ResultType<()> {
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
         let c_display_origin = c.display_origin;
         let t_cap_start = Instant::now();
-        let res = match c.frame(spf) {
+        let (res, cap_dur) = {
+            let r = c.frame(spf);
+            (r, t_cap_start.elapsed().as_secs_f64() * 1000.0)
+        };
+        let res = match res {
             Ok(frame) => {
                 repeat_encode_counter = 0;
                 if frame.valid() {
@@ -1091,7 +1100,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         }
 
         perf_frames += 1;
-        perf_cap_ms += t_cap_start.elapsed().as_secs_f64() * 1000.0;
+        perf_cap_ms += cap_dur;
         perf_ack_ms += ack_dur;
         perf_sleep_ms += sleep_dur;
         if perf_last_log.elapsed() >= Duration::from_secs(1) {

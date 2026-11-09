@@ -4092,6 +4092,7 @@ impl Connection {
     }
 
     fn refresh_video_display(&self, display: Option<usize>) {
+        log::info!("refresh_video_display requested for display: {:?}", display);
         video_service::refresh();
         self.server.upgrade().map(|s| {
             s.read().unwrap().set_video_service_opt(
@@ -5338,6 +5339,9 @@ impl Connection {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     async fn handle_cursor_switch_display(&mut self, pos: CursorPosition) {
         if self.multi_ui_session {
+            return;
+        }
+        if self.ip.starts_with("127.0.0.1") || crate::usb_display::is_usb_display_active() {
             return;
         }
         let displays = super::display_service::get_sync_displays();
