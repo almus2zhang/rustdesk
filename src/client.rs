@@ -1661,6 +1661,9 @@ impl VideoHandler {
                 );
                 if res.as_ref().is_ok_and(|x| *x) {
                     self.fail_counter = 0;
+                    self.first_frame = false;
+                } else if res.is_ok() {
+                    // Frame accepted (e.g. parameter set / queueing), not an error
                 } else {
                     if self.fail_counter < usize::MAX {
                         if self.first_frame && self.fail_counter < MAX_DECODE_FAIL_COUNTER {
@@ -1674,8 +1677,8 @@ impl VideoHandler {
                             self.fail_counter
                         );
                     }
+                    self.first_frame = false;
                 }
-                self.first_frame = false;
                 if self.record {
                     self.recorder.lock().unwrap().as_mut().map(|r| {
                         let (w, h) = if *pixelbuffer {
@@ -2975,6 +2978,7 @@ pub fn start_video_thread<F, T>(
                             if let Some(h) = video_handler.as_mut() {
                                 if h.has_surface() != !surface_ptr.is_null() {
                                     video_handler = None;
+                                    session.refresh_video(display as _);
                                 }
                             }
                         }

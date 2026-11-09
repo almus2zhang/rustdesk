@@ -72,21 +72,27 @@ impl MediaCodecDecoder {
         };
 
         if self.has_surface {
-            let output_opt = match self.dequeue_output_buffer(Duration::from_millis(0))? {
-                Some(ob) => Some(ob),
-                None => self.dequeue_output_buffer(Duration::from_millis(10))?,
-            };
-            return match output_opt {
-                Some(output_buffer) => {
+            let mut rendered = false;
+            for _ in 0..10 {
+                match self.dequeue_output_buffer(Duration::from_millis(0))? {
+                    Some(output_buffer) => {
+                        self.release_output_buffer(output_buffer, true)?;
+                        rendered = true;
+                    }
+                    None => break,
+                }
+            }
+            if !rendered {
+                if let Some(output_buffer) = self.dequeue_output_buffer(Duration::from_millis(8))? {
                     self.release_output_buffer(output_buffer, true)?;
-                    rgb.raw.clear();
-                    Ok(true)
+                    rendered = true;
                 }
-                None => {
-                    log::debug!("Failed to dequeue_output: No available dequeue_output");
-                    Ok(false)
-                }
-            };
+            }
+            if rendered {
+                rgb.raw.clear();
+                return Ok(true);
+            }
+            return Ok(false);
         }
 
         let output_opt = match self.dequeue_output_buffer(Duration::from_millis(0))? {

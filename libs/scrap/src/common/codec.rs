@@ -544,7 +544,7 @@ impl Decoder {
             }
             CodecFormat::H264 => {
                 #[cfg(feature = "mediacodec")]
-                if !valid && enable_hwcodec_option() {
+                if !valid {
                     #[cfg(target_os = "android")]
                     let prefer_mediacodec = !crate::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst).is_null();
                     #[cfg(not(target_os = "android"))]
@@ -571,11 +571,18 @@ impl Decoder {
                     }
                     valid = h264_ram.is_some();
                 }
-
+                #[cfg(feature = "mediacodec")]
+                if !valid && enable_hwcodec_option() {
+                    h264_media_codec = MediaCodecDecoder::new(format);
+                    if h264_media_codec.is_none() {
+                        log::error!("create H264 media codec fallback decoder failed");
+                    }
+                    valid = h264_media_codec.is_some();
+                }
             }
             CodecFormat::H265 => {
                 #[cfg(feature = "mediacodec")]
-                if !valid && enable_hwcodec_option() {
+                if !valid {
                     #[cfg(target_os = "android")]
                     let prefer_mediacodec = !crate::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst).is_null();
                     #[cfg(not(target_os = "android"))]
@@ -602,7 +609,14 @@ impl Decoder {
                     }
                     valid = h265_ram.is_some();
                 }
-
+                #[cfg(feature = "mediacodec")]
+                if !valid && enable_hwcodec_option() {
+                    h265_media_codec = MediaCodecDecoder::new(format);
+                    if h265_media_codec.is_none() {
+                        log::error!("create H265 media codec fallback decoder failed");
+                    }
+                    valid = h265_media_codec.is_some();
+                }
             }
             CodecFormat::Unknown => {
                 log::error!("unknown codec format, cannot create decoder");
@@ -687,9 +701,13 @@ impl Decoder {
                     bail!("av1 decoder not available");
                 }
             }
-            #[cfg(any(feature = "hwcodec", feature = "vram"))]
+            #[cfg(any(feature = "hwcodec", feature = "vram", feature = "mediacodec"))]
             video_frame::Union::H264s(h264s) => {
                 *chroma = Some(Chroma::I420);
+                #[cfg(feature = "mediacodec")]
+                if let Some(decoder) = &mut self.h264_media_codec {
+                    return Decoder::handle_mediacodec_video_frame(decoder, h264s, rgb);
+                }
                 #[cfg(feature = "vram")]
                 if let Some(decoder) = &mut self.h264_vram {
                     *_pixelbuffer = false;
@@ -701,9 +719,13 @@ impl Decoder {
                 }
                 Err(anyhow!("don't support h264!"))
             }
-            #[cfg(any(feature = "hwcodec", feature = "vram"))]
+            #[cfg(any(feature = "hwcodec", feature = "vram", feature = "mediacodec"))]
             video_frame::Union::H265s(h265s) => {
                 *chroma = Some(Chroma::I420);
+                #[cfg(feature = "mediacodec")]
+                if let Some(decoder) = &mut self.h265_media_codec {
+                    return Decoder::handle_mediacodec_video_frame(decoder, h265s, rgb);
+                }
                 #[cfg(feature = "vram")]
                 if let Some(decoder) = &mut self.h265_vram {
                     *_pixelbuffer = false;
@@ -714,24 +736,6 @@ impl Decoder {
                     return Decoder::handle_hwram_video_frame(decoder, h265s, rgb, &mut self.i420);
                 }
                 Err(anyhow!("don't support h265!"))
-            }
-            #[cfg(feature = "mediacodec")]
-            video_frame::Union::H264s(h264s) => {
-                *chroma = Some(Chroma::I420);
-                if let Some(decoder) = &mut self.h264_media_codec {
-                    Decoder::handle_mediacodec_video_frame(decoder, h264s, rgb)
-                } else {
-                    Err(anyhow!("don't support h264!"))
-                }
-            }
-            #[cfg(feature = "mediacodec")]
-            video_frame::Union::H265s(h265s) => {
-                *chroma = Some(Chroma::I420);
-                if let Some(decoder) = &mut self.h265_media_codec {
-                    Decoder::handle_mediacodec_video_frame(decoder, h265s, rgb)
-                } else {
-                    Err(anyhow!("don't support h265!"))
-                }
             }
             _ => Err(anyhow!("unsupported video frame type!")),
         }
@@ -839,10 +843,12 @@ impl Decoder {
         rgb: &mut ImageRgb,
     ) -> ResultType<bool> {
         let mut ret = false;
-        for h264 in frames.frames.iter() {
-            return decoder.decode(&h264.data, rgb);
+        for h26x in frames.frames.iter() {
+            if decoder.decode(&h26x.data, rgb)? {
+                ret = true;
+            }
         }
-        return Ok(false);
+        Ok(ret)
     }
 
     fn preference(id: Option<&str>) -> (PreferCodec, Chroma) {
