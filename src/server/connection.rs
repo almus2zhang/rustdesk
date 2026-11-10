@@ -973,7 +973,7 @@ impl Connection {
                             }
                         }
                         Some(message::Union::PeerInfo(_pi)) => {
-                            if !conn.ip.starts_with("127.0.0.1") && !crate::usb_display::is_usb_display_active() {
+                            if !conn.ip.starts_with("127.0.0.1") && !is_usb_display_active() {
                                 conn.refresh_video_display(None);
                             }
                             #[cfg(target_os = "macos")]
@@ -5343,7 +5343,7 @@ impl Connection {
         if self.multi_ui_session {
             return;
         }
-        if self.ip.starts_with("127.0.0.1") || crate::usb_display::is_usb_display_active() {
+        if self.ip.starts_with("127.0.0.1") || is_usb_display_active() {
             return;
         }
         let displays = super::display_service::get_sync_displays();
