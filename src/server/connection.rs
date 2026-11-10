@@ -973,7 +973,9 @@ impl Connection {
                             }
                         }
                         Some(message::Union::PeerInfo(_pi)) => {
-                            conn.refresh_video_display(None);
+                            if !conn.ip.starts_with("127.0.0.1") && !crate::usb_display::is_usb_display_active() {
+                                conn.refresh_video_display(None);
+                            }
                             #[cfg(target_os = "macos")]
                             conn.retina.set_displays(&_pi.displays);
                         }

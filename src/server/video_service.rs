@@ -765,17 +765,17 @@ fn run(vs: VideoService) -> ResultType<()> {
         if sp.is_option_true(OPTION_REFRESH) {
             sp.set_option_bool(OPTION_REFRESH, false);
             if vs.source.is_monitor() {
-                try_broadcast_display_changed(&sp, display_idx, &c, true)?;
+                try_broadcast_display_changed(&sp, display_idx, &c, false)?;
             }
             #[cfg(windows)]
             if crate::usb_display::is_this_usb_display(&c.name)
                 || crate::virtual_display_manager::is_virtual_display(&c.name)
             {
                 log::info!("refresh on virtual display without geometry change, keeping capturer");
-                continue;
+            } else {
+                log::info!("switch to refresh");
+                bail!("SWITCH");
             }
-            log::info!("switch to refresh");
-            bail!("SWITCH");
         }
         if codec_format != Encoder::negotiated_codec() {
             log::info!(
