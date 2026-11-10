@@ -317,19 +317,11 @@ fn create_capturer(
             #[cfg(windows)]
             {
                 log::debug!("Create capturer dxgi|gdi");
-                let display_name = display.name();
-                let mut capturer = crate::portable_service::client::create_capturer(
+                return crate::portable_service::client::create_capturer(
                     _current,
                     display,
                     _portable_service_running,
-                )?;
-                if crate::usb_display::is_this_usb_display(&display_name)
-                    || crate::virtual_display_manager::is_virtual_display(&display_name)
-                {
-                    log::info!("Virtual display detected ({}), using GDI capturer directly", display_name);
-                    capturer.set_gdi();
-                }
-                return Ok(capturer);
+                );
             }
             #[cfg(not(windows))]
             {
