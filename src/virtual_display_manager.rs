@@ -508,6 +508,7 @@ pub mod amyuni_idd {
         key.set_value("0", &format!("{},{}", custom_w, custom_h))?;
 
         let common = [
+            (3000, 1920),
             (1920, 1080),
             (2560, 1600),
             (2400, 1080),

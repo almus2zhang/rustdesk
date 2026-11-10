@@ -767,15 +767,8 @@ fn run(vs: VideoService) -> ResultType<()> {
             if vs.source.is_monitor() {
                 try_broadcast_display_changed(&sp, display_idx, &c, false)?;
             }
-            #[cfg(windows)]
-            if crate::usb_display::is_this_usb_display(&c.name)
-                || crate::virtual_display_manager::is_virtual_display(&c.name)
-            {
-                log::info!("refresh on virtual display without geometry change, keeping capturer");
-            } else {
-                log::info!("switch to refresh");
-                bail!("SWITCH");
-            }
+            log::info!("switch to refresh");
+            bail!("SWITCH");
         }
         if codec_format != Encoder::negotiated_codec() {
             log::info!(
@@ -1023,9 +1016,28 @@ fn run(vs: VideoService) -> ResultType<()> {
                     }
                 }
                 if !encoder.latency_free() && yuv.len() > 0 {
-                    // yun.len() > 0 means the frame is not texture.
-                    if repeat_encode_counter < repeat_encode_max {
-                        repeat_encode_counter += 1;
+                    // yuv.len() > 0 means the frame is not texture.
+                    let is_usb = crate::server::connection::is_usb_display_active()
+                        || crate::server::connection::is_loopback_active();
+                    let should_send = if is_usb {
+                        if repeat_encode_counter < repeat_encode_max {
+                            repeat_encode_counter += 1;
+                            true
+                        } else {
+                            repeat_encode_counter += 1;
+                            // Keep-alive on USB display: send 1 frame every 15 ticks (~200ms) to prevent Android decoder & surface freeze
+                            repeat_encode_counter % 15 == 0
+                        }
+                    } else {
+                        if repeat_encode_counter < repeat_encode_max {
+                            repeat_encode_counter += 1;
+                            true
+                        } else {
+                            false
+                        }
+                    };
+
+                    if should_send {
                         let send_conn_ids = handle_one_frame(
                             display_idx,
                             &sp,
@@ -1233,7 +1245,15 @@ fn get_encoder_config(
     #[cfg(feature = "vram")]
     Encoder::update(scrap::codec::EncodingUpdate::Check);
     // https://www.wowza.com/community/t/the-correct-keyframe-interval-in-obs-studio/95162
-    let keyframe_interval = if record { Some(240) } else { None };
+    let keyframe_interval = if record {
+        Some(240)
+    } else if crate::server::connection::is_usb_display_active()
+        || crate::server::connection::is_loopback_active()
+    {
+        Some(60) // 1 second keyframe interval on USB secondary display to avoid client decoder stall
+    } else {
+        None
+    };
     let negotiated_codec = Encoder::negotiated_codec();
     match negotiated_codec {
         CodecFormat::H264 | CodecFormat::H265 => {
