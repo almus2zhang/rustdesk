@@ -56,7 +56,11 @@ impl MediaCodecDecoder {
 
     // rgb [in/out] fmt and stride must be set in ImageRgb
     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
-        match self.dequeue_input_buffer(Duration::from_millis(5))? {
+        let stage2 = crate::perf_stage_enabled(2);
+        let input_wait = if stage2 { 1 } else { 5 };
+        let output_wait = if stage2 { 1 } else { 8 };
+        let output_wait_soft = if stage2 { 2 } else { 10 };
+        match self.dequeue_input_buffer(Duration::from_millis(input_wait))? {
             Some(mut input_buffer) => {
                 let mut buf = input_buffer.buffer_mut();
                 if data.len() > buf.len() {
@@ -83,7 +87,7 @@ impl MediaCodecDecoder {
                 }
             }
             if !rendered {
-                if let Some(output_buffer) = self.dequeue_output_buffer(Duration::from_millis(8))? {
+                if let Some(output_buffer) = self.dequeue_output_buffer(Duration::from_millis(output_wait))? {
                     self.release_output_buffer(output_buffer, true)?;
                     rendered = true;
                 }
@@ -102,7 +106,7 @@ impl MediaCodecDecoder {
 
         let output_opt = match self.dequeue_output_buffer(Duration::from_millis(0))? {
             Some(ob) => Some(ob),
-            None => self.dequeue_output_buffer(Duration::from_millis(10))?,
+            None => self.dequeue_output_buffer(Duration::from_millis(output_wait_soft))?,
         };
         return match output_opt {
             Some(output_buffer) => {

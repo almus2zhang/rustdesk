@@ -142,6 +142,11 @@ fn frame_ack_wait() -> (u64, u64) {
     #[cfg(windows)]
     {
         if crate::usb_display::is_usb_display_active() || crate::server::connection::is_loopback_active() {
+            // On a local link the frame is fetched well before the next
+            // capture tick, so stage 2 does not hold the capture thread at all.
+            if scrap::perf_stage_enabled(2) {
+                return (0, 1);
+            }
             return (2, 1);
         }
     }
@@ -1072,7 +1077,21 @@ fn run(vs: VideoService) -> ResultType<()> {
         let mut sleep_dur = 0.0f64;
         if elapsed < spf {
             let t_sleep_start = Instant::now();
-            std::thread::sleep(spf - elapsed);
+            let remaining = spf - elapsed;
+            if scrap::perf_stage_enabled(2) {
+                // std::thread::sleep has ~15.6ms granularity on Windows, longer
+                // than an 8.3ms (120fps) frame budget. Sleep only for the
+                // coarse part and spin the last ~2ms for accurate pacing.
+                let coarse = remaining.saturating_sub(Duration::from_millis(2));
+                if !coarse.is_zero() {
+                    std::thread::sleep(coarse);
+                }
+                while t_sleep_start.elapsed() < remaining {
+                    std::thread::yield_now();
+                }
+            } else {
+                std::thread::sleep(remaining);
+            }
             sleep_dur = t_sleep_start.elapsed().as_secs_f64() * 1000.0;
         }
 

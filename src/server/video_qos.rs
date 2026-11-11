@@ -349,6 +349,13 @@ impl VideoQoS {
                 user.delay.quick_increase_fps_count = 0;
             }
 
+            if is_secondary && scrap::perf_stage_enabled(2) {
+                // A USB / loopback secondary display has ~0ms RTT. One delayed
+                // first TestDelay reply (observed 1800ms) otherwise drags the
+                // moving average for seconds and pins fps at 5 right after
+                // connecting, which looks like a multi-second freeze.
+                fps = normal_fps;
+            }
             fps = fps.clamp(MIN_FPS, highest_fps);
             // first network delay message
             adjust_ratio = user.delay.fps.is_none();
