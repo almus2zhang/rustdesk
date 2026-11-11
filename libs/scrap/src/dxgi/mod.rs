@@ -58,6 +58,10 @@ pub struct Capturer {
     output_texture: bool,
     adapter_desc1: DXGI_ADAPTER_DESC1,
     rotate: Rotate,
+    // Consecutive failed attempts to rebuild desktop duplication. Used to
+    // bound recovery so a persistently broken output still falls back to GDI
+    // instead of spinning forever.
+    recreate_attempts: u32,
 }
 
 impl Capturer {
@@ -174,6 +178,7 @@ impl Capturer {
             output_texture: false,
             adapter_desc1,
             rotate,
+            recreate_attempts: 0,
         })
     }
 
@@ -329,12 +334,50 @@ impl Capturer {
         self.output_texture = texture;
     }
 
+    /// Rebuild the desktop duplication interface after a display mode change
+    /// (plugging in / removing the virtual monitor invalidates it with
+    /// DXGI_ERROR_ACCESS_LOST). This must stay non-blocking: no sleeps, no
+    /// thread restarts. The caller simply treats the tick as "no frame" and
+    /// retries with the fresh interface on its next iteration.
+    fn recreate_duplication(&mut self) -> bool {
+        unsafe {
+            if self.device.0.is_null() || self.display.inner.0.is_null() {
+                return false;
+            }
+            if !self.duplication.0.is_null() {
+                (*self.duplication.0).ReleaseFrame();
+            }
+            let mut duplication = ptr::null_mut();
+            let hres = (*self.display.inner.0)
+                .DuplicateOutput(self.device.0 as *mut _, &mut duplication);
+            if hres != S_OK || duplication.is_null() {
+                self.recreate_attempts = self.recreate_attempts.saturating_add(1);
+                return false;
+            }
+            self.duplication = ComPtr(duplication);
+            #[allow(invalid_value)]
+            let mut desc = mem::MaybeUninit::uninit().assume_init();
+            (*self.duplication.0).GetDesc(&mut desc);
+            self.fastlane = desc.DesktopImageInSystemMemory == TRUE;
+            self.recreate_attempts = self.recreate_attempts.saturating_sub(1);
+            true
+        }
+    }
+
     unsafe fn load_frame(&mut self, timeout: UINT) -> io::Result<(*const u8, i32)> {
         let mut frame = ptr::null_mut();
         #[allow(invalid_value)]
         let mut info = mem::MaybeUninit::uninit().assume_init();
 
-        wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame))?;
+        let hres = (*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame);
+        if hres == DXGI_ERROR_ACCESS_LOST && crate::perf_stage_enabled(1) {
+            // Rebuild in place and treat this tick as "no frame". Never sleep
+            // here: the capture loop's next frame is the retry.
+            if self.recreate_duplication() || self.recreate_attempts < 8 {
+                return Err(std::io::ErrorKind::WouldBlock.into());
+            }
+        }
+        wrap_hresult(hres)?;
         let frame = ComPtr(frame);
 
         if *info.LastPresentTime.QuadPart() == 0 {
@@ -477,7 +520,15 @@ impl Capturer {
             #[allow(invalid_value)]
             let mut info = mem::MaybeUninit::uninit().assume_init();
 
-            wrap_hresult((*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame))?;
+            let hres = (*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame);
+            if hres == DXGI_ERROR_ACCESS_LOST && crate::perf_stage_enabled(1) {
+                // Keep the zero-copy texture path alive across virtual monitor
+                // mode changes instead of falling back to the slow GDI path.
+                if self.recreate_duplication() || self.recreate_attempts < 8 {
+                    return Err(std::io::ErrorKind::WouldBlock.into());
+                }
+            }
+            wrap_hresult(hres)?;
             let frame = ComPtr(frame);
 
             if info.AccumulatedFrames == 0 || *info.LastPresentTime.QuadPart() == 0 {
