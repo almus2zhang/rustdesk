@@ -1,7 +1,8 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ffi::c_void,
     sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use crate::{
@@ -31,8 +32,15 @@ use hwcodec::{
 // https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nf-d3d12-id3d12device-getadapterluid#remarks
 lazy_static::lazy_static! {
     static ref ENOCDE_NOT_USE: Arc<Mutex<HashMap<String, bool>>> = Default::default();
-    static ref FALLBACK_GDI_DISPLAYS: Arc<Mutex<HashSet<String>>> = Default::default();
+    // Value = when the display degraded to GDI. The service process stays
+    // alive across many connections, so a permanently stored name would keep
+    // VRAM (and therefore H264/H265) disabled for every later session.
+    static ref FALLBACK_GDI_DISPLAYS: Arc<Mutex<HashMap<String, Instant>>> = Default::default();
 }
+
+// A GDI fallback only describes the session that hit it. Expire it so a
+// restart of the whole service is not required to recover hardware encoding.
+const FALLBACK_GDI_TTL: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone)]
 pub struct VRamEncoderConfig {
@@ -224,10 +232,16 @@ impl VRamEncoder {
     }
 
     pub fn available(format: CodecFormat) -> Vec<FeatureContext> {
-        let fallbacks = FALLBACK_GDI_DISPLAYS.lock().unwrap().clone();
-        if !fallbacks.is_empty() {
-            log::info!("fallback gdi displays not empty: {fallbacks:?}");
-            return vec![];
+        {
+            let mut fallbacks = FALLBACK_GDI_DISPLAYS.lock().unwrap();
+            fallbacks.retain(|_, degraded_at| degraded_at.elapsed() < FALLBACK_GDI_TTL);
+            if !fallbacks.is_empty() {
+                log::info!(
+                    "fallback gdi displays not empty: {:?}",
+                    fallbacks.keys().collect::<Vec<_>>()
+                );
+                return vec![];
+            }
         }
         let not_use = ENOCDE_NOT_USE.lock().unwrap().clone();
         if not_use.values().any(|not_use| *not_use) {
@@ -296,16 +310,11 @@ impl VRamEncoder {
     }
 
     pub fn set_fallback_gdi(video_service_name: String, fallback: bool) {
+        let mut map = FALLBACK_GDI_DISPLAYS.lock().unwrap();
         if fallback {
-            FALLBACK_GDI_DISPLAYS
-                .lock()
-                .unwrap()
-                .insert(video_service_name);
+            map.insert(video_service_name, Instant::now());
         } else {
-            FALLBACK_GDI_DISPLAYS
-                .lock()
-                .unwrap()
-                .remove(&video_service_name);
+            map.remove(&video_service_name);
         }
     }
 }
