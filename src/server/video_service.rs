@@ -737,6 +737,7 @@ fn run(vs: VideoService) -> ResultType<()> {
 
     let mut perf_last_log = Instant::now();
     let mut perf_frames = 0usize;
+    let mut perf_wouldblock = 0usize;
     let mut perf_cap_ms = 0.0f64;
     let mut perf_conv_ms = 0.0f64;
     let mut perf_enc_ms = 0.0f64;
@@ -981,14 +982,27 @@ fn run(vs: VideoService) -> ResultType<()> {
                 }
                 Ok(())
             }
-            Err(err) => Err(err),
+            Err(err) => {
+                // Timed-out AcquireNextFrame calls are real frame-acquisition
+                // cost. Count them, otherwise `cap` is averaged over frames
+                // silently recorded as 0ms.
+                cap_dur = t_cap_start.elapsed().as_secs_f64() * 1000.0;
+                Err(err)
+            }
         };
 
         match res {
             Err(ref e) if e.kind() == WouldBlock => {
+                perf_wouldblock += 1;
                 #[cfg(windows)]
                 if try_gdi > 0 && !c.is_gdi() {
-                    if try_gdi > 3 {
+                    // A freshly plugged virtual monitor legitimately yields no
+                    // frame for a while: AcquireNextFrame simply times out.
+                    // The 4-strike rule degraded to GDI on every display
+                    // switch, which also killed the VRAM texture path for the
+                    // rest of the session. Allow ~2s (240 * 8.3ms) first.
+                    let max_no_image = if scrap::perf_stage_enabled(1) { 240 } else { 3 };
+                    if try_gdi > max_no_image {
                         c.set_gdi();
                         try_gdi = 0;
                         log::info!("No image, fall back to gdi");
@@ -1104,9 +1118,10 @@ fn run(vs: VideoService) -> ResultType<()> {
             let count = perf_frames.max(1) as f64;
             let qos_fps = VIDEO_QOS.lock().unwrap().fps();
             log::info!(
-                "[PERF_SERVER] display:{} | sent {} fps | cap:{:.1}ms, conv:{:.1}ms, enc:{:.1}ms, ack:{:.1}ms, sleep:{:.1}ms | target spf:{:.1}ms (qos_fps:{}) | loopback:{}, usb_disp:{}",
+                "[PERF_SERVER] display:{} | loop {} fps (wb:{}) | cap:{:.1}ms, conv:{:.1}ms, enc:{:.1}ms, ack:{:.1}ms, sleep:{:.1}ms | target spf:{:.1}ms (qos_fps:{}) | loopback:{}, usb_disp:{}",
                 display_idx,
                 perf_frames,
+                perf_wouldblock,
                 perf_cap_ms / count,
                 perf_conv_ms / count,
                 perf_enc_ms / count,
@@ -1117,6 +1132,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 crate::server::connection::is_loopback_active(),
                 crate::server::connection::is_usb_display_active(),
             );
+            perf_wouldblock = 0;
             perf_frames = 0;
             perf_cap_ms = 0.0;
             perf_conv_ms = 0.0;
