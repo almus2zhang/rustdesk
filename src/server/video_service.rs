@@ -733,6 +733,7 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut perf_last_log = Instant::now();
     let mut perf_frames = 0usize;
     let mut perf_cap_ms = 0.0f64;
+    let mut perf_conv_ms = 0.0f64;
     let mut perf_enc_ms = 0.0f64;
     let mut perf_ack_ms = 0.0f64;
     let mut perf_sleep_ms = 0.0f64;
@@ -892,8 +893,14 @@ fn run(vs: VideoService) -> ResultType<()> {
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
         let c_display_origin = c.display_origin;
         let t_cap_start = Instant::now();
+        // `cap` used to be measured at the end of the loop, so it also included
+        // conversion, encoding, ack wait and sleep. Measure each stage at its
+        // own boundary instead.
+        let mut cap_dur = 0.0f64;
+        let mut conv_dur = 0.0f64;
         let res = match c.frame(spf) {
             Ok(frame) => {
+                cap_dur = t_cap_start.elapsed().as_secs_f64() * 1000.0;
                 repeat_encode_counter = 0;
                 if frame.valid() {
                     let screenshot = SCREENSHOTS.lock().unwrap().remove(&display_idx);
@@ -939,7 +946,9 @@ fn run(vs: VideoService) -> ResultType<()> {
                         }
                     }
 
+                    let t_conv_start = Instant::now();
                     let frame = frame.to(encoder.yuvfmt(), &mut yuv, &mut mid_data)?;
+                    conv_dur = t_conv_start.elapsed().as_secs_f64() * 1000.0;
                     let t_enc_start = Instant::now();
                     let send_conn_ids = handle_one_frame(
                         display_idx,
@@ -1068,17 +1077,19 @@ fn run(vs: VideoService) -> ResultType<()> {
         }
 
         perf_frames += 1;
-        perf_cap_ms += t_cap_start.elapsed().as_secs_f64() * 1000.0;
+        perf_cap_ms += cap_dur;
+        perf_conv_ms += conv_dur;
         perf_ack_ms += ack_dur;
         perf_sleep_ms += sleep_dur;
         if perf_last_log.elapsed() >= Duration::from_secs(1) {
             let count = perf_frames.max(1) as f64;
             let qos_fps = VIDEO_QOS.lock().unwrap().fps();
             log::info!(
-                "[PERF_SERVER] display:{} | sent {} fps | cap:{:.1}ms, enc:{:.1}ms, ack:{:.1}ms, sleep:{:.1}ms | target spf:{:.1}ms (qos_fps:{}) | loopback:{}, usb_disp:{}",
+                "[PERF_SERVER] display:{} | sent {} fps | cap:{:.1}ms, conv:{:.1}ms, enc:{:.1}ms, ack:{:.1}ms, sleep:{:.1}ms | target spf:{:.1}ms (qos_fps:{}) | loopback:{}, usb_disp:{}",
                 display_idx,
                 perf_frames,
                 perf_cap_ms / count,
+                perf_conv_ms / count,
                 perf_enc_ms / count,
                 perf_ack_ms / count,
                 perf_sleep_ms / count,
@@ -1089,6 +1100,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             );
             perf_frames = 0;
             perf_cap_ms = 0.0;
+            perf_conv_ms = 0.0;
             perf_enc_ms = 0.0;
             perf_ack_ms = 0.0;
             perf_sleep_ms = 0.0;

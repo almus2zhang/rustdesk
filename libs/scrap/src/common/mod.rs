@@ -6,6 +6,21 @@ use hbb_common::{
 };
 use std::{ffi::c_void, slice};
 
+/// Independent runtime switches for the three low-latency stages:
+/// 0 = per-stage timing, 1 = non-blocking DXGI recovery, 2 = low-latency
+/// scheduling. `enable-*` options default to on; set the option to "N" to
+/// disable one stage without rebuilding.
+///
+/// This lives in `scrap` rather than the `hbb_common` submodule because the
+/// latter is an upstream repository that the CI build checks out unchanged.
+pub fn perf_stage_enabled(stage: u8) -> bool {
+    let option = format!("enable-perf-stage{}", stage);
+    hbb_common::config::option2bool(
+        &option,
+        &hbb_common::config::Config::get_option(&option),
+    )
+}
+
 cfg_if! {
     if #[cfg(quartz)] {
         mod quartz;

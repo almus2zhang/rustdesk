@@ -2931,6 +2931,14 @@ pub fn start_video_thread<F, T>(
         let mut count = 0;
         let mut duration = std::time::Duration::ZERO;
         let mut skip_beginning = 0;
+        // Stage-0 client-side timing. No cross-device clock is needed: the
+        // server reports cap/conv/enc separately and TestDelay already reports
+        // the (sub-millisecond on loopback) RTT.
+        let mut perf_last_log = std::time::Instant::now();
+        let mut perf_frames = 0usize;
+        let mut perf_decode_ms = 0.0f64;
+        let mut perf_queue_depth = 0usize;
+        let mut perf_dropped = 0usize;
         loop {
             if let Ok(data) = video_receiver.recv() {
                 match data {
@@ -2970,6 +2978,7 @@ pub fn start_video_thread<F, T>(
                                 false
                             };
                         let display = vf.display as usize;
+                        let stage0 = scrap::perf_stage_enabled(0);
                         let start = std::time::Instant::now();
                         let format = CodecFormat::from(&vf);
                         #[cfg(target_os = "android")]
@@ -3039,6 +3048,31 @@ pub fn start_video_thread<F, T>(
                                     session.refresh_video(display as _);
                                 }
                                 _ => {}
+                            }
+                        }
+
+                        if stage0 {
+                            perf_frames += 1;
+                            perf_decode_ms += start.elapsed().as_secs_f64() * 1000.0;
+                            perf_queue_depth += video_queue.read().unwrap().len();
+                            if has_more {
+                                perf_dropped += 1;
+                            }
+                            if perf_last_log.elapsed() >= std::time::Duration::from_secs(1) {
+                                let n = perf_frames.max(1) as f64;
+                                log::info!(
+                                    "[PERF_CLIENT_STAGE] display:{} | {} fps | decode:{:.1}ms, queue_avg:{:.1}, decoded_not_shown:{}",
+                                    display,
+                                    perf_frames,
+                                    perf_decode_ms / n,
+                                    perf_queue_depth as f64 / n,
+                                    perf_dropped,
+                                );
+                                perf_frames = 0;
+                                perf_decode_ms = 0.0;
+                                perf_queue_depth = 0;
+                                perf_dropped = 0;
+                                perf_last_log = std::time::Instant::now();
                             }
                         }
 
