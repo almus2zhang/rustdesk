@@ -396,7 +396,6 @@ pub(super) struct CapturerInfo {
     pub current: usize,
     pub privacy_mode_id: i32,
     pub _capturer_privacy_mode_id: i32,
-    pub name: String,
     pub capturer: Box<dyn TraitCapturer>,
 }
 
@@ -517,7 +516,6 @@ fn get_capturer_monitor(
         current,
         privacy_mode_id,
         _capturer_privacy_mode_id: capturer_privacy_mode_id,
-        name,
         capturer,
     })
 }
@@ -560,7 +558,6 @@ fn get_capturer_camera(current: usize) -> ResultType<CapturerInfo> {
         current,
         privacy_mode_id,
         _capturer_privacy_mode_id: privacy_mode_id,
-        name: name.to_string(),
         capturer,
     });
 }
@@ -697,8 +694,6 @@ fn run(vs: VideoService) -> ResultType<()> {
     #[cfg(windows)]
     let mut try_gdi = 1;
     #[cfg(windows)]
-    let mut dxgi_fail_count = 0u32;
-    #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
     #[cfg(windows)]
     start_uac_elevation_check();
@@ -757,7 +752,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         if sp.is_option_true(OPTION_REFRESH) {
             sp.set_option_bool(OPTION_REFRESH, false);
             if vs.source.is_monitor() {
-                try_broadcast_display_changed(&sp, display_idx, &c, false)?;
+                let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);
             }
             log::info!("switch to refresh");
             bail!("SWITCH");
@@ -897,11 +892,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         let ms = (time.as_secs() * 1000 + time.subsec_millis() as u64) as i64;
         let c_display_origin = c.display_origin;
         let t_cap_start = Instant::now();
-        let (res, cap_dur) = {
-            let r = c.frame(spf);
-            (r, t_cap_start.elapsed().as_secs_f64() * 1000.0)
-        };
-        let res = match res {
+        let res = match c.frame(spf) {
             Ok(frame) => {
                 repeat_encode_counter = 0;
                 if frame.valid() {
@@ -973,7 +964,6 @@ fn run(vs: VideoService) -> ResultType<()> {
                         VRamEncoder::set_fallback_gdi(sp.name(), false);
                     }
                     try_gdi = 0;
-                    dxgi_fail_count = 0;
                 }
                 Ok(())
             }
@@ -984,7 +974,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             Err(ref e) if e.kind() == WouldBlock => {
                 #[cfg(windows)]
                 if try_gdi > 0 && !c.is_gdi() {
-                    if try_gdi > 30 {
+                    if try_gdi > 3 {
                         c.set_gdi();
                         try_gdi = 0;
                         log::info!("No image, fall back to gdi");
@@ -1008,28 +998,9 @@ fn run(vs: VideoService) -> ResultType<()> {
                     }
                 }
                 if !encoder.latency_free() && yuv.len() > 0 {
-                    // yuv.len() > 0 means the frame is not texture.
-                    let is_usb = crate::server::connection::is_usb_display_active()
-                        || crate::server::connection::is_loopback_active();
-                    let should_send = if is_usb {
-                        if repeat_encode_counter < repeat_encode_max {
-                            repeat_encode_counter += 1;
-                            true
-                        } else {
-                            repeat_encode_counter += 1;
-                            // Keep-alive on USB display: send 1 frame every 15 ticks (~200ms) to prevent Android decoder & surface freeze
-                            repeat_encode_counter % 15 == 0
-                        }
-                    } else {
-                        if repeat_encode_counter < repeat_encode_max {
-                            repeat_encode_counter += 1;
-                            true
-                        } else {
-                            false
-                        }
-                    };
-
-                    if should_send {
+                    // yun.len() > 0 means the frame is not texture.
+                    if repeat_encode_counter < repeat_encode_max {
+                        repeat_encode_counter += 1;
                         let send_conn_ids = handle_one_frame(
                             display_idx,
                             &sp,
@@ -1056,22 +1027,8 @@ fn run(vs: VideoService) -> ResultType<()> {
 
                 #[cfg(windows)]
                 if !c.is_gdi() {
-                    if dxgi_fail_count < 3 && (err.kind() == std::io::ErrorKind::ConnectionReset || err.kind() == std::io::ErrorKind::Other) {
-                        dxgi_fail_count += 1;
-                        log::warn!(
-                            "DXGI capture transient error on display {} (attempt {}/5): {:?}, recovering...",
-                            display_idx,
-                            dxgi_fail_count,
-                            err
-                        );
-                        std::thread::sleep(std::time::Duration::from_millis(50));
-                        if c.reacquire() {
-                            log::info!("DXGI capturer recovered on display {}", display_idx);
-                        }
-                        continue;
-                    }
                     c.set_gdi();
-                    log::info!("dxgi error exceeded retry limit, fall back to gdi: {:?}", err);
+                    log::info!("dxgi error, fall back to gdi: {:?}", err);
                     continue;
                 }
                 return Err(err.into());
@@ -1111,7 +1068,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         }
 
         perf_frames += 1;
-        perf_cap_ms += cap_dur;
+        perf_cap_ms += t_cap_start.elapsed().as_secs_f64() * 1000.0;
         perf_ack_ms += ack_dur;
         perf_sleep_ms += sleep_dur;
         if perf_last_log.elapsed() >= Duration::from_secs(1) {
@@ -1237,15 +1194,7 @@ fn get_encoder_config(
     #[cfg(feature = "vram")]
     Encoder::update(scrap::codec::EncodingUpdate::Check);
     // https://www.wowza.com/community/t/the-correct-keyframe-interval-in-obs-studio/95162
-    let keyframe_interval = if record {
-        Some(240)
-    } else if crate::server::connection::is_usb_display_active()
-        || crate::server::connection::is_loopback_active()
-    {
-        Some(60) // 1 second keyframe interval on USB secondary display to avoid client decoder stall
-    } else {
-        None
-    };
+    let keyframe_interval = if record { Some(240) } else { None };
     let negotiated_codec = Encoder::negotiated_codec();
     match negotiated_codec {
         CodecFormat::H264 | CodecFormat::H265 => {

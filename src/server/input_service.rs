@@ -427,10 +427,6 @@ fn run_window_focus(sp: EmptyExtraFieldService, state: &mut StateWindowFocus) ->
     if displays.len() <= 1 {
         return Ok(());
     }
-    #[cfg(windows)]
-    if crate::usb_display::is_usb_display_active() {
-        return Ok(());
-    }
     let disp_idx = crate::get_focused_display(displays);
     if let Some(disp_idx) = disp_idx.map(|id| id as i32) {
         if state.is_changed(disp_idx) {

@@ -57,16 +57,6 @@ impl TraitCapturer for Capturer {
         self.inner.set_gdi()
     }
 
-    #[cfg(windows)]
-    fn reacquire(&mut self) -> bool {
-        let ok = self.inner.reacquire_output_duplication().is_ok();
-        if ok {
-            self.width = self.inner.width();
-            self.height = self.inner.height();
-        }
-        ok
-    }
-
     #[cfg(feature = "vram")]
     fn device(&self) -> AdapterDevice {
         self.inner.device()

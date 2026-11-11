@@ -56,7 +56,7 @@ impl MediaCodecDecoder {
 
     // rgb [in/out] fmt and stride must be set in ImageRgb
     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
-        match self.dequeue_input_buffer(Duration::from_millis(20))? {
+        match self.dequeue_input_buffer(Duration::from_millis(5))? {
             Some(mut input_buffer) => {
                 let mut buf = input_buffer.buffer_mut();
                 if data.len() > buf.len() {
@@ -67,7 +67,7 @@ impl MediaCodecDecoder {
                 self.queue_input_buffer(input_buffer, 0, data.len(), 0, 0)?;
             }
             None => {
-                log::warn!("Failed to dequeue_input_buffer: No available input_buffer within 20ms");
+                log::debug!("Failed to dequeue_input_buffer: No available input_buffer");
             }
         };
 
@@ -83,7 +83,7 @@ impl MediaCodecDecoder {
                 }
             }
             if !rendered {
-                if let Some(output_buffer) = self.dequeue_output_buffer(Duration::from_millis(15))? {
+                if let Some(output_buffer) = self.dequeue_output_buffer(Duration::from_millis(8))? {
                     self.release_output_buffer(output_buffer, true)?;
                     rendered = true;
                 }
