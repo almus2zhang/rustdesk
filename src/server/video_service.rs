@@ -439,6 +439,29 @@ fn get_capturer_monitor(
         );
     }
 
+    #[cfg(windows)]
+    {
+        // Diagnostics for picking a virtual monitor that DXGI can duplicate:
+        // only outputs present in this list can ever use the VRAM texture path.
+        for (i, d) in displays.iter().enumerate() {
+            #[cfg(feature = "vram")]
+            let luid = d.adapter_luid();
+            #[cfg(not(feature = "vram"))]
+            let luid: Option<i64> = None;
+            log::info!(
+                "[PERF_DISPLAY] #{} name={} {}x{} luid={:?} selected={} virtual={} usb={}",
+                i,
+                d.name(),
+                d.width(),
+                d.height(),
+                luid,
+                i == current,
+                crate::virtual_display_manager::is_virtual_display(&d.name()),
+                crate::usb_display::is_this_usb_display(&d.name()),
+            );
+        }
+    }
+
     let display = displays.remove(current);
 
     #[cfg(target_os = "linux")]
@@ -506,12 +529,44 @@ fn get_capturer_monitor(
             log::info!("In privacy mode, the peer side cannot watch the screen");
         }
     }
+    #[cfg(windows)]
+    let mut capturer = create_capturer(
+        capturer_privacy_mode_id,
+        display,
+        current,
+        portable_service_running,
+    )?;
+    #[cfg(not(windows))]
     let capturer = create_capturer(
         capturer_privacy_mode_id,
         display,
         current,
         portable_service_running,
     )?;
+    #[cfg(windows)]
+    if crate::usb_display::is_usb_display_active()
+        && !capturer.is_gdi()
+        && crate::usb_display::is_this_usb_display(&name)
+    {
+        // Desktop Duplication on a freshly plugged IDD monitor never reports an
+        // accumulated frame. Waiting for the "No image" fallback delayed the
+        // first frame by ~2 * 8s (the SWITCH restarted the service and the
+        // watchdog ran a second time). GDI always has a frame, so use it from
+        // the start for this display.
+        log::info!("USB virtual display {}: start with GDI capture", name);
+        capturer.set_gdi();
+    }
+    #[cfg(windows)]
+    log::info!(
+        "[PERF_DISPLAY] capturer: name={} | gdi={} | gdi_topdown={} | usb_active={} | this_usb={} | dxgi_option={} | portable={}",
+        name,
+        capturer.is_gdi(),
+        scrap::perf_stage_enabled(3),
+        crate::usb_display::is_usb_display_active(),
+        crate::usb_display::is_this_usb_display(&name),
+        scrap::codec::enable_directx_capture(),
+        portable_service_running,
+    );
     Ok(CapturerInfo {
         origin,
         display_origin,
@@ -674,6 +729,20 @@ fn run(vs: VideoService) -> ResultType<()> {
     };
     #[cfg(feature = "vram")]
     c.set_output_texture(encoder.input_texture());
+    #[cfg(windows)]
+    {
+        #[cfg(feature = "vram")]
+        let texture = encoder.input_texture();
+        #[cfg(not(feature = "vram"))]
+        let texture = false;
+        log::info!(
+            "[PERF_DISPLAY] encoder: service={} | gdi={} | texture={} | codec={:?}",
+            sp.name(),
+            c.is_gdi(),
+            texture,
+            codec_format,
+        );
+    }
     #[cfg(target_os = "android")]
     if vs.source.is_monitor() {
         if let Err(e) = check_change_scale(encoder.is_hardware()) {
@@ -698,6 +767,16 @@ fn run(vs: VideoService) -> ResultType<()> {
     let mut last_check_displays = time::Instant::now();
     #[cfg(windows)]
     let mut try_gdi = 1;
+    // A frame-count limit assumed a fixed 8.3ms budget. At a client-set 30fps
+    // the 240-strike grace period became ~8s without a single image, and the
+    // SWITCH restart made the peer wait for it twice. Bound it by wall time.
+    #[cfg(windows)]
+    let no_image_deadline = Instant::now()
+        + if scrap::perf_stage_enabled(1) {
+            Duration::from_secs(2)
+        } else {
+            Duration::from_millis(150)
+        };
     #[cfg(windows)]
     log::info!("gdi: {}", c.is_gdi());
     #[cfg(windows)]
@@ -998,16 +1077,16 @@ fn run(vs: VideoService) -> ResultType<()> {
                 if try_gdi > 0 && !c.is_gdi() {
                     // A freshly plugged virtual monitor legitimately yields no
                     // frame for a while: AcquireNextFrame simply times out.
-                    // The 4-strike rule degraded to GDI on every display
-                    // switch, which also killed the VRAM texture path for the
-                    // rest of the session. Allow ~2s (240 * 8.3ms) first.
-                    let max_no_image = if scrap::perf_stage_enabled(1) { 240 } else { 3 };
-                    if try_gdi > max_no_image {
+                    // Use a wall-clock grace period so a lower fps cannot
+                    // stretch it into many seconds on the "waiting for image"
+                    // dialog.
+                    if Instant::now() >= no_image_deadline {
                         c.set_gdi();
                         try_gdi = 0;
                         log::info!("No image, fall back to gdi");
+                    } else {
+                        try_gdi += 1;
                     }
-                    try_gdi += 1;
                 }
                 #[cfg(target_os = "linux")]
                 {

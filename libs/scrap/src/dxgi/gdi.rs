@@ -106,15 +106,22 @@ impl CapturerGDI {
 
             let stride = self.width * PIXEL_WIDTH;
             let size: usize = (stride * self.height) as usize;
-            let mut data1: Vec<u8> = Vec::with_capacity(size);
-            data1.set_len(size);
+            // A negative biHeight makes GetDIBits emit a top-down DIB directly,
+            // so the mirror + rotate180 pair and its per-frame scratch buffer
+            // are unnecessary. Set enable-perf-stage3=N to restore the legacy
+            // path if a driver mishandles top-down DIBs.
+            let top_down = crate::perf_stage_enabled(3);
             data.resize(size, 0);
 
             let mut bmi = BITMAPINFO {
                 bmiHeader: BITMAPINFOHEADER {
                     biSize: size_of::<BITMAPINFOHEADER>() as _,
                     biWidth: self.width as _,
-                    biHeight: self.height as _,
+                    biHeight: if top_down {
+                        -self.height as _
+                    } else {
+                        self.height as _
+                    },
                     biPlanes: 1,
                     biBitCount: (8 * PIXEL_WIDTH) as _,
                     biCompression: BI_RGB,
@@ -132,36 +139,40 @@ impl CapturerGDI {
                 }],
             };
 
-            // copy bits into Vec
+            // copy bits directly into the capture buffer
             let res = GetDIBits(
                 self.dc,
                 self.bmp,
                 0,
                 self.height as _,
-                &mut data[0] as *mut u8 as _,
+                data.as_mut_ptr() as _,
                 &mut bmi as _,
                 DIB_RGB_COLORS,
             );
             if res == 0 {
                 return Err("GetDIBits failed".into());
             }
-            crate::common::ARGBMirror(
-                data.as_ptr(),
-                stride,
-                data1.as_mut_ptr(),
-                stride,
-                self.width,
-                self.height,
-            );
-            crate::common::ARGBRotate(
-                data1.as_ptr(),
-                stride,
-                data.as_mut_ptr(),
-                stride,
-                self.width,
-                self.height,
-                crate::RotationMode::kRotate180,
-            );
+            if !top_down {
+                let mut data1: Vec<u8> = Vec::with_capacity(size);
+                data1.set_len(size);
+                crate::common::ARGBMirror(
+                    data.as_ptr(),
+                    stride,
+                    data1.as_mut_ptr(),
+                    stride,
+                    self.width,
+                    self.height,
+                );
+                crate::common::ARGBRotate(
+                    data1.as_ptr(),
+                    stride,
+                    data.as_mut_ptr(),
+                    stride,
+                    self.width,
+                    self.height,
+                    crate::RotationMode::kRotate180,
+                );
+            }
             Ok(())
         }
     }
