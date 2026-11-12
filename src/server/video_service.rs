@@ -547,6 +547,9 @@ fn get_capturer_monitor(
     if crate::usb_display::is_usb_display_active()
         && !capturer.is_gdi()
         && crate::usb_display::is_this_usb_display(&name)
+        // Third-party IDD monitors (e.g. MttVDD) do produce DXGI frames;
+        // forcing GDI here would throw away the VRAM zero-copy path.
+        && !crate::virtual_display_manager::is_vdd_display(&name)
     {
         // Desktop Duplication on a freshly plugged IDD monitor never reports an
         // accumulated frame. Waiting for the "No image" fallback delayed the
@@ -1262,7 +1265,12 @@ impl Drop for Raii {
             timeEndPeriod(1);
         }
         #[cfg(feature = "vram")]
-        if self.try_vram {
+        {
+            // Always clear our marker. `available()` vetoes VRAM globally if
+            // any service is still marked, so a stale `true` from a stopped
+            // GDI service would poison every other display for the process
+            // lifetime (screenshot paths set try_vram = false).
+            let _ = self.try_vram;
             VRamEncoder::set_not_use(self.name.clone(), false);
         }
         #[cfg(feature = "vram")]
@@ -1313,9 +1321,19 @@ fn get_encoder_config(
     _source: VideoSource,
 ) -> EncoderCfg {
     #[cfg(all(windows, feature = "vram"))]
-    if _portable_service || c.is_gdi() || _source == VideoSource::Camera || get_selected_window() != 0 {
-        log::info!("gdi:{}, portable:{}, sel_win:{}", c.is_gdi(), _portable_service, get_selected_window());
-        VRamEncoder::set_not_use(_name, true);
+    {
+        let no_vram = _portable_service
+            || c.is_gdi()
+            || _source == VideoSource::Camera
+            || get_selected_window() != 0;
+        if no_vram {
+            log::info!("gdi:{}, portable:{}, sel_win:{}", c.is_gdi(), _portable_service, get_selected_window());
+            VRamEncoder::set_not_use(_name.clone(), true);
+        } else {
+            // This service is on the DXGI path again (e.g. the user switched
+            // from a GDI primary monitor to a third-party virtual monitor).
+            VRamEncoder::set_not_use(_name.clone(), false);
+        }
     }
     #[cfg(feature = "vram")]
     Encoder::update(scrap::codec::EncodingUpdate::Check);

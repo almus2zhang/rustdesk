@@ -303,10 +303,14 @@ impl VRamEncoder {
 
     pub fn set_not_use(video_service_name: String, not_use: bool) {
         log::info!("set {video_service_name} not use vram encode to {not_use}");
-        ENOCDE_NOT_USE
-            .lock()
-            .unwrap()
-            .insert(video_service_name, not_use);
+        let mut map = ENOCDE_NOT_USE.lock().unwrap();
+        if not_use {
+            map.insert(video_service_name, true);
+        } else {
+            // `available()` treats any remaining `true` as a global veto, so a
+            // stopped GDI service must not leave a stale marker behind.
+            map.remove(&video_service_name);
+        }
     }
 
     pub fn set_fallback_gdi(video_service_name: String, fallback: bool) {

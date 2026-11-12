@@ -4,6 +4,9 @@ use hbb_common::{bail, platform::windows::is_windows_version_or_greater, ResultT
 //  https://github.com/rustdesk-org/RustDeskIddDriver/blob/b370aad3f50028b039aad211df60c8051c4a64d6/RustDeskIddDriver/RustDeskIddDriver.inf#LL73C1-L73C40
 pub const RUSTDESK_IDD_DEVICE_STRING: &'static str = "RustDeskIddDriver Device\0";
 pub const AMYUNI_IDD_DEVICE_STRING: &'static str = "USB Mobile Monitor Virtual Display\0";
+// MikeTheTech Virtual Display Driver (MttVDD), a UMDF / IddCx indirect
+// display driver. Its INF declares DeviceName="Virtual Display Driver".
+pub const VDD_DEVICE_STRING: &'static str = "Virtual Display Driver\0";
 
 const IDD_IMPL: &str = IDD_IMPL_AMYUNI;
 const IDD_IMPL_RUSTDESK: &str = "rustdesk_idd";
@@ -46,6 +49,33 @@ pub fn is_virtual_display(name: &str) -> bool {
     {
         false
     }
+}
+
+/// Whether `name` belongs to the MikeTheTech VDD monitor specifically.
+#[cfg(target_os = "windows")]
+pub fn is_vdd_display(name: &str) -> bool {
+    windows::device_string_matches(name, VDD_DEVICE_STRING.trim_end_matches('\0'))
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_vdd_display(_name: &str) -> bool {
+    false
+}
+
+/// Whether `name` is any virtual/IDD monitor, including third-party drivers
+/// that RustDesk does not manage. Used where a virtual monitor must not be
+/// mistaken for a physical one (e.g. rejecting a resolution change).
+#[cfg(target_os = "windows")]
+pub fn is_any_virtual_display(name: &str) -> bool {
+    if is_virtual_display(name) {
+        return true;
+    }
+    windows::device_string_matches_any(name, &["virtual", "idd", "mttvdd"])
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_any_virtual_display(_name: &str) -> bool {
+    false
 }
 
 pub fn get_device_name_by_peer_index(idx: u32) -> Option<String> {
@@ -927,6 +957,40 @@ mod windows {
             }
         }
         device_names
+    }
+
+    fn device_string_of(name: &str) -> Option<String> {
+        let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+        let mut i_dev_num = 0;
+        loop {
+            if unsafe { EnumDisplayDevicesW(null_mut(), i_dev_num, &mut dd, 0) } == 0 {
+                break;
+            }
+            i_dev_num += 1;
+            let Ok(dev_name) = String::from_utf16(&dd.DeviceName) else {
+                continue;
+            };
+            if is_device_name(&dev_name, name) {
+                return String::from_utf16(&dd.DeviceString).ok();
+            }
+        }
+        None
+    }
+
+    pub(super) fn device_string_matches(name: &str, needle: &str) -> bool {
+        device_string_of(name)
+            .map(|s| s.to_lowercase().contains(&needle.to_lowercase()))
+            .unwrap_or(false)
+    }
+
+    pub(super) fn device_string_matches_any(name: &str, needles: &[&str]) -> bool {
+        device_string_of(name)
+            .map(|s| {
+                let s = s.to_lowercase();
+                needles.iter().any(|n| s.contains(n))
+            })
+            .unwrap_or(false)
     }
 
     pub(super) fn get_display_drivers() -> Vec<(String, u32)> {

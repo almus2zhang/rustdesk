@@ -335,6 +335,12 @@ pub struct Connection {
     voice_call_request_timestamp: Option<NonZeroI64>,
     voice_calling: bool,
     options_in_login: Option<OptionMessage>,
+    // True only when this session explicitly asked to be a secondary display
+    // (three-dot menu, USB cast button, or a LAN invite). The transport
+    // (127.0.0.1 vs WiFi) is irrelevant: a plain connection always stays on
+    // the primary monitor even if the peer used a secondary display before.
+    is_secondary_session: bool,
+    secondary_qos_applied: bool,
     #[cfg(not(any(target_os = "ios")))]
     pressed_modifiers: HashSet<rdev::Key>,
     #[cfg(target_os = "linux")]
@@ -520,6 +526,8 @@ impl Connection {
             voice_call_request_timestamp: None,
             voice_calling: false,
             options_in_login: None,
+            is_secondary_session: false,
+            secondary_qos_applied: false,
             #[cfg(not(any(target_os = "ios")))]
             pressed_modifiers: Default::default(),
             #[cfg(target_os = "linux")]
@@ -1788,13 +1796,20 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
+            // A loopback (USB cast) session arrives with the virtual monitor
+            // already requested before login_response; mark it as a secondary
+            // session here. WiFi secondary sessions set the same flag later,
+            // when `secondary_display:WxH` arrives. A plain direct connection
+            // never sets it and therefore always stays on the primary monitor.
             #[cfg(windows)]
-            let is_usb_conn = self.ip.starts_with("127.0.0.1");
-            // Only USB plugs in the virtual display before login_response.
-            // WiFi connections first show the primary monitor; a remembered
-            // secondary display is restored after login_response is sent.
+            let is_preplugged_secondary = self.ip.starts_with("127.0.0.1");
+            #[cfg(not(windows))]
+            let is_preplugged_secondary = false;
+            if is_preplugged_secondary {
+                self.is_secondary_session = true;
+            }
             #[cfg(windows)]
-            if is_usb_conn {
+            if is_preplugged_secondary {
                 let peer_id = self.lr.my_id.clone();
                 crate::usb_display::set_usb_display_peer_id(peer_id.clone());
                 let saved_res_str = crate::ui_interface::get_peer_option(peer_id.clone(), "usb_display_resolution".to_string());
@@ -1817,7 +1832,7 @@ impl Connection {
                     // For compatibility with old versions, we need to send the displays to the peer.
                     // But the displays may be updated later, before creating the video capturer.
                     #[cfg(windows)]
-                    if is_usb_conn {
+                    if is_preplugged_secondary {
                         let peer_id = self.lr.my_id.clone();
                         let prefer_primary = crate::ui_interface::get_peer_option(
                             peer_id.clone(),
@@ -1903,24 +1918,14 @@ impl Connection {
         // (the peer sends `secondary_display:WxH`). A plain WiFi connection
         // stays on the primary monitor, even if this peer used a secondary
         // display before.
-        let is_secondary = self.ip.starts_with("127.0.0.1");
         log::info!(
             "[PERF_CONN] Client #{} authed: ip={}, is_secondary={}",
             self.inner.id,
             self.ip,
-            is_secondary,
+            self.is_secondary_session,
         );
-        if is_secondary {
-            log::info!("Secondary display connection detected: locking 60 FPS low-latency streaming");
-            let mut qos = video_service::VIDEO_QOS.lock().unwrap();
-            qos.user_is_secondary(self.inner.id(), true);
-            qos.user_custom_fps(self.inner.id(), 120);
-            // `1` is not a valid ImageQuality value; it was parsed as the lowest
-            // custom bitrate. Balanced keeps the USB link's bitrate stable.
-            qos.user_image_quality(self.inner.id(), ImageQuality::Balanced.value());
-            drop(qos);
-            self.show_remote_cursor = true;
-            LOOPBACK_CONN_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if self.is_secondary_session {
+            self.apply_secondary_qos();
         }
         if let Some(o) = self.options_in_login.take() {
             self.update_options(&o).await;
@@ -3527,10 +3532,10 @@ impl Connection {
                         self.send(msg).await;
                     }
                     Some(misc::Union::AutoAdjustFps(fps)) => {
-                        // The USB secondary display is a local loopback link. Client
-                        // auto-fps throttling used to push the server down to 10-20
-                        // FPS, i.e. a 50-100ms per-frame delay.
-                        if !self.ip.starts_with("127.0.0.1") {
+                        // Secondary-display sessions keep a low-latency link;
+                        // client auto-fps throttling used to push the server
+                        // down to 10-20 FPS, i.e. 50-100ms per-frame delay.
+                        if !self.is_secondary_session {
                             video_service::VIDEO_QOS
                                 .lock()
                                 .unwrap()
@@ -4329,6 +4334,11 @@ impl Connection {
             let res_part = &t.impl_key["secondary_display:".len()..];
             if let Some((w_s, h_s)) = res_part.split_once('x') {
                 if let (Ok(w), Ok(h)) = (w_s.parse::<u32>(), h_s.parse::<u32>()) {
+                    // This is the explicit "this session wants the virtual
+                    // monitor" signal, regardless of whether it arrived over
+                    // USB or WiFi. A plain direct connection never sends it.
+                    self.is_secondary_session = true;
+                    self.apply_secondary_qos();
                     let peer_id = self.lr.my_id.clone();
                     let res_str = format!("{}x{}", w, h);
                     log::info!("Received secondary display request {} from peer {}", res_str, peer_id);
@@ -4369,9 +4379,8 @@ impl Connection {
                 if let Some(display) = displays.get(display_idx) {
                     let name = display.name();
                     #[cfg(windows)]
-                    if (crate::usb_display::is_usb_display_active()
-                        || self.ip.starts_with("127.0.0.1"))
-                        && !virtual_display_manager::is_virtual_display(&name)
+                    if self.is_secondary_session
+                        && !virtual_display_manager::is_any_virtual_display(&name)
                     {
                         // A secondary-display session can still hold a stale
                         // display index (for example len()-1 before the new
@@ -4394,9 +4403,9 @@ impl Connection {
                             r.height as _,
                         )
                     {
-                        if self.ip.starts_with("127.0.0.1") || virtual_display_manager::is_virtual_display(&name) {
+                        if self.is_secondary_session || virtual_display_manager::is_any_virtual_display(&name) {
                             let res_str = format!("{}x{}", r.width, r.height);
-                            log::info!("Saving USB display resolution {} for peer {}", res_str, self.lr.my_id);
+                            log::info!("Saving secondary display resolution {} for peer {}", res_str, self.lr.my_id);
                             crate::ui_interface::set_peer_option(self.lr.my_id.clone(), "usb_display_resolution".to_string(), res_str);
                         }
                         return;
@@ -4512,7 +4521,7 @@ impl Connection {
             }
         }
         if o.custom_fps > 0 {
-            let fps = if self.ip.starts_with("127.0.0.1") {
+            let fps = if self.is_secondary_session {
                 (o.custom_fps as u32).clamp(30, 120)
             } else {
                 o.custom_fps as u32
@@ -4880,12 +4889,31 @@ impl Connection {
         }
     }
 
+    /// Apply the low-latency QoS profile once per secondary-display session.
+    /// Pre-plugged (USB cast) sessions call this from `login_response`; WiFi
+    /// secondary sessions call it when `secondary_display:WxH` arrives.
+    fn apply_secondary_qos(&mut self) {
+        if self.secondary_qos_applied {
+            return;
+        }
+        self.secondary_qos_applied = true;
+        log::info!("Secondary display session: locking low-latency streaming");
+        let mut qos = video_service::VIDEO_QOS.lock().unwrap();
+        qos.user_is_secondary(self.inner.id(), true);
+        qos.user_custom_fps(self.inner.id(), 120);
+        // `1` is not a valid ImageQuality value; Balanced keeps the link stable.
+        qos.user_image_quality(self.inner.id(), ImageQuality::Balanced.value());
+        drop(qos);
+        self.show_remote_cursor = true;
+        LOOPBACK_CONN_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
     async fn on_close(&mut self, reason: &str, lock: bool) {
         if self.closed {
             return;
         }
         self.closed = true;
-        if self.ip.starts_with("127.0.0.1") {
+        if self.secondary_qos_applied {
             let _ = LOOPBACK_CONN_COUNT.fetch_update(
                 std::sync::atomic::Ordering::SeqCst,
                 std::sync::atomic::Ordering::SeqCst,
@@ -4893,7 +4921,7 @@ impl Connection {
             );
         }
         #[cfg(windows)]
-        if crate::usb_display::is_usb_display_active() {
+        if self.is_secondary_session {
             // WiFi secondary display connections never reach the USB detach
             // poller, so persist geometry here while the monitor still exists.
             crate::usb_display::save_usb_display_state();
@@ -5986,7 +6014,7 @@ impl Default for PortableState {
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        if self.ip.starts_with("127.0.0.1") {
+        if self.is_secondary_session {
             #[cfg(windows)]
             {
                 // plug_out_usb_display() persists the geometry before removing
