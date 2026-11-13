@@ -2998,6 +2998,7 @@ pub fn start_video_thread<F, T>(
                                 false
                             };
                         let display = vf.display as usize;
+                        let is_usb_secondary = session.lc.read().unwrap().id.starts_with("127.0.0.1");
                         let stage0 = scrap::perf_stage_enabled(0);
                         let start = std::time::Instant::now();
                         let format = CodecFormat::from(&vf);
@@ -3005,7 +3006,11 @@ pub fn start_video_thread<F, T>(
                         {
                             let surface_ptr = scrap::android::ffi::USB_NATIVE_WINDOW.load(std::sync::atomic::Ordering::SeqCst);
                             if let Some(h) = video_handler.as_mut() {
-                                if h.has_surface() != !surface_ptr.is_null() {
+                                // Skip the surface-mismatch refresh for loopback/secondary
+                                // displays: USB_NATIVE_WINDOW is never set there, so the
+                                // check would otherwise loop forever and tear down the
+                                // video service every frame.
+                                if !is_usb_secondary && h.has_surface() != !surface_ptr.is_null() {
                                     video_handler = None;
                                     if last_refresh
                                         .map(|t| t.elapsed() >= refresh_interval)
@@ -3109,7 +3114,6 @@ pub fn start_video_thread<F, T>(
                         }
 
                         // check invalid decoders
-                        let is_usb_secondary = session.lc.read().unwrap().id.starts_with("127.0.0.1");
                         let mut should_update_supported = false;
                         if let Some(handler) = video_handler.as_mut() {
                             if is_usb_secondary {
