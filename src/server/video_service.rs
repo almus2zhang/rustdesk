@@ -840,7 +840,11 @@ fn run(vs: VideoService) -> ResultType<()> {
         )?;
         if sp.is_option_true(OPTION_REFRESH) {
             sp.set_option_bool(OPTION_REFRESH, false);
-            if crate::usb_display::should_throttle_vdd_refresh() {
+            #[cfg(windows)]
+            let throttled = crate::usb_display::should_throttle_vdd_refresh();
+            #[cfg(not(windows))]
+            let throttled = false;
+            if throttled {
                 log::debug!("Ignoring redundant refresh on reused VDD display");
             } else {
                 if vs.source.is_monitor() {
