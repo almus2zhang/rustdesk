@@ -56,11 +56,17 @@ impl MediaCodecDecoder {
 
     // rgb [in/out] fmt and stride must be set in ImageRgb
     pub fn decode(&mut self, data: &[u8], rgb: &mut ImageRgb) -> ResultType<bool> {
-        let stage2 = crate::perf_stage_enabled(2);
-        let input_wait = if stage2 { 1 } else { 5 };
-        let output_wait = if stage2 { 1 } else { 8 };
-        let output_wait_soft = if stage2 { 2 } else { 10 };
-        match self.dequeue_input_buffer(Duration::from_millis(input_wait))? {
+        // When an input buffer is already free, dequeue_input_buffer returns in 0ms.
+        // A generous timeout (15ms) only applies when the hardware decoder is busy finishing
+        // a preceding frame, preventing catastrophic P-frame drops and visual corruption.
+        let input_wait = Duration::from_millis(15);
+        let output_wait = Duration::from_millis(8);
+        let output_wait_soft = Duration::from_millis(10);
+        let mut input_opt = self.dequeue_input_buffer(input_wait)?;
+        if input_opt.is_none() {
+            input_opt = self.dequeue_input_buffer(Duration::from_millis(15))?;
+        }
+        match input_opt {
             Some(mut input_buffer) => {
                 let mut buf = input_buffer.buffer_mut();
                 if data.len() > buf.len() {
@@ -71,7 +77,7 @@ impl MediaCodecDecoder {
                 self.queue_input_buffer(input_buffer, 0, data.len(), 0, 0)?;
             }
             None => {
-                log::debug!("Failed to dequeue_input_buffer: No available input_buffer");
+                log::warn!("dequeue_input_buffer timed out: no available input buffer");
             }
         };
 

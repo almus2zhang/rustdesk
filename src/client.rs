@@ -97,7 +97,7 @@ pub mod screenshot;
 pub const MILLI1: Duration = Duration::from_millis(1);
 pub const SEC30: Duration = Duration::from_secs(30);
 pub const VIDEO_QUEUE_SIZE_NORMAL: usize = 30;
-pub const VIDEO_QUEUE_SIZE_USB: usize = 8;
+pub const VIDEO_QUEUE_SIZE_USB: usize = 30;
 pub const VIDEO_QUEUE_SIZE: usize = VIDEO_QUEUE_SIZE_NORMAL;
 const MAX_DECODE_FAIL_COUNTER: usize = 3;
 

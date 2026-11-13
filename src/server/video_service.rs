@@ -1345,8 +1345,23 @@ fn get_encoder_config(
     }
     #[cfg(feature = "vram")]
     Encoder::update(scrap::codec::EncodingUpdate::Check);
-    // https://www.wowza.com/community/t/the-correct-keyframe-interval-in-obs-studio/95162
-    let keyframe_interval = if record { Some(240) } else { None };
+    // Periodic keyframe interval (GOP):
+    // Setting keyframe_interval to 120 frames (1s at 120fps, 2s at 60fps) ensures
+    // the hardware encoder (NVENC/VRAM/HWRAM) periodically generates clean IDR frames.
+    // This allows the client decoder to immediately clear any transient artifacts,
+    // macroblock corruption, or network packet loss without needing to tear down
+    // and recreate the video service.
+    #[cfg(windows)]
+    let is_secondary = vs.source.is_monitor() && crate::usb_display::is_usb_display_active();
+    #[cfg(not(windows))]
+    let is_secondary = false;
+    let keyframe_interval = if record {
+        Some(240)
+    } else if is_secondary {
+        Some(120)
+    } else {
+        Some(240)
+    };
     let negotiated_codec = Encoder::negotiated_codec();
     match negotiated_codec {
         CodecFormat::H264 | CodecFormat::H265 => {
