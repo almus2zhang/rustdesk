@@ -1870,9 +1870,14 @@ impl Connection {
                                             .map(|d| d.name.clone())
                                     });
                                 if let Some(name) = target {
-                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
-                                    if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
-                                        log::warn!("Failed to restore secondary display position: {}", e);
+                                    // A reused VDD monitor is configured by the
+                                    // user; never move it to a position saved
+                                    // for an Amyuni monitor.
+                                    if !crate::virtual_display_manager::is_vdd_display(&name) {
+                                        log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
+                                        if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
+                                            log::warn!("Failed to restore secondary display position: {}", e);
+                                        }
                                     }
                                 }
                             }
@@ -4348,7 +4353,6 @@ impl Connection {
                     #[cfg(windows)]
                     {
                         crate::usb_display::set_usb_display_peer_id(peer_id.clone());
-                        crate::virtual_display_manager::amyuni_idd::ensure_custom_resolutions(w, h).ok();
                         crate::usb_display::plug_in_usb_display(w, h).ok();
                         crate::usb_display::restore_usb_display_settings(&peer_id);
                         // Do NOT switch the host subscription here. Doing it

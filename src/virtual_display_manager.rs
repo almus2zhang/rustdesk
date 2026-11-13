@@ -78,6 +78,23 @@ pub fn is_any_virtual_display(_name: &str) -> bool {
     false
 }
 
+/// Find an already enabled MikeTheTech VDD monitor by its device string.
+/// Amyuni, Honor, GameViewer, Meta and other virtual monitors are ignored so
+/// that a machine with several IDD drivers never picks the wrong screen.
+#[cfg(target_os = "windows")]
+pub fn find_vdd_display() -> Option<String> {
+    let displays = crate::server::display_service::try_get_displays().ok()?;
+    displays
+        .iter()
+        .find(|d| is_vdd_display(&d.name()))
+        .map(|d| d.name())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn find_vdd_display() -> Option<String> {
+    None
+}
+
 pub fn get_device_name_by_peer_index(idx: u32) -> Option<String> {
     #[cfg(target_os = "windows")]
     {

@@ -462,6 +462,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Bitrate", "码率"),
         ("FPS", "帧率"),
         ("Auto", "自动"),
+        ("Virtual display driver", "虚拟显示器驱动"),
         ("Other Default Options", "其它默认选项"),
         ("Voice call", "语音通话"),
         ("Text chat", "文字聊天"),

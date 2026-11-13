@@ -263,13 +263,11 @@ impl VideoQoS {
         let highest_fps = self.highest_fps();
         let target_ratio = self.latest_quality().ratio();
 
-        let mut is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false);
-        #[cfg(windows)]
-        {
-            if crate::usb_display::is_usb_display_active() || crate::server::connection::is_loopback_active() {
-                is_secondary = true;
-            }
-        }
+        // Set per connection by `Connection::apply_secondary_qos()`. Do not
+        // fall back to the global USB/loopback flags here: plugging in a
+        // virtual monitor would mark every concurrent session (including a
+        // plain WiFi desktop connection) as a secondary display.
+        let is_secondary = self.users.get(&id).map(|u| u.is_secondary).unwrap_or(false);
 
         // For bad network, small fps means quick reaction and high quality.
         // For USB / secondary display sessions, keep locked to (60, 120).
@@ -361,7 +359,7 @@ impl VideoQoS {
             adjust_ratio = user.delay.fps.is_none();
             user.delay.fps = Some(fps);
             log::info!(
-                "[PERF_QOS] conn #{} | delay:{}ms, avg:{}ms | is_sec:{} (loopback:{}, usb:{}) | custom_fps:{:?} | normal_fps:{} -> calc_fps:{} (qos_fps:{})",
+                "[PERF_QOS] conn #{} | delay:{}ms, avg:{}ms | is_sec:{} (global_loopback:{}, global_usb:{}) | custom_fps:{:?} | normal_fps:{} -> calc_fps:{} (qos_fps:{})",
                 id,
                 delay,
                 avg_delay,

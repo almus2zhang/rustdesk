@@ -438,6 +438,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Bitrate", ""),
         ("FPS", ""),
         ("Auto", ""),
+        ("Virtual display driver", ""),
         ("Other Default Options", ""),
         ("Voice call", ""),
         ("Text chat", ""),

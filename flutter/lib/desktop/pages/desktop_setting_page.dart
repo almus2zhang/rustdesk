@@ -596,6 +596,33 @@ class _GeneralState extends State<_General> {
         },
       ));
     }
+    if (isWindows) {
+      const driverKeys = ['auto', 'vdd', 'amyuni'];
+      final driver = bind.mainGetOptionSync(key: kOptionUsbDisplayDriver);
+      children.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: _kContentHMargin, vertical: 4),
+          child: Row(
+            children: [
+              Text(translate('Virtual display driver')),
+              const SizedBox(width: 12),
+              ComboBox(
+                keys: driverKeys,
+                values: [translate('Auto'), 'VDD', 'Amyuni'],
+                initialKey:
+                    driverKeys.contains(driver) ? driver : driverKeys.first,
+                onChanged: (key) async {
+                  await bind.mainSetOption(
+                      key: kOptionUsbDisplayDriver, value: key);
+                  setState(() {});
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return _Card(title: 'Other', children: children);
   }
 

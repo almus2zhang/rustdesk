@@ -25,11 +25,36 @@ lazy_static::lazy_static! {
     // are removed on detach; never touch a monitor added by the user or by
     // another process.
     static ref USB_DISPLAY_CREATED: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
+    // The active secondary display is a pre-existing third-party VDD monitor.
+    // Its geometry belongs to the user: never plug it out or restore per-peer
+    // positions onto it.
+    static ref USB_DISPLAY_REUSED_VDD: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
 }
 
 /// Check if USB secondary display is currently active
 pub fn is_usb_display_active() -> bool {
     USB_DISPLAY_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Which virtual monitor driver a secondary-display session should use.
+#[cfg(windows)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SecondaryDriver {
+    /// Prefer an already enabled MttVDD monitor, otherwise use Amyuni.
+    Auto,
+    /// Require MttVDD; fall back to Amyuni (with a warning) when missing.
+    Vdd,
+    /// Always use the bundled Amyuni driver (previous behaviour).
+    Amyuni,
+}
+
+#[cfg(windows)]
+fn secondary_driver() -> SecondaryDriver {
+    match Config::get_option("usb-display-driver").as_str() {
+        "vdd" => SecondaryDriver::Vdd,
+        "amyuni" => SecondaryDriver::Amyuni,
+        _ => SecondaryDriver::Auto,
+    }
 }
 
 /// Get the device name (e.g. \\.\DISPLAY3) of the active USB virtual display
@@ -48,6 +73,11 @@ pub fn set_usb_display_peer_id(peer_id: String) {
 /// so saving only at drop time used to lose every position the user changed.
 #[cfg(windows)]
 pub fn save_usb_display_state() {
+    // A reused VDD monitor belongs to the user; do not overwrite the peer's
+    // saved geometry with Amyuni-era settings.
+    if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
+        return;
+    }
     let peer_id = match USB_DISPLAY_PEER_ID.lock().unwrap().as_ref() {
         Some(id) => id.clone(),
         None => return,
@@ -79,6 +109,9 @@ pub fn save_usb_display_state() {
 /// Apply the remembered position to the currently active virtual display.
 #[cfg(windows)]
 pub fn restore_usb_display_settings(peer_id: &str) {
+    if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
+        return;
+    }
     let pos_str = crate::ui_interface::get_peer_option(
         peer_id.to_string(),
         "usb_display_pos".to_string(),
@@ -113,6 +146,11 @@ pub fn is_this_usb_display(name: &str) -> bool {
     }
     #[cfg(windows)]
     {
+        if secondary_driver() != SecondaryDriver::Amyuni
+            && crate::virtual_display_manager::is_vdd_display(name)
+        {
+            return true;
+        }
         crate::virtual_display_manager::is_virtual_display(name)
     }
     #[cfg(not(windows))]
@@ -132,10 +170,74 @@ pub fn get_configured_direct_port() -> i32 {
     port
 }
 
+/// Pick the driver-declared mode closest to the requested one. Windows only
+/// accepts modes the driver advertised; passing an arbitrary WxH to
+/// `ChangeDisplaySettingsExW` fails with `res=-1`.
+#[cfg(windows)]
+fn closest_resolution(name: &str, w: u32, h: u32) -> Option<(usize, usize)> {
+    let target_ratio = w as f64 / h.max(1) as f64;
+    let mut best: Option<(f64, usize, usize)> = None;
+    for m in crate::platform::windows::resolutions(name) {
+        let (mw, mh) = (m.width as usize, m.height as usize);
+        if mw == 0 || mh == 0 {
+            continue;
+        }
+        let dw = mw as f64 - w as f64;
+        let dh = mh as f64 - h as f64;
+        let ratio_penalty = (mw as f64 / mh as f64 - target_ratio).abs() * w.max(h) as f64;
+        let score = dw * dw + dh * dh + ratio_penalty * ratio_penalty;
+        if best.map_or(true, |(s, _, _)| score < s) {
+            best = Some((score, mw, mh));
+        }
+    }
+    best.map(|(_, mw, mh)| (mw, mh))
+}
+
+/// Reuse an already enabled MttVDD monitor instead of plugging in an Amyuni
+/// one. Nothing is created here, so `USB_DISPLAY_CREATED` stays untouched and
+/// `plug_out_usb_display()` will never remove a monitor the user installed.
+#[cfg(windows)]
+fn reuse_vdd_display(name: &str, width: u32, height: u32) -> ResultType<u32> {
+    let (w, h) =
+        closest_resolution(name, width, height).unwrap_or((width as usize, height as usize));
+    if let Err(e) = crate::platform::change_resolution(name, w, h) {
+        log::warn!(
+            "Failed to set VDD display '{}' to {}x{}: {:?}",
+            name,
+            w,
+            h,
+            e
+        );
+    }
+    *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(name.to_string());
+    USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
+    USB_DISPLAY_REUSED_VDD.store(true, Ordering::SeqCst);
+    log::info!(
+        "Reusing VDD virtual display '{}' at {}x{} (requested {}x{})",
+        name,
+        w,
+        h,
+        width,
+        height
+    );
+    Ok(0)
+}
+
 /// Request to plug in a virtual display specifically configured for USB tablet
 pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
     #[cfg(windows)]
     {
+        let driver = secondary_driver();
+        if driver != SecondaryDriver::Amyuni {
+            if let Some(name) = virtual_display_manager::find_vdd_display() {
+                return reuse_vdd_display(&name, width, height);
+            }
+            if driver == SecondaryDriver::Vdd {
+                log::warn!("usb-display-driver=vdd but no enabled Virtual Display Driver monitor was found; falling back to Amyuni");
+            }
+        }
+        USB_DISPLAY_REUSED_VDD.store(false, Ordering::SeqCst);
+
         let mut idx_lock = USB_DISPLAY_INDEX.lock().unwrap();
         if let Some(idx) = *idx_lock {
             log::info!("USB display already plugged in with index {}", idx);
@@ -292,6 +394,7 @@ pub fn plug_out_usb_display() -> ResultType<()> {
         USB_DISPLAY_DEVICE_NAME.lock().unwrap().take();
         USB_DISPLAY_PEER_ID.lock().unwrap().take();
         USB_DISPLAY_ACTIVE.store(false, Ordering::SeqCst);
+        USB_DISPLAY_REUSED_VDD.store(false, Ordering::SeqCst);
         Ok(())
     }
     #[cfg(not(windows))]
