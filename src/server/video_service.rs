@@ -1352,7 +1352,7 @@ fn get_encoder_config(
     // macroblock corruption, or network packet loss without needing to tear down
     // and recreate the video service.
     #[cfg(windows)]
-    let is_secondary = vs.source.is_monitor() && crate::usb_display::is_usb_display_active();
+    let is_secondary = _source.is_monitor() && crate::usb_display::is_usb_display_active();
     #[cfg(not(windows))]
     let is_secondary = false;
     let keyframe_interval = if record {
