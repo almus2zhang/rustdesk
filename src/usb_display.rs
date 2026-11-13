@@ -54,14 +54,14 @@ pub fn is_vdd_reused() -> bool {
 /// encoder on each one starves the stream down to a frozen picture, so allow
 /// at most one refresh-triggered rebuild every 30 seconds in this mode.
 pub fn should_throttle_vdd_refresh() -> bool {
-    if !is_vdd_reused() {
+    if !is_vdd_reused() && !is_usb_display_active() {
         return false;
     }
     let mut last = LAST_VDD_REFRESH.lock().unwrap();
     let now = Instant::now();
     let throttled = last
         .as_ref()
-        .map(|t| now.duration_since(*t) < Duration::from_secs(30))
+        .map(|t| now.duration_since(*t) < Duration::from_secs(5))
         .unwrap_or(false);
     if !throttled {
         *last = Some(now);

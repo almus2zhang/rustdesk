@@ -845,7 +845,7 @@ fn run(vs: VideoService) -> ResultType<()> {
             #[cfg(not(windows))]
             let throttled = false;
             if throttled {
-                log::debug!("Ignoring redundant refresh on reused VDD display");
+                log::info!("Ignoring redundant refresh on active USB/VDD display");
             } else {
                 if vs.source.is_monitor() {
                     let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);

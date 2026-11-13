@@ -560,13 +560,19 @@ impl<T: InvokeUiSession> Remote<T> {
                 match &msg.union {
                     Some(message::Union::Misc(misc)) => match misc.union {
                         Some(misc::Union::RefreshVideo(_)) => {
-                            self.video_threads.iter().for_each(|(_, v)| {
-                                *v.discard_queue.write().unwrap() = true;
-                            });
+                            let is_usb_secondary = self.handler.lc.read().unwrap().id.starts_with("127.0.0.1");
+                            if !is_usb_secondary {
+                                self.video_threads.iter().for_each(|(_, v)| {
+                                    *v.discard_queue.write().unwrap() = true;
+                                });
+                            }
                         }
                         Some(misc::Union::RefreshVideoDisplay(display)) => {
-                            if let Some(v) = self.video_threads.get_mut(&(display as usize)) {
-                                *v.discard_queue.write().unwrap() = true;
+                            let is_usb_secondary = self.handler.lc.read().unwrap().id.starts_with("127.0.0.1");
+                            if !is_usb_secondary {
+                                if let Some(v) = self.video_threads.get_mut(&(display as usize)) {
+                                    *v.discard_queue.write().unwrap() = true;
+                                }
                             }
                         }
                         _ => {}
@@ -1350,7 +1356,9 @@ impl<T: InvokeUiSession> Remote<T> {
                         }
                         if video_queue.force_push(vf).is_some() {
                             drop(video_queue);
-                            self.handler.refresh_video(display as _);
+                            if !is_usb_secondary {
+                                self.handler.refresh_video(display as _);
+                            }
                         } else {
                             thread.video_sender.send(MediaData::VideoQueue).ok();
                         }

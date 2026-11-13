@@ -3076,12 +3076,14 @@ pub fn start_video_thread<F, T>(
                                     //
                                     // to-do: fix the error
                                     log::error!("handle video frame error, {}", e);
-                                    if last_refresh
-                                        .map(|t| t.elapsed() >= refresh_interval)
-                                        .unwrap_or(true)
-                                    {
-                                        last_refresh = Some(std::time::Instant::now());
-                                        session.refresh_video(display as _);
+                                    if !is_usb_secondary {
+                                        if last_refresh
+                                            .map(|t| t.elapsed() >= refresh_interval)
+                                            .unwrap_or(true)
+                                        {
+                                            last_refresh = Some(std::time::Instant::now());
+                                            session.refresh_video(display as _);
+                                        }
                                     }
                                 }
                                 _ => {}
@@ -3119,13 +3121,7 @@ pub fn start_video_thread<F, T>(
                             if is_usb_secondary {
                                 if handler.fail_counter >= MAX_DECODE_FAIL_COUNTER {
                                     handler.fail_counter = 0;
-                                    if last_refresh
-                                        .map(|t| t.elapsed() >= refresh_interval)
-                                        .unwrap_or(true)
-                                    {
-                                        last_refresh = Some(std::time::Instant::now());
-                                        session.refresh_video(display as _);
-                                    }
+                                    log::warn!("Decoder transient failure on USB secondary display, resetting counter");
                                 }
                             } else if !handler.decoder.valid()
                                 || handler.fail_counter >= MAX_DECODE_FAIL_COUNTER
