@@ -59,10 +59,10 @@ impl MediaCodecDecoder {
         // When an input buffer is already free, dequeue_input_buffer returns in 0ms.
         // A generous timeout (15ms) only applies when the hardware decoder is busy finishing
         // a preceding frame, preventing catastrophic P-frame drops and visual corruption.
-        let input_wait = Duration::from_millis(15);
-        let output_wait = Duration::from_millis(8);
-        let output_wait_soft = Duration::from_millis(10);
-        let mut input_opt = self.dequeue_input_buffer(input_wait)?;
+        let input_wait = 15u64;
+        let output_wait = 8u64;
+        let output_wait_soft = 10u64;
+        let mut input_opt = self.dequeue_input_buffer(Duration::from_millis(input_wait))?;
         if input_opt.is_none() {
             input_opt = self.dequeue_input_buffer(Duration::from_millis(15))?;
         }
