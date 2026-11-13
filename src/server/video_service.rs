@@ -840,11 +840,15 @@ fn run(vs: VideoService) -> ResultType<()> {
         )?;
         if sp.is_option_true(OPTION_REFRESH) {
             sp.set_option_bool(OPTION_REFRESH, false);
-            if vs.source.is_monitor() {
-                let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);
+            if crate::usb_display::should_throttle_vdd_refresh() {
+                log::debug!("Ignoring redundant refresh on reused VDD display");
+            } else {
+                if vs.source.is_monitor() {
+                    let _ = try_broadcast_display_changed(&sp, display_idx, &c, true);
+                }
+                log::info!("switch to refresh");
+                bail!("SWITCH");
             }
-            log::info!("switch to refresh");
-            bail!("SWITCH");
         }
         if codec_format != Encoder::negotiated_codec() {
             log::info!(

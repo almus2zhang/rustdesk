@@ -73,6 +73,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void _sendPhysicalResolutionToServer(
       {bool forcePhysical = false, String? forcedOrientation}) {
+    _secondaryDisplayRequested = true;
     sendPhysicalResolutionToServer(
       peerId: widget.id,
       sessionId: gFFI.sessionId,
@@ -110,6 +111,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   bool _hasAutoSwitchedDisplay = false;
   bool _firstImageReceived = false;
   int _initialDisplayCount = 0;
+  bool _secondaryDisplayRequested = false;
 
   final keyboardVisibilityController = KeyboardVisibilityController();
   late final StreamSubscription<bool> keyboardSubscription;
@@ -553,8 +555,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // change, otherwise a host with several physical monitors would be
     // switched to the wrong one.
     final usbPrePlugged = widget.id.startsWith("127.0.0.1");
+    // A reused VDD monitor is already present at login and never increases
+    // the display count, so the "new display appeared" check alone would keep
+    // the peer on the primary monitor forever. The explicit secondary-display
+    // request is the reliable signal in that mode.
     final virtualDisplayReady = displays.length >= 2 &&
-        (usbPrePlugged || displays.length > _initialDisplayCount);
+        (usbPrePlugged ||
+            _secondaryDisplayRequested ||
+            displays.length > _initialDisplayCount);
     if (!virtualDisplayReady) return;
 
     _hasAutoSwitchedDisplay = true;

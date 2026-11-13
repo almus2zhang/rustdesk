@@ -981,6 +981,11 @@ impl Connection {
                             }
                         }
                         Some(message::Union::PeerInfo(_pi)) => {
+                            log::info!(
+                                "[PERF_REFRESH] source=outgoing_peer_info displays={} conn={}",
+                                _pi.displays.len(),
+                                id
+                            );
                             conn.refresh_video_display(None);
                             #[cfg(target_os = "macos")]
                             conn.retina.set_displays(&_pi.displays);
@@ -3450,11 +3455,20 @@ impl Connection {
                         if r {
                             // Refresh all videos.
                             // Compatibility with old versions and sciter(remote).
+                            log::info!(
+                                "[PERF_REFRESH] source=incoming_misc_refresh_all conn={}",
+                                self.inner.id
+                            );
                             self.refresh_video_display(None);
                         }
                         self.update_auto_disconnect_timer();
                     }
                     Some(misc::Union::RefreshVideoDisplay(display)) => {
+                        log::info!(
+                            "[PERF_REFRESH] source=incoming_misc_refresh_display display={} conn={}",
+                            display,
+                            self.inner.id
+                        );
                         self.refresh_video_display(Some(display as usize));
                         self.update_auto_disconnect_timer();
                     }
@@ -3623,6 +3637,11 @@ impl Connection {
                             request.display as _,
                             request.sid.clone(),
                             tx,
+                        );
+                        log::info!(
+                            "[PERF_REFRESH] source=screenshot_request display={} conn={}",
+                            request.display,
+                            self.inner.id
                         );
                         self.refresh_video_display(Some(request.display as usize));
                     }
@@ -4123,6 +4142,11 @@ impl Connection {
         {
             self.send(msg_out).await;
         }
+        log::info!(
+            "[PERF_REFRESH] source=select_app_window display={} conn={}",
+            self.display_idx,
+            self.inner.id
+        );
         self.refresh_video_display(Some(self.display_idx));
     }
 
@@ -4436,7 +4460,10 @@ impl Connection {
                         );
                     }
                     #[cfg(windows)]
-                    if virtual_display_manager::amyuni_idd::is_my_display(&name) || crate::usb_display::is_this_usb_display(&name) {
+                    if (virtual_display_manager::amyuni_idd::is_my_display(&name)
+                        || crate::usb_display::is_this_usb_display(&name))
+                        && !virtual_display_manager::is_vdd_display(&name)
+                    {
                         virtual_display_manager::amyuni_idd::ensure_custom_resolutions(r.width as _, r.height as _).ok();
                     }
                     if let Err(e) =
@@ -4453,7 +4480,10 @@ impl Connection {
                         // monitor during an active session: that broadcasts a
                         // display removal and leaves the peer on a black frame.
                         #[cfg(windows)]
-                        if virtual_display_manager::amyuni_idd::is_my_display(&name) || crate::usb_display::is_this_usb_display(&name) {
+                        if (virtual_display_manager::amyuni_idd::is_my_display(&name)
+                            || crate::usb_display::is_this_usb_display(&name))
+                            && !virtual_display_manager::is_vdd_display(&name)
+                        {
                             crate::platform::change_resolution(&name, r.width as _, r.height as _).ok();
                         }
                     }

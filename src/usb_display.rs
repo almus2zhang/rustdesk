@@ -29,11 +29,44 @@ lazy_static::lazy_static! {
     // Its geometry belongs to the user: never plug it out or restore per-peer
     // positions onto it.
     static ref USB_DISPLAY_REUSED_VDD: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    static ref LAST_VDD_REFRESH: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
 }
 
 /// Check if USB secondary display is currently active
 pub fn is_usb_display_active() -> bool {
     USB_DISPLAY_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Whether the active secondary display is a reused third-party VDD monitor.
+pub fn is_vdd_reused() -> bool {
+    #[cfg(windows)]
+    {
+        USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// A reused VDD session can receive a burst of refresh requests (repeated
+/// `PeerInfo` / `RefreshVideoDisplay` messages). Rebuilding the capturer and
+/// encoder on each one starves the stream down to a frozen picture, so allow
+/// at most one refresh-triggered rebuild every 30 seconds in this mode.
+pub fn should_throttle_vdd_refresh() -> bool {
+    if !is_vdd_reused() {
+        return false;
+    }
+    let mut last = LAST_VDD_REFRESH.lock().unwrap();
+    let now = Instant::now();
+    let throttled = last
+        .as_ref()
+        .map(|t| now.duration_since(*t) < Duration::from_secs(30))
+        .unwrap_or(false);
+    if !throttled {
+        *last = Some(now);
+    }
+    throttled
 }
 
 /// Which virtual monitor driver a secondary-display session should use.
@@ -395,6 +428,7 @@ pub fn plug_out_usb_display() -> ResultType<()> {
         USB_DISPLAY_PEER_ID.lock().unwrap().take();
         USB_DISPLAY_ACTIVE.store(false, Ordering::SeqCst);
         USB_DISPLAY_REUSED_VDD.store(false, Ordering::SeqCst);
+        LAST_VDD_REFRESH.lock().unwrap().take();
         Ok(())
     }
     #[cfg(not(windows))]
