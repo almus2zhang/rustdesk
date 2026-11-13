@@ -158,7 +158,10 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
-        toolchain: stable
+        # Keep in sync with RUST_VERSION in flutter-build.yml. Newer stable
+        # toolchains changed type inference (rust-lang/rust#148922) and can no
+        # longer build the pinned wl-clipboard-rs 0.9.0.
+        toolchain: "1.75"
         targets: ${{ matrix.job.target }}
         components: ''
 
