@@ -158,10 +158,12 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@v1
       with:
-        # Keep in sync with RUST_VERSION in flutter-build.yml. Newer stable
-        # toolchains changed type inference (rust-lang/rust#148922) and can no
-        # longer build the pinned wl-clipboard-rs 0.9.0.
-        toolchain: "1.75"
+        # `wl-clipboard-rs 0.9.0` fails on the never-type fallback change in
+        # recent stable toolchains (rust-lang/rust#148922), while
+        # `webrtc-util 0.12.0` needs `usize::is_multiple_of` (Rust >= 1.87).
+        # 1.90 sits between both. flutter-build.yml keeps 1.75 because it
+        # builds a different feature set that does not pull in webrtc-util.
+        toolchain: "1.90.0"
         targets: ${{ matrix.job.target }}
         components: ''
 
