@@ -571,15 +571,40 @@ struct AdbDevice {
 #[cfg(windows)]
 fn get_adb_devices(adb: &Path) -> Vec<AdbDevice> {
     use std::os::windows::process::CommandExt;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     const CREATE_NO_WINDOW: u32 = 0x08000000;
+    // This runs every 2s. When the ADB reverse channel is saturated by the
+    // video stream, `adb devices` can block for seconds, which shows up as a
+    // 1~2s RTT spike on the loopback session. Bound the wait and kill it.
+    const TIMEOUT: Duration = Duration::from_millis(500);
 
     let mut list = Vec::new();
-    if let Ok(out) = Command::new(adb)
+    let Ok(mut child) = Command::new(adb)
         .arg("devices")
         .creation_flags(CREATE_NO_WINDOW)
-        .output()
-    {
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    else {
+        return list;
+    };
+
+    let start = Instant::now();
+    let finished = loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break true,
+            Ok(None) if start.elapsed() < TIMEOUT => thread::sleep(Duration::from_millis(20)),
+            _ => break false,
+        }
+    };
+    if !finished {
+        let _ = child.kill();
+        let _ = child.wait();
+        log::debug!("adb devices timed out after {:?}", TIMEOUT);
+        return list;
+    }
+
+    if let Ok(out) = child.wait_with_output() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         for line in stdout.lines().skip(1) {
             let line = line.trim();

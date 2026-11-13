@@ -426,6 +426,13 @@ impl VideoQoS {
     #[inline]
     fn highest_fps(&self) -> u32 {
         let user_fps = |u: &UserData| {
+            // A USB/loopback secondary display is locked to the high fps path.
+            // The client's automatic fps estimate (sent as `custom_fps`) must
+            // not become a permanent ceiling, otherwise one slow decode sample
+            // pins the whole session at ~57fps.
+            if u.is_secondary && scrap::perf_stage_enabled(2) {
+                return MAX_FPS;
+            }
             let mut fps = u.custom_fps.unwrap_or(FPS);
             if let Some(auto_adjust_fps) = u.auto_adjust_fps {
                 if fps == 0 || auto_adjust_fps < fps {
@@ -557,6 +564,11 @@ impl VideoQoS {
     fn adjust_fps(&mut self) {
         let highest_fps = self.highest_fps();
         let user_target_fps = |u: &UserData| {
+            // Keep the fixed high fps for a USB/loopback secondary display even
+            // after the client sends a lower automatic fps estimate.
+            if u.is_secondary && scrap::perf_stage_enabled(2) {
+                return MAX_FPS;
+            }
             if let Some(c) = u.custom_fps {
                 c
             } else {

@@ -2944,6 +2944,10 @@ pub fn start_video_thread<F, T>(
         // swallowed by the server-side VDD throttle).
         let discard_timeout = std::time::Duration::from_millis(500);
         let mut discard_since: Option<std::time::Instant> = None;
+        // Decoder failures and surface changes can fire on every single frame.
+        // One encoder rebuild is enough to recover, so coalesce the requests.
+        let refresh_interval = std::time::Duration::from_millis(500);
+        let mut last_refresh: Option<std::time::Instant> = None;
         loop {
             if let Ok(data) = video_receiver.recv() {
                 match data {
@@ -3003,7 +3007,13 @@ pub fn start_video_thread<F, T>(
                             if let Some(h) = video_handler.as_mut() {
                                 if h.has_surface() != !surface_ptr.is_null() {
                                     video_handler = None;
-                                    session.refresh_video(display as _);
+                                    if last_refresh
+                                        .map(|t| t.elapsed() >= refresh_interval)
+                                        .unwrap_or(true)
+                                    {
+                                        last_refresh = Some(std::time::Instant::now());
+                                        session.refresh_video(display as _);
+                                    }
                                 }
                             }
                         }
@@ -3061,7 +3071,13 @@ pub fn start_video_thread<F, T>(
                                     //
                                     // to-do: fix the error
                                     log::error!("handle video frame error, {}", e);
-                                    session.refresh_video(display as _);
+                                    if last_refresh
+                                        .map(|t| t.elapsed() >= refresh_interval)
+                                        .unwrap_or(true)
+                                    {
+                                        last_refresh = Some(std::time::Instant::now());
+                                        session.refresh_video(display as _);
+                                    }
                                 }
                                 _ => {}
                             }
@@ -3099,7 +3115,13 @@ pub fn start_video_thread<F, T>(
                             if is_usb_secondary {
                                 if handler.fail_counter >= MAX_DECODE_FAIL_COUNTER {
                                     handler.fail_counter = 0;
-                                    session.refresh_video(display as _);
+                                    if last_refresh
+                                        .map(|t| t.elapsed() >= refresh_interval)
+                                        .unwrap_or(true)
+                                    {
+                                        last_refresh = Some(std::time::Instant::now());
+                                        session.refresh_video(display as _);
+                                    }
                                 }
                             } else if !handler.decoder.valid()
                                 || handler.fail_counter >= MAX_DECODE_FAIL_COUNTER
