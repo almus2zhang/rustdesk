@@ -69,6 +69,13 @@ pub fn should_throttle_vdd_refresh() -> bool {
     throttled
 }
 
+/// Let the next refresh rebuild the encoder. A client-initiated refresh has
+/// already discarded its queued frames and waits for a new key frame, so the
+/// VDD throttle must not swallow it.
+pub fn allow_next_vdd_refresh() {
+    LAST_VDD_REFRESH.lock().unwrap().take();
+}
+
 /// Which virtual monitor driver a secondary-display session should use.
 #[cfg(windows)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

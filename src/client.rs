@@ -2939,6 +2939,11 @@ pub fn start_video_thread<F, T>(
         let mut perf_decode_ms = 0.0f64;
         let mut perf_queue_depth = 0usize;
         let mut perf_dropped = 0usize;
+        // A refresh only drops stale frames until the next key frame arrives.
+        // Never discard forever if that key frame is missing (e.g. a refresh
+        // swallowed by the server-side VDD throttle).
+        let discard_timeout = std::time::Duration::from_millis(500);
+        let mut discard_since: Option<std::time::Instant> = None;
         loop {
             if let Ok(data) = video_receiver.recv() {
                 match data {
@@ -2947,13 +2952,24 @@ pub fn start_video_thread<F, T>(
                         let mut current_vf = match data {
                             MediaData::VideoFrame(vf) => {
                                 *discard_queue.write().unwrap() = false;
+                                discard_since = None;
                                 Some(*vf)
                             }
                             MediaData::VideoQueue => {
-                                let vq = video_queue.read().unwrap();
-                                let vf_opt = vq.pop();
+                                let vf_opt = video_queue.read().unwrap().pop();
                                 if let Some(vf) = vf_opt {
-                                    if discard_queue.read().unwrap().clone() {
+                                    let mut discard = discard_queue.write().unwrap();
+                                    if *discard {
+                                        let since = *discard_since
+                                            .get_or_insert_with(std::time::Instant::now);
+                                        if since.elapsed() >= discard_timeout {
+                                            *discard = false;
+                                            discard_since = None;
+                                        }
+                                    } else {
+                                        discard_since = None;
+                                    }
+                                    if *discard {
                                         None
                                     } else {
                                         Some(vf)

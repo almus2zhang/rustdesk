@@ -3459,6 +3459,10 @@ impl Connection {
                                 "[PERF_REFRESH] source=incoming_misc_refresh_all conn={}",
                                 self.inner.id
                             );
+                            // The client has already discarded its queued frames
+                            // and is waiting for a key frame to resume rendering.
+                            #[cfg(windows)]
+                            crate::usb_display::allow_next_vdd_refresh();
                             self.refresh_video_display(None);
                         }
                         self.update_auto_disconnect_timer();
@@ -3469,6 +3473,8 @@ impl Connection {
                             display,
                             self.inner.id
                         );
+                        #[cfg(windows)]
+                        crate::usb_display::allow_next_vdd_refresh();
                         self.refresh_video_display(Some(display as usize));
                         self.update_auto_disconnect_timer();
                     }
