@@ -1346,22 +1346,11 @@ fn get_encoder_config(
     #[cfg(feature = "vram")]
     Encoder::update(scrap::codec::EncodingUpdate::Check);
     // Periodic keyframe interval (GOP):
-    // Setting keyframe_interval to 120 frames (1s at 120fps, 2s at 60fps) ensures
-    // the hardware encoder (NVENC/VRAM/HWRAM) periodically generates clean IDR frames.
-    // This allows the client decoder to immediately clear any transient artifacts,
-    // macroblock corruption, or network packet loss without needing to tear down
-    // and recreate the video service.
-    #[cfg(windows)]
-    let is_secondary = _source.is_monitor() && crate::usb_display::is_usb_display_active();
-    #[cfg(not(windows))]
-    let is_secondary = false;
-    let keyframe_interval = if record {
-        Some(240)
-    } else if is_secondary {
-        Some(120)
-    } else {
-        Some(240)
-    };
+    // For live desktop streaming, GOP should be None (infinite) to prevent decoders
+    // (especially mobile hardware decoders like Android MediaCodec H.265) from receiving
+    // periodic VPS/SPS parameter sets which cause DPB flushing and periodic gray flashes.
+    // Keyframes are generated on-demand when starting or upon client refresh requests.
+    let keyframe_interval = if record { Some(240) } else { None };
     let negotiated_codec = Encoder::negotiated_codec();
     match negotiated_codec {
         CodecFormat::H264 | CodecFormat::H265 => {

@@ -456,8 +456,15 @@ pub fn start_usb_display_service() {
                 let mut last_detected_device = false;
                 let mut missed_counts = 0;
                 loop {
-                    // Poll at 2-second interval
-                    thread::sleep(Duration::from_millis(2000));
+                    // Poll at 2-second interval when searching for device attachment.
+                    // When a USB display session is actively running, back off polling to 10 seconds
+                    // to prevent adb devices from contending with active 120fps video stream on USB.
+                    let poll_interval = if is_usb_display_active() {
+                        Duration::from_secs(10)
+                    } else {
+                        Duration::from_millis(2000)
+                    };
+                    thread::sleep(poll_interval);
 
                     let has_device = check_android_usb_present();
                     if has_device {
@@ -485,6 +492,13 @@ pub fn start_usb_display_service() {
 
 #[cfg(windows)]
 fn get_adb_path() -> Option<PathBuf> {
+    use std::sync::OnceLock;
+    static CACHED_ADB: OnceLock<Option<PathBuf>> = OnceLock::new();
+    CACHED_ADB.get_or_init(find_adb_path_impl).clone()
+}
+
+#[cfg(windows)]
+fn find_adb_path_impl() -> Option<PathBuf> {
     use std::os::windows::process::CommandExt;
     use std::process::Command;
     const CREATE_NO_WINDOW: u32 = 0x08000000;

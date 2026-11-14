@@ -89,6 +89,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final orientation = MediaQuery.maybeOf(context)?.orientation;
       if (orientation != null && orientation != _currentOrientation) {
         _currentOrientation = orientation;
+        _isControlBarVertical.value = orientation == Orientation.landscape;
         final savedOrientation = bind.mainGetPeerOptionSync(
             id: widget.id, key: 'custom-display-orientation');
         if (savedOrientation.isEmpty || savedOrientation == 'auto') {
@@ -102,45 +103,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final RxBool _showBar = false.obs;
   final RxBool _keyHelpCollapsed =
       (bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y').obs;
+  final RxBool _isControlBarVertical = false.obs;
+  bool _isControlBarVerticalInit = false;
   Timer? _collapseLongPressTimer;
   bool _isCollapseLongPressed = false;
   bool _showGestureHelp = false;
 
-  void _toggleScreenOrientation() {
-    final orientation = MediaQuery.of(context).orientation;
-    final isCurrentlyLandscape = orientation == Orientation.landscape;
-    final targetOrientation = isCurrentlyLandscape ? 'portrait' : 'landscape';
-
-    if (targetOrientation == 'portrait') {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-      ]);
-    } else {
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
-    }
-
-    bind.mainSetPeerOptionSync(
-      id: widget.id,
-      key: 'custom-display-orientation',
-      value: targetOrientation,
-    );
-
-    sendPhysicalResolutionToServer(
-      peerId: widget.id,
-      sessionId: gFFI.sessionId,
-      forcedOrientation: targetOrientation,
-    );
-
+  void _toggleControlBarOrientation() {
+    _isControlBarVertical.value = !_isControlBarVertical.value;
     BotToast.showText(
       text: localeName.startsWith('zh')
-          ? (targetOrientation == 'portrait' ? '已切换为竖屏' : '已切换为横屏')
-          : (targetOrientation == 'portrait'
-              ? 'Switched to Portrait'
-              : 'Switched to Landscape'),
+          ? (_isControlBarVertical.value ? '控制栏已切换为纵向' : '控制栏已切换为横向')
+          : (_isControlBarVertical.value
+              ? 'Control bar: Vertical'
+              : 'Control bar: Horizontal'),
     );
     if (mounted) setState(() {});
   }
@@ -681,6 +657,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   gFFI.dialogManager
                                       .resetMobileActionsOverlay(ffi: gFFI);
                                   _currentOrientation = orientation;
+                                  _isControlBarVertical.value =
+                                      orientation == Orientation.landscape;
                                   gFFI.canvasModel.updateViewStyle();
                                 });
                               }
@@ -716,7 +694,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Widget _buildFloatingControlBar(
       Orientation orientation, Size size, EdgeInsets padding, Offset fabPos) {
-    final bool isLandscape = orientation == Orientation.landscape;
+    if (!_isControlBarVerticalInit) {
+      _isControlBarVertical.value = orientation == Orientation.landscape;
+      _isControlBarVerticalInit = true;
+    }
+    final bool isBarVertical = _isControlBarVertical.value;
     final ffiModel = Provider.of<FfiModel>(context);
 
     Widget buildBtn(
@@ -968,10 +950,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final totalCount = featureButtons.length + 1; // including collapse button
     final double neededLength = totalCount * 38.0 + 8.0;
 
-    final double barWidth = isLandscape
+    final double barWidth = isBarVertical
         ? 48.0
         : min(neededLength, size.width - padding.left - padding.right - 16.0);
-    final double barHeight = isLandscape
+    final double barHeight = isBarVertical
         ? min(neededLength, size.height - padding.top - padding.bottom - 16.0)
         : 48.0;
 
@@ -980,7 +962,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     double barX;
     double barY;
 
-    if (isLandscape) {
+    if (isBarVertical) {
       barX = fabPos.dx;
       if (fabPos.dy > size.height / 2) {
         // More space above -> expands UPWARDS
@@ -1024,7 +1006,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           if (!_isFabDragging) {
             _isCollapseLongPressed = true;
             HapticFeedback.mediumImpact();
-            _toggleScreenOrientation();
+            _toggleControlBarOrientation();
           }
         });
       },
@@ -1067,7 +1049,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       },
       child: Tooltip(
         message: translate('Collapse') +
-            (localeName.startsWith('zh') ? ' (长按横竖屏切换)' : ' (Long press to rotate)'),
+            (localeName.startsWith('zh') ? ' (长按切换控制栏横竖方向)' : ' (Long press to toggle toolbar orientation)'),
         child: Container(
           width: 38,
           height: 38,
@@ -1106,8 +1088,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           elevation: 8.0,
           borderRadius: BorderRadius.circular(24.0),
           child: Container(
-            width: isLandscape ? barWidth : null,
-            height: isLandscape ? null : barHeight,
+            width: isBarVertical ? barWidth : null,
+            height: isBarVertical ? null : barHeight,
             constraints: BoxConstraints(
               maxWidth: barWidth,
               maxHeight: barHeight,
@@ -1129,11 +1111,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
             padding: EdgeInsets.symmetric(
               horizontal: 4.0,
-              vertical: isLandscape ? 4.0 : 2.0,
+              vertical: isBarVertical ? 4.0 : 2.0,
             ),
             child: SingleChildScrollView(
-              scrollDirection: isLandscape ? Axis.vertical : Axis.horizontal,
-              child: isLandscape
+              scrollDirection: isBarVertical ? Axis.vertical : Axis.horizontal,
+              child: isBarVertical
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
                       children: buttons,
