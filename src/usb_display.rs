@@ -454,35 +454,44 @@ pub fn start_usb_display_service() {
             thread::spawn(|| {
                 log::info!("USB secondary display monitor service started");
                 let mut last_detected_device = false;
-                let mut missed_counts = 0;
+                let mut handshake_time: Option<Instant> = None;
                 loop {
-                    // Poll at 2-second interval when searching for device attachment.
-                    // When a USB display session is actively running, back off polling to 10 seconds
-                    // to prevent adb devices from contending with active 120fps video stream on USB.
-                    let poll_interval = if is_usb_display_active() {
-                        Duration::from_secs(10)
-                    } else {
-                        Duration::from_millis(2000)
-                    };
-                    thread::sleep(poll_interval);
+                    // Plan A: Zero-overhead streaming mode.
+                    // When a USB secondary session is actively connected and streaming,
+                    // completely suspend adb polling! Zero adb.exe processes spawned, zero USB bus contention.
+                    // Cable detachment or session close is instantly detected by TCP socket EOF/drop.
+                    if is_usb_display_active() {
+                        last_detected_device = true;
+                        handshake_time = None;
+                        thread::sleep(Duration::from_millis(1000));
+                        continue;
+                    }
+
+                    // If handshake was triggered recently (within 10s), wait for tablet to establish connection
+                    if let Some(t) = handshake_time {
+                        if t.elapsed() < Duration::from_secs(10) {
+                            thread::sleep(Duration::from_millis(1000));
+                            continue;
+                        } else {
+                            handshake_time = None;
+                            last_detected_device = false;
+                        }
+                    }
+
+                    // When idle (no active USB display), poll every 2s for new device attachment
+                    thread::sleep(Duration::from_millis(2000));
 
                     let has_device = check_android_usb_present();
                     if has_device {
-                        missed_counts = 0;
                         if !last_detected_device {
                             log::info!("Android USB device attachment detected! Initiating handshake and reverse port map...");
                             last_detected_device = true;
+                            handshake_time = Some(Instant::now());
                             trigger_usb_device_handshake();
                         }
-                    } else if last_detected_device {
-                        missed_counts += 1;
-                        // Debounce disconnect: require 3 consecutive misses (6 seconds) before treating as detached
-                        if missed_counts >= 3 {
-                            log::info!("Android USB device detached. Cleaning up secondary display...");
-                            last_detected_device = false;
-                            missed_counts = 0;
-                            plug_out_usb_display().ok();
-                        }
+                    } else {
+                        last_detected_device = false;
+                        handshake_time = None;
                     }
                 }
             });
