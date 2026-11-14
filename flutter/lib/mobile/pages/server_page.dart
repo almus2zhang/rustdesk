@@ -952,7 +952,19 @@ void showSecondaryDisplayInviteDialog(String hostId, String hostName, String hos
   }
 }
 
+bool _hasPromptedUsbAttachment = false;
+
 void showUsbDisplayDialog(dynamic arguments) {
+  if (_hasPromptedUsbAttachment) {
+    debugPrint("Already prompted for current USB attachment, ignoring");
+    return;
+  }
+  if (gFFI.ffiModel.isDirectSurface.value ||
+      gFFI.ffiModel.pi.displays.isNotEmpty) {
+    debugPrint("Session already active, ignoring USB display prompt");
+    return;
+  }
+  _hasPromptedUsbAttachment = true;
   debugPrint("USB Display Accessory Attached: $arguments");
   final ctx = Get.context;
   if (ctx != null) {
@@ -1023,6 +1035,7 @@ void androidChannelInit() {
         case "on_usb_accessory_detached":
           {
             debugPrint("USB Display Accessory Detached");
+            _hasPromptedUsbAttachment = false;
             break;
           }
         case "on_exit_direct_surface":

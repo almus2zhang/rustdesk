@@ -68,8 +68,7 @@ class RemotePage extends StatefulWidget {
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   bool get isSecondary =>
       widget.isUsbDisplay ||
-      widget.isSecondaryDisplay ||
-      widget.id.startsWith("127.0.0.1");
+      widget.isSecondaryDisplay;
 
   void _sendPhysicalResolutionToServer(
       {bool forcePhysical = false, String? forcedOrientation}) {
@@ -571,17 +570,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (!_firstImageReceived) return;
     if (_hasAutoSwitchedDisplay) return;
 
-    // USB plugs the monitor in before login, so it is already in the first
-    // frame. A WiFi invite adds it afterwards: wait for that display-list
-    // change, otherwise a host with several physical monitors would be
-    // switched to the wrong one.
-    final usbPrePlugged = widget.id.startsWith("127.0.0.1");
     // A reused VDD monitor is already present at login and never increases
     // the display count, so the "new display appeared" check alone would keep
     // the peer on the primary monitor forever. The explicit secondary-display
     // request is the reliable signal in that mode.
     final virtualDisplayReady = displays.length >= 2 &&
-        (usbPrePlugged ||
+        (widget.isUsbDisplay ||
             _secondaryDisplayRequested ||
             displays.length > _initialDisplayCount);
     if (!virtualDisplayReady) return;

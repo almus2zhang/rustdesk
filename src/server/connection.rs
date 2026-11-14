@@ -1801,32 +1801,6 @@ impl Connection {
                 self.send(msg_out).await;
             }
 
-            // A loopback (USB cast) session arrives with the virtual monitor
-            // already requested before login_response; mark it as a secondary
-            // session here. WiFi secondary sessions set the same flag later,
-            // when `secondary_display:WxH` arrives. A plain direct connection
-            // never sets it and therefore always stays on the primary monitor.
-            #[cfg(windows)]
-            let is_preplugged_secondary = self.ip.starts_with("127.0.0.1");
-            #[cfg(not(windows))]
-            let is_preplugged_secondary = false;
-            if is_preplugged_secondary {
-                self.is_secondary_session = true;
-            }
-            #[cfg(windows)]
-            if is_preplugged_secondary {
-                let peer_id = self.lr.my_id.clone();
-                crate::usb_display::set_usb_display_peer_id(peer_id.clone());
-                let saved_res_str = crate::ui_interface::get_peer_option(peer_id.clone(), "usb_display_resolution".to_string());
-                let (w, h) = if let Some((w_s, h_s)) = saved_res_str.split_once('x') {
-                    (w_s.trim().parse::<u32>().unwrap_or(1920), h_s.trim().parse::<u32>().unwrap_or(1200))
-                } else {
-                    (1920, 1200)
-                };
-                log::info!("Plugging in secondary display for peer {} with resolution {}x{}", peer_id, w, h);
-                crate::usb_display::plug_in_usb_display(w, h).ok();
-            }
-
             try_activate_screen();
 
             match super::display_service::update_get_sync_displays_on_login().await {
@@ -1834,55 +1808,6 @@ impl Connection {
                     res.set_error(format!("{}", err));
                 }
                 Ok(displays) => {
-                    // For compatibility with old versions, we need to send the displays to the peer.
-                    // But the displays may be updated later, before creating the video capturer.
-                    #[cfg(windows)]
-                    if is_preplugged_secondary {
-                        let peer_id = self.lr.my_id.clone();
-                        let prefer_primary = crate::ui_interface::get_peer_option(
-                            peer_id.clone(),
-                            "usb_display_target".to_string(),
-                        ) == "primary";
-                        // Only select the virtual monitor by device name.
-                        // Falling back to `displays.len() - 1` picked the
-                        // second physical monitor whenever the newly added
-                        // virtual display had not been enumerated yet.
-                        let target_idx = if prefer_primary {
-                            None
-                        } else {
-                            displays.iter().position(|d| {
-                                crate::usb_display::is_this_usb_display(&d.name)
-                            })
-                        };
-
-                        if let Some(pos) = target_idx {
-                            log::info!("Auto-selecting virtual display index {} ({}) for secondary display peer {}", pos, displays[pos].name, self.lr.my_id);
-                            self.display_idx = pos;
-                        } else if prefer_primary {
-                            log::info!("Secondary display peer {} stays on the primary monitor", peer_id);
-                        }
-                        let saved_pos_str = crate::ui_interface::get_peer_option(peer_id, "usb_display_pos".to_string());
-                        if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
-                            if let (Ok(x), Ok(y)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
-                                // Restore onto the USB virtual display itself. Falling
-                                // back to the last display used to move a physical
-                                // monitor when the device name lookup failed.
-                                let target = crate::usb_display::get_usb_display_device_name()
-                                    .or_else(|| {
-                                        displays
-                                            .iter()
-                                            .find(|d| crate::usb_display::is_this_usb_display(&d.name))
-                                            .map(|d| d.name.clone())
-                                    });
-                                if let Some(name) = target {
-                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
-                                    if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
-                                        log::warn!("Failed to restore secondary display position: {}", e);
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     #[cfg(target_os = "macos")]
                     {
@@ -4374,6 +4299,7 @@ impl Connection {
                         crate::usb_display::set_usb_display_peer_id(peer_id.clone());
                         crate::usb_display::plug_in_usb_display(w, h).ok();
                         crate::usb_display::restore_usb_display_settings(&peer_id);
+                        crate::server::display_service::check_displays_changed().ok();
                         // Do NOT switch the host subscription here. Doing it
                         // before the client has shown its first frame leaves the
                         // peer pointed at a display whose capturer is not ready
