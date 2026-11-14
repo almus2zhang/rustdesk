@@ -76,6 +76,11 @@ lazy_static::lazy_static! {
     static ref DISPLAY_CONN_IDS: Arc<Mutex<HashMap<usize, HashSet<i32>>>> = Default::default();
     pub static ref VIDEO_QOS: Arc<Mutex<VideoQoS>> = Default::default();
     static ref SERVER_PERF_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+    pub static ref IS_UAC_RUNNING: Arc<Mutex<bool>> = Default::default();
+    pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
+    static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
+    static ref SELECTED_WINDOW: Arc<std::sync::atomic::AtomicUsize> = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    static ref DIRECT_WINDOW_CAPTURE: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(true));
 }
 
 pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64) {
@@ -99,11 +104,6 @@ pub fn unpack_server_perf(packed: i64) -> Option<String> {
     } else {
         None
     }
-    pub static ref IS_UAC_RUNNING: Arc<Mutex<bool>> = Default::default();
-    pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
-    static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
-    static ref SELECTED_WINDOW: Arc<std::sync::atomic::AtomicUsize> = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    static ref DIRECT_WINDOW_CAPTURE: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(true));
 }
 
 pub fn set_selected_window(hwnd: usize) {
