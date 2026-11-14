@@ -75,6 +75,30 @@ lazy_static::lazy_static! {
     // 2. The client is closing.
     static ref DISPLAY_CONN_IDS: Arc<Mutex<HashMap<usize, HashSet<i32>>>> = Default::default();
     pub static ref VIDEO_QOS: Arc<Mutex<VideoQoS>> = Default::default();
+    static ref SERVER_PERF_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+}
+
+pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64) {
+    let cap_t = (cap * 10.0).round().clamp(0.0, 9999.0) as i64;
+    let conv_t = (conv * 10.0).round().clamp(0.0, 9999.0) as i64;
+    let enc_t = (enc * 10.0).round().clamp(0.0, 9999.0) as i64;
+    let packed = (0x5045i64 << 48) | (cap_t << 32) | (conv_t << 16) | enc_t;
+    SERVER_PERF_MS.store(packed, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn get_last_server_perf_packed() -> i64 {
+    SERVER_PERF_MS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+pub fn unpack_server_perf(packed: i64) -> Option<String> {
+    if (packed >> 48) == 0x5045 {
+        let cap_t = ((packed >> 32) & 0xffff) as f64 / 10.0;
+        let conv_t = ((packed >> 16) & 0xffff) as f64 / 10.0;
+        let enc_t = (packed & 0xffff) as f64 / 10.0;
+        Some(format!("{:.1}/{:.1}/{:.1}", cap_t, conv_t, enc_t))
+    } else {
+        None
+    }
     pub static ref IS_UAC_RUNNING: Arc<Mutex<bool>> = Default::default();
     pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
     static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
@@ -1222,6 +1246,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 crate::server::connection::is_loopback_active(),
                 crate::server::connection::is_usb_display_active(),
             );
+            set_last_server_perf(perf_cap_ms / count, perf_conv_ms / count, perf_enc_ms / count);
             perf_wouldblock = 0;
             perf_frames = 0;
             perf_cap_ms = 0.0;

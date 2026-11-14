@@ -136,6 +136,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _mobileFocusNode = FocusNode();
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
+  final _autoPopupKeyboardOnText = false.obs;
+  StreamSubscription? _textCursorSubscription;
 
   InputModel get inputModel => gFFI.inputModel;
   SessionID get sessionId => gFFI.sessionId;
@@ -288,6 +290,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     WakelockManager.enable(_uniqueKey);
     _physicalFocusNode.requestFocus();
     gFFI.inputModel.listenToMouse(true);
+    _autoPopupKeyboardOnText.value =
+        bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
+    _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
+      if (isText &&
+          _autoPopupKeyboardOnText.value &&
+          !_showEdit &&
+          !keyboardVisibilityController.isVisible) {
+        openKeyboard();
+      }
+    });
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
     keyboardSubscription =
         keyboardVisibilityController.onChange.listen(onSoftKeyboardChanged);
@@ -324,6 +336,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   Future<void> dispose() async {
     _displaysSubscription?.cancel();
+    _textCursorSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -1302,13 +1315,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              child: Icon(
-                (showKeyboardHideFab || _showGestureHelp)
-                    ? Icons.expand_more
-                    : (_showBar.value ? Icons.close : Icons.menu),
-                color: Colors.white,
-                size: 24,
-              ),
+              child: (showKeyboardHideFab || _showGestureHelp)
+                  ? const Icon(Icons.expand_more, color: Colors.white, size: 24)
+                  : (_showBar.value
+                      ? const Icon(Icons.close, color: Colors.white, size: 24)
+                      : _buildHamburgerIcon(_isCurrentDisplayVdd())),
             ),
           ),
         ));
@@ -1318,6 +1329,69 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         child: Stack(children: paints),
       );
     });
+  }
+
+  bool _isCurrentDisplayVdd() {
+    final pi = gFFI.ffiModel.pi;
+    if (pi.displays.isEmpty) return false;
+    final cur = pi.currentDisplay;
+    final vddName = pi.platformAdditions['vdd_display_name'] as String?;
+    if (vddName != null && vddName.isNotEmpty) {
+      if (cur >= 0 && cur < pi.displays.length) {
+        return cur == pi.displays.length - 1 || cur != 0;
+      }
+      return true;
+    }
+    if (cur >= 0 && cur < pi.displays.length) {
+      return pi.displays[cur].isVirtualDisplayResolution;
+    }
+    return false;
+  }
+
+  Widget _buildHamburgerIcon(bool isVdd) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 17,
+            height: 2.2,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          ),
+          const SizedBox(height: 3.2),
+          Container(
+            width: 17,
+            height: 2.2,
+            decoration: BoxDecoration(
+              color: isVdd ? const Color(0xFF00E676) : Colors.white,
+              borderRadius: BorderRadius.circular(1.5),
+              boxShadow: isVdd
+                  ? const [
+                      BoxShadow(
+                        color: Color(0xCC00E676),
+                        blurRadius: 4,
+                        spreadRadius: 0.8,
+                      )
+                    ]
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 3.2),
+          Container(
+            width: 17,
+            height: 2.2,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(1.5),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFloatingEscKeyContent() {
@@ -3125,6 +3199,22 @@ void showOptions(
           ...appModeButtons,
           const SizedBox(height: 4),
           ...keyboardLayoutButtons,
+          if (isAndroid)
+            Obx(() => SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    isZh ? '光标变为文本时自动弹出软键盘' : 'Auto popup keyboard on text cursor',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  value: _autoPopupKeyboardOnText.value,
+                  onChanged: (val) async {
+                    _autoPopupKeyboardOnText.value = val;
+                    await bind.mainSetLocalOption(
+                        key: 'auto_popup_keyboard_on_text',
+                        value: val ? 'true' : 'false');
+                  },
+                )),
           const Divider(color: MyTheme.border),
           ...toggles,
           privacyModeWidget,

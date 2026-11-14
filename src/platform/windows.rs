@@ -3178,6 +3178,36 @@ pub fn attach_display_to_desktop(
     }
 }
 
+pub fn get_next_desktop_right_edge() -> i32 {
+    let mut max_right = 0;
+    unsafe {
+        let mut dd: DISPLAY_DEVICEW = std::mem::zeroed();
+        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+        let mut i = 0;
+        loop {
+            if EnumDisplayDevicesW(NULL as _, i, &mut dd, 0) == 0 {
+                break;
+            }
+            i += 1;
+            if (dd.StateFlags & 0x00000001) != 0 {
+                let mut dm: DEVMODEW = std::mem::zeroed();
+                dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+                if EnumDisplaySettingsW(dd.DeviceName.as_ptr(), ENUM_CURRENT_SETTINGS, &mut dm) != 0 {
+                    let r = dm.u1.s2().dmPosition.x + dm.dmPelsWidth as i32;
+                    if r > max_right {
+                        max_right = r;
+                    }
+                }
+            }
+        }
+    }
+    if max_right > 0 {
+        max_right
+    } else {
+        1920
+    }
+}
+
 pub fn user_accessible_folder() -> ResultType<PathBuf> {
     let disk = std::env::var("SystemDrive").unwrap_or("C:".to_string());
     let dir1 = PathBuf::from(format!("{}\\ProgramData", disk));

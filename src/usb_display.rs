@@ -356,6 +356,7 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
 
     let peer_id_opt = USB_DISPLAY_PEER_ID.lock().unwrap().clone();
     let (mut x, mut y) = (0, 0);
+    let mut pos_saved = false;
     if let Some(ref peer_id) = peer_id_opt {
         let saved_pos_str = crate::ui_interface::get_peer_option(
             peer_id.clone(),
@@ -365,8 +366,13 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
             if let (Ok(sx), Ok(sy)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
                 x = sx;
                 y = sy;
+                pos_saved = true;
             }
         }
+    }
+    if !pos_saved {
+        x = crate::platform::windows::get_next_desktop_right_edge();
+        y = 0;
     }
 
     crate::platform::windows::attach_display_to_desktop(&name, x, y, width, height).ok();
@@ -562,7 +568,8 @@ pub fn plug_out_usb_display() -> ResultType<()> {
                 );
                 crate::platform::windows::detach_display_from_desktop(dev_name).ok();
             }
-            send_vdd_pipe_command("SETDISPLAYCOUNT 0").ok();
+            // Do not call SETDISPLAYCOUNT 0; detaching the display returns windows to
+            // the primary screen while keeping the VDD driver and its pipe alive.
         }
         // Only remove monitors this process actually created. Monitors added
         // by the user, by another process, or reused from a previous session

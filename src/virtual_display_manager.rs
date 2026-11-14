@@ -83,11 +83,12 @@ pub fn is_any_virtual_display(_name: &str) -> bool {
 /// that a machine with several IDD drivers never picks the wrong screen.
 #[cfg(target_os = "windows")]
 pub fn find_vdd_display() -> Option<String> {
-    let displays = crate::server::display_service::try_get_displays().ok()?;
-    displays
-        .iter()
-        .find(|d| is_vdd_display(&d.name()))
-        .map(|d| d.name())
+    if let Ok(displays) = crate::server::display_service::try_get_displays() {
+        if let Some(d) = displays.iter().find(|d| is_vdd_display(&d.name())) {
+            return Some(d.name().to_string());
+        }
+    }
+    windows::find_any_vdd_device_name()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -123,6 +124,9 @@ pub fn get_platform_additions() -> serde_json::Map<String, serde_json::Value> {
         return map;
     }
     map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+    if let Some(vdd_name) = find_vdd_display() {
+        map.insert("vdd_display_name".into(), serde_json::json!(vdd_name));
+    }
     match IDD_IMPL {
         IDD_IMPL_RUSTDESK => {
             let virtual_displays = rustdesk_idd::get_virtual_displays();
@@ -990,6 +994,32 @@ mod windows {
             };
             if is_device_name(&dev_name, name) {
                 return String::from_utf16(&dd.DeviceString).ok();
+            }
+        }
+        None
+    }
+
+    pub(super) fn find_any_vdd_device_name() -> Option<String> {
+        let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+        let mut i_dev_num = 0;
+        loop {
+            if unsafe { EnumDisplayDevicesW(null_mut(), i_dev_num, &mut dd, 0) } == 0 {
+                break;
+            }
+            i_dev_num += 1;
+            if (dd.StateFlags & 8) > 0 {
+                continue;
+            }
+            if let (Ok(dev_name), Ok(ds)) = (
+                String::from_utf16(&dd.DeviceName),
+                String::from_utf16(&dd.DeviceString),
+            ) {
+                let dev_name = dev_name.trim_matches('\0').to_string();
+                let ds = ds.trim_matches('\0');
+                if ds == "Virtual Display Driver" || ds.to_lowercase().contains("mttvdd") {
+                    return Some(dev_name);
+                }
             }
         }
         None

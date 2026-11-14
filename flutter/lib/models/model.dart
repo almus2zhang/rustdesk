@@ -3218,6 +3218,51 @@ class CursorModel with ChangeNotifier {
   String peerId = '';
   WeakReference<FFI> parent;
 
+  final _isTextCursor = false.obs;
+  RxBool get isTextCursor => _isTextCursor;
+
+  void _checkIsTextCursor() {
+    if (_cache != null) {
+      final isIbeam = _detectIsIbeam(_cache!);
+      if (_isTextCursor.value != isIbeam) {
+        _isTextCursor.value = isIbeam;
+      }
+    } else {
+      if (_isTextCursor.value) {
+        _isTextCursor.value = false;
+      }
+    }
+  }
+
+  static bool _detectIsIbeam(CursorData data) {
+    if (data.width <= 0 || data.height <= 0) return false;
+    final cx = data.width / 2.0;
+    final cy = data.height / 2.0;
+    if ((data.hotxOrigin - cx).abs() > 4 || (data.hotyOrigin - cy).abs() > 6) {
+      return false;
+    }
+    final img = data.image;
+    int minX = img.width, maxX = 0;
+    int minY = img.height, maxY = 0;
+    int nonTrans = 0;
+    for (int y = 0; y < img.height; y++) {
+      for (int x = 0; x < img.width; x++) {
+        final p = img.getPixel(x, y);
+        if (p.a > 30) {
+          nonTrans++;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (nonTrans == 0) return false;
+    final activeW = maxX - minX + 1;
+    final activeH = maxY - minY + 1;
+    return activeH >= 10 && activeW <= 16 && (activeH / activeW) >= 1.2;
+  }
+
   // Only for mobile, touch mode
   // To block touch event above the KeyHelpTools
   //
@@ -3726,6 +3771,7 @@ class CursorModel with ChangeNotifier {
       _image = tmp.item1;
       _hotx = tmp.item2;
       _hoty = tmp.item3;
+      _checkIsTextCursor();
       try {
         // may throw exception, because the listener maybe already dispose
         notifyListeners();
@@ -3826,6 +3872,7 @@ class QualityMonitorData {
   String? targetBitrate;
   String? codecFormat;
   String? chroma;
+  String? serverPerf;
 }
 
 class QualityMonitorModel with ChangeNotifier {
@@ -3887,6 +3934,9 @@ class QualityMonitorModel with ChangeNotifier {
       }
       if (evt.containsKey('chroma') && (evt['chroma'] as String).isNotEmpty) {
         _data.chroma = evt['chroma'];
+      }
+      if (evt.containsKey('server_perf') && (evt['server_perf'] as String).isNotEmpty) {
+        _data.serverPerf = evt['server_perf'];
       }
       notifyListeners();
     } catch (e) {
