@@ -952,19 +952,27 @@ void showSecondaryDisplayInviteDialog(String hostId, String hostName, String hos
   }
 }
 
-bool _hasPromptedUsbAttachment = false;
+bool _isUsbPromptShowing = false;
+DateTime? _lastUsbPromptTime;
 
 void showUsbDisplayDialog(dynamic arguments) {
-  if (_hasPromptedUsbAttachment) {
-    debugPrint("Already prompted for current USB attachment, ignoring");
-    return;
-  }
   if (gFFI.ffiModel.isDirectSurface.value ||
       gFFI.ffiModel.pi.displays.isNotEmpty) {
     debugPrint("Session already active, ignoring USB display prompt");
     return;
   }
-  _hasPromptedUsbAttachment = true;
+  if (_isUsbPromptShowing) {
+    debugPrint("USB display prompt already showing, ignoring");
+    return;
+  }
+  final now = DateTime.now();
+  if (_lastUsbPromptTime != null &&
+      now.difference(_lastUsbPromptTime!).inSeconds < 3) {
+    debugPrint("USB display prompt debounced, ignoring");
+    return;
+  }
+  _lastUsbPromptTime = now;
+  _isUsbPromptShowing = true;
   debugPrint("USB Display Accessory Attached: $arguments");
   final ctx = Get.context;
   if (ctx != null) {
@@ -990,12 +998,16 @@ void showUsbDisplayDialog(dynamic arguments) {
           actions: [
             dialogButton(
               translate('Cancel'),
-              onPressed: close,
+              onPressed: () {
+                _isUsbPromptShowing = false;
+                close();
+              },
               isOutline: true,
             ),
             dialogButton(
               isZh ? '开启副屏' : 'Start Display',
               onPressed: () {
+                _isUsbPromptShowing = false;
                 close();
                 var targetId = "127.0.0.1";
                 if (arguments is Map && arguments["port"] != null) {
@@ -1035,7 +1047,7 @@ void androidChannelInit() {
         case "on_usb_accessory_detached":
           {
             debugPrint("USB Display Accessory Detached");
-            _hasPromptedUsbAttachment = false;
+            _isUsbPromptShowing = false;
             break;
           }
         case "on_exit_direct_surface":

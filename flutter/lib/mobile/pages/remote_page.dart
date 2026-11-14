@@ -570,15 +570,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (!_firstImageReceived) return;
     if (_hasAutoSwitchedDisplay) return;
 
-    // A reused VDD monitor is already present at login and never increases
-    // the display count, so the "new display appeared" check alone would keep
-    // the peer on the primary monitor forever. The explicit secondary-display
-    // request is the reliable signal in that mode.
-    final virtualDisplayReady = displays.length >= 2 &&
-        (widget.isUsbDisplay ||
-            _secondaryDisplayRequested ||
-            displays.length > _initialDisplayCount);
-    if (!virtualDisplayReady) return;
+    // Only switch if a new virtual monitor has actually been added and enumerated
+    // (display count increased beyond initial physical display count).
+    // If the host has multiple physical monitors, we must NOT switch prematurely
+    // while displays.length <= _initialDisplayCount.
+    // For reused monitors (where count does not increase), the host explicitly
+    // sends follow_current_display to select the exact display index.
+    final hasNewDisplay = displays.length > _initialDisplayCount;
+    if (!hasNewDisplay) {
+      return;
+    }
 
     _hasAutoSwitchedDisplay = true;
 
