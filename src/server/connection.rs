@@ -1875,14 +1875,9 @@ impl Connection {
                                             .map(|d| d.name.clone())
                                     });
                                 if let Some(name) = target {
-                                    // A reused VDD monitor is configured by the
-                                    // user; never move it to a position saved
-                                    // for an Amyuni monitor.
-                                    if !crate::virtual_display_manager::is_vdd_display(&name) {
-                                        log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
-                                        if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
-                                            log::warn!("Failed to restore secondary display position: {}", e);
-                                        }
+                                    log::info!("Restoring saved position ({}, {}) for secondary display {}", x, y, name);
+                                    if let Err(e) = crate::platform::windows::set_display_position(&name, x, y) {
+                                        log::warn!("Failed to restore secondary display position: {}", e);
                                     }
                                 }
                             }

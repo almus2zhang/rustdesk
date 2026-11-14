@@ -113,11 +113,6 @@ pub fn set_usb_display_peer_id(peer_id: String) {
 /// so saving only at drop time used to lose every position the user changed.
 #[cfg(windows)]
 pub fn save_usb_display_state() {
-    // A reused VDD monitor belongs to the user; do not overwrite the peer's
-    // saved geometry with Amyuni-era settings.
-    if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
-        return;
-    }
     let peer_id = match USB_DISPLAY_PEER_ID.lock().unwrap().as_ref() {
         Some(id) => id.clone(),
         None => return,
@@ -149,9 +144,6 @@ pub fn save_usb_display_state() {
 /// Apply the remembered position to the currently active virtual display.
 #[cfg(windows)]
 pub fn restore_usb_display_settings(peer_id: &str) {
-    if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
-        return;
-    }
     let pos_str = crate::ui_interface::get_peer_option(
         peer_id.to_string(),
         "usb_display_pos".to_string(),
@@ -169,7 +161,7 @@ pub fn restore_usb_display_settings(peer_id: &str) {
         None => return,
     };
     match crate::platform::windows::set_display_position(&dev_name, x, y) {
-        Ok(()) => log::info!("Restored USB display position ({}, {})", x, y),
+        Ok(()) => log::info!("Restored USB display position ({}, {}) for {}", x, y, dev_name),
         Err(e) => log::warn!("Failed to restore USB display position: {}", e),
     }
 }
@@ -233,14 +225,154 @@ fn closest_resolution(name: &str, w: u32, h: u32) -> Option<(usize, usize)> {
     best.map(|(_, mw, mh)| (mw, mh))
 }
 
-/// Reuse an already enabled MttVDD monitor instead of plugging in an Amyuni
-/// one. Nothing is created here, so `USB_DISPLAY_CREATED` stays untouched and
-/// `plug_out_usb_display()` will never remove a monitor the user installed.
+/// Resolve the path to `vdd_settings.xml`. Uses configured `vdd-settings-path`
+/// if provided, otherwise defaults to `C:\VirtualDisplayDriver\vdd_settings.xml`.
 #[cfg(windows)]
-fn reuse_vdd_display(name: &str, width: u32, height: u32) -> ResultType<u32> {
+pub fn get_vdd_settings_path() -> PathBuf {
+    let opt = Config::get_option("vdd-settings-path");
+    if !opt.trim().is_empty() {
+        let p = PathBuf::from(opt.trim());
+        if p.is_file() {
+            return p;
+        } else if p.is_dir() {
+            return p.join("vdd_settings.xml");
+        } else if p.extension().is_some() {
+            return p;
+        } else {
+            return p.join("vdd_settings.xml");
+        }
+    }
+    PathBuf::from(r"C:\VirtualDisplayDriver\vdd_settings.xml")
+}
+
+/// Sync custom VDD folder path to Windows registry so MttVDD driver service
+/// also knows where to find `vdd_settings.xml`.
+#[cfg(windows)]
+pub fn sync_vdd_registry_path(xml_path: &Path) {
+    if let Some(parent) = xml_path.parent() {
+        if let Some(folder_str) = parent.to_str() {
+            use winreg::{enums::*, RegKey};
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            if let Ok((key, _)) = hkcu.create_subkey(r"SOFTWARE\MikeTheTech\VirtualDisplayDriver") {
+                key.set_value("VDDPATH", &folder_str).ok();
+            }
+            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            if let Ok((key, _)) = hklm.create_subkey(r"SOFTWARE\MikeTheTech\VirtualDisplayDriver") {
+                key.set_value("VDDPATH", &folder_str).ok();
+            }
+        }
+    }
+}
+
+/// Send a text command to the MttVDD named pipe (`\\.\pipe\MTTVirtualDisplayPipe`).
+#[cfg(windows)]
+pub fn send_vdd_pipe_command(cmd: &str) -> ResultType<()> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    let pipe_path = r"\\.\pipe\MTTVirtualDisplayPipe";
+    let mut file = OpenOptions::new().write(true).open(pipe_path)?;
+    file.write_all(cmd.as_bytes())?;
+    file.flush()?;
+    log::info!("Dispatched VDD pipe command: {}", cmd);
+    Ok(())
+}
+
+/// Ensure the requested resolution exists in `vdd_settings.xml`.
+/// If missing, dynamically appends it and asks the driver to reload.
+#[cfg(windows)]
+pub fn ensure_vdd_resolution(w: u32, h: u32) -> ResultType<bool> {
+    if w == 0 || h == 0 {
+        return Ok(false);
+    }
+    let xml_path = get_vdd_settings_path();
+    if !xml_path.exists() {
+        return Ok(false);
+    }
+    sync_vdd_registry_path(&xml_path);
+
+    let content = match std::fs::read_to_string(&xml_path) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("Failed to read {}: {}", xml_path.display(), e);
+            return Ok(false);
+        }
+    };
+
+    let w_str = format!("<width>{}</width>", w);
+    let h_str = format!("<height>{}</height>", h);
+    if content.contains(&w_str) && content.contains(&h_str) {
+        return Ok(false);
+    }
+
+    let closing_tag = "</resolutions>";
+    let Some(idx) = content.find(closing_tag) else {
+        return Ok(false);
+    };
+
+    let new_res = format!(
+        "    <resolution>\n      <width>{}</width>\n      <height>{}</height>\n      <refresh_rate>120</refresh_rate>\n    </resolution>\n  ",
+        w, h
+    );
+    let mut new_content = content;
+    new_content.insert_str(idx, &new_res);
+    if let Err(e) = std::fs::write(&xml_path, new_content) {
+        log::warn!("Failed to update {}: {}", xml_path.display(), e);
+        return Ok(false);
+    }
+    log::info!("Added resolution {}x{} to {}", w, h, xml_path.display());
+
+    send_vdd_pipe_command("RELOAD_DRIVER").ok();
+    std::thread::sleep(Duration::from_millis(300));
+    Ok(true)
+}
+
+/// Plug in or attach MttVDD virtual display, restore per-client position, and set resolution.
+#[cfg(windows)]
+fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> ResultType<u32> {
+    ensure_vdd_resolution(width, height).ok();
+    send_vdd_pipe_command("SETDISPLAYCOUNT 1").ok();
+
+    let name = match name_opt {
+        Some(n) => n.to_string(),
+        None => {
+            let mut found = virtual_display_manager::find_vdd_display();
+            if found.is_none() {
+                for _ in 0..10 {
+                    std::thread::sleep(Duration::from_millis(100));
+                    found = virtual_display_manager::find_vdd_display();
+                    if found.is_some() {
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some(n) => n,
+                None => {
+                    hbb_common::bail!("No VDD display detected after plug in");
+                }
+            }
+        }
+    };
+
+    let peer_id_opt = USB_DISPLAY_PEER_ID.lock().unwrap().clone();
+    let (mut x, mut y) = (0, 0);
+    if let Some(ref peer_id) = peer_id_opt {
+        let saved_pos_str = crate::ui_interface::get_peer_option(
+            peer_id.clone(),
+            "usb_display_pos".to_string(),
+        );
+        if let Some((x_s, y_s)) = saved_pos_str.split_once(',') {
+            if let (Ok(sx), Ok(sy)) = (x_s.trim().parse::<i32>(), y_s.trim().parse::<i32>()) {
+                x = sx;
+                y = sy;
+            }
+        }
+    }
+
+    crate::platform::windows::attach_display_to_desktop(&name, x, y, width, height).ok();
     let (w, h) =
-        closest_resolution(name, width, height).unwrap_or((width as usize, height as usize));
-    if let Err(e) = crate::platform::change_resolution(name, w, h) {
+        closest_resolution(&name, width, height).unwrap_or((width as usize, height as usize));
+    if let Err(e) = crate::platform::change_resolution(&name, w, h) {
         log::warn!(
             "Failed to set VDD display '{}' to {}x{}: {:?}",
             name,
@@ -249,12 +381,18 @@ fn reuse_vdd_display(name: &str, width: u32, height: u32) -> ResultType<u32> {
             e
         );
     }
-    *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(name.to_string());
+    if x != 0 || y != 0 {
+        crate::platform::windows::set_display_position(&name, x, y).ok();
+    }
+
+    *USB_DISPLAY_DEVICE_NAME.lock().unwrap() = Some(name.clone());
     USB_DISPLAY_ACTIVE.store(true, Ordering::SeqCst);
     USB_DISPLAY_REUSED_VDD.store(true, Ordering::SeqCst);
     log::info!(
-        "Reusing VDD virtual display '{}' at {}x{} (requested {}x{})",
+        "Plugged in VDD virtual display '{}' at ({},{}) with {}x{} (requested {}x{})",
         name,
+        x,
+        y,
         w,
         h,
         width,
@@ -270,9 +408,12 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
         let driver = secondary_driver();
         if driver != SecondaryDriver::Amyuni {
             if let Some(name) = virtual_display_manager::find_vdd_display() {
-                return reuse_vdd_display(&name, width, height);
+                return plug_in_vdd_display(Some(&name), width, height);
             }
             if driver == SecondaryDriver::Vdd {
+                if let Ok(idx) = plug_in_vdd_display(None, width, height) {
+                    return Ok(idx);
+                }
                 log::warn!("usb-display-driver=vdd but no enabled Virtual Display Driver monitor was found; falling back to Amyuni");
             }
         }
@@ -412,6 +553,17 @@ pub fn plug_out_usb_display() -> ResultType<()> {
 
         let mut idx_lock = USB_DISPLAY_INDEX.lock().unwrap();
         idx_lock.take();
+
+        if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
+            if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
+                log::info!(
+                    "Detaching VDD display '{}' from desktop so windows return to primary",
+                    dev_name
+                );
+                crate::platform::windows::detach_display_from_desktop(dev_name).ok();
+            }
+            send_vdd_pipe_command("SETDISPLAYCOUNT 0").ok();
+        }
         // Only remove monitors this process actually created. Monitors added
         // by the user, by another process, or reused from a previous session
         // must be left alone.

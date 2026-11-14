@@ -644,6 +644,92 @@ class _GeneralState extends State<_General> {
           ),
         ),
       );
+      if (currentDriver == 'vdd') {
+        final vddPath = bind.mainGetOptionSync(key: kOptionVddSettingsPath);
+        final defaultVddPath = r'C:\VirtualDisplayDriver\vdd_settings.xml';
+        final displayPath = vddPath.isNotEmpty ? vddPath : defaultVddPath;
+        children.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: _kContentHMargin, vertical: 4),
+            child: Row(
+              children: [
+                Text(translate('VDD settings path')),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Tooltip(
+                    message: displayPath,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .outline
+                                .withOpacity(0.3)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        displayPath,
+                        style: const TextStyle(fontSize: 12),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () async {
+                    FilePickerResult? result =
+                        await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['xml'],
+                      dialogTitle: localeName.startsWith('zh')
+                          ? '选择 vdd_settings.xml 文件'
+                          : 'Select vdd_settings.xml',
+                    );
+                    if (result != null && result.files.single.path != null) {
+                      await bind.mainSetOption(
+                          key: kOptionVddSettingsPath,
+                          value: result.files.single.path!);
+                      setState(() {});
+                    }
+                  },
+                  child: Text(translate('Browse file')),
+                ),
+                const SizedBox(width: 6),
+                OutlinedButton(
+                  onPressed: () async {
+                    String? dir = await FilePicker.platform.getDirectoryPath(
+                      dialogTitle: localeName.startsWith('zh')
+                          ? '选择 VDD 驱动所在目录'
+                          : 'Select VDD folder',
+                    );
+                    if (dir != null) {
+                      await bind.mainSetOption(
+                          key: kOptionVddSettingsPath, value: dir);
+                      setState(() {});
+                    }
+                  },
+                  child: Text(translate('Browse folder')),
+                ),
+                if (vddPath.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  TextButton(
+                    onPressed: () async {
+                      await bind.mainSetOption(
+                          key: kOptionVddSettingsPath, value: '');
+                      setState(() {});
+                    },
+                    child: Text(translate('Default')),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }
     }
     return _Card(title: 'Other', children: children);
   }

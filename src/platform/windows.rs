@@ -3109,6 +3109,75 @@ pub fn set_display_position(name: &str, x: i32, y: i32) -> ResultType<()> {
     }
 }
 
+pub fn detach_display_from_desktop(name: &str) -> ResultType<()> {
+    let device_name = str_to_device_name(name);
+    unsafe {
+        let mut dm: DEVMODEW = std::mem::zeroed();
+        dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | 0x00000020; // DM_PELSWIDTH | DM_PELSHEIGHT | DM_POSITION
+        dm.dmPelsWidth = 0;
+        dm.dmPelsHeight = 0;
+        dm.u1.s2_mut().dmPosition.x = 0;
+        dm.u1.s2_mut().dmPosition.y = 0;
+        const CDS_UPDATEREGISTRY: DWORD = 0x00000001;
+        const CDS_NORESET: DWORD = 0x10000000;
+        let res = ChangeDisplaySettingsExW(
+            device_name.as_ptr(),
+            &mut dm,
+            NULL as _,
+            CDS_UPDATEREGISTRY | CDS_NORESET,
+            NULL as _,
+        );
+        ChangeDisplaySettingsExW(NULL as _, NULL as _, NULL as _, 0, NULL as _);
+        if res == DISP_CHANGE_SUCCESSFUL {
+            log::info!("Detached display '{}' from desktop", name);
+            return Ok(());
+        }
+        bail!("ChangeDisplaySettingsExW failed to detach display {}: {}", name, res);
+    }
+}
+
+pub fn attach_display_to_desktop(
+    name: &str,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> ResultType<()> {
+    let device_name = str_to_device_name(name);
+    unsafe {
+        let mut dm: DEVMODEW = std::mem::zeroed();
+        dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+        dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | 0x00000020;
+        dm.dmPelsWidth = width as _;
+        dm.dmPelsHeight = height as _;
+        dm.u1.s2_mut().dmPosition.x = x as _;
+        dm.u1.s2_mut().dmPosition.y = y as _;
+        const CDS_UPDATEREGISTRY: DWORD = 0x00000001;
+        const CDS_NORESET: DWORD = 0x10000000;
+        let res = ChangeDisplaySettingsExW(
+            device_name.as_ptr(),
+            &mut dm,
+            NULL as _,
+            CDS_UPDATEREGISTRY | CDS_NORESET,
+            NULL as _,
+        );
+        ChangeDisplaySettingsExW(NULL as _, NULL as _, NULL as _, 0, NULL as _);
+        if res == DISP_CHANGE_SUCCESSFUL {
+            log::info!(
+                "Attached display '{}' to desktop at ({},{}) size {}x{}",
+                name,
+                x,
+                y,
+                width,
+                height
+            );
+            return Ok(());
+        }
+        bail!("ChangeDisplaySettingsExW failed to attach display {}: {}", name, res);
+    }
+}
+
 pub fn user_accessible_folder() -> ResultType<PathBuf> {
     let disk = std::env::var("SystemDrive").unwrap_or("C:".to_string());
     let dir1 = PathBuf::from(format!("{}\\ProgramData", disk));
