@@ -4302,23 +4302,25 @@ impl Connection {
                         crate::server::display_service::check_displays_changed().ok();
 
                         // Detect the exact display index of the virtual secondary display
-                        if let Ok(displays) = crate::server::display_service::try_get_displays() {
-                            let target_idx = displays
+                        // Drop `displays` before `.await` because `scrap::Display` is not `Send` on Windows
+                        let target_idx = {
+                            let displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                            displays
                                 .iter()
                                 .position(|d| crate::usb_display::is_this_usb_display(&d.name()))
-                                .unwrap_or(displays.len().saturating_sub(1));
+                                .unwrap_or(displays.len().saturating_sub(1))
+                        };
 
-                            log::info!(
-                                "Secondary display ready (target index: {} for peer {}), sending follow_current_display",
-                                target_idx,
-                                peer_id
-                            );
-                            let mut misc = Misc::new();
-                            misc.set_follow_current_display(target_idx as i32);
-                            let mut msg = Message::new();
-                            msg.set_misc(misc);
-                            self.send(msg).await;
-                        }
+                        log::info!(
+                            "Secondary display ready (target index: {} for peer {}), sending follow_current_display",
+                            target_idx,
+                            peer_id
+                        );
+                        let mut misc = Misc::new();
+                        misc.set_follow_current_display(target_idx as i32);
+                        let mut msg = Message::new();
+                        msg.set_misc(misc);
+                        self.send(msg).await;
                     }
                 }
             }
