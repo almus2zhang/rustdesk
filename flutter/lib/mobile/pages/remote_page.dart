@@ -100,7 +100,50 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   Timer? _timer;
   final RxBool _showBar = false.obs;
+  final RxBool _keyHelpCollapsed =
+      (bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y').obs;
+  Timer? _collapseLongPressTimer;
+  bool _isCollapseLongPressed = false;
   bool _showGestureHelp = false;
+
+  void _toggleScreenOrientation() {
+    final orientation = MediaQuery.of(context).orientation;
+    final isCurrentlyLandscape = orientation == Orientation.landscape;
+    final targetOrientation = isCurrentlyLandscape ? 'portrait' : 'landscape';
+
+    if (targetOrientation == 'portrait') {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    }
+
+    bind.mainSetPeerOptionSync(
+      id: widget.id,
+      key: 'custom-display-orientation',
+      value: targetOrientation,
+    );
+
+    sendPhysicalResolutionToServer(
+      peerId: widget.id,
+      sessionId: gFFI.sessionId,
+      forcedOrientation: targetOrientation,
+    );
+
+    BotToast.showText(
+      text: localeName.startsWith('zh')
+          ? (targetOrientation == 'portrait' ? '已切换为竖屏' : '已切换为横屏')
+          : (targetOrientation == 'portrait'
+              ? 'Switched to Portrait'
+              : 'Switched to Landscape'),
+    );
+    if (mounted) setState(() {});
+  }
   String _value = '';
   Orientation? _currentOrientation;
   final _uniqueKey = UniqueKey();
@@ -321,7 +364,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       await gFFI.invokeMethod("stop_service");
     }
     _timer?.cancel();
+    _collapseLongPressTimer?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
+    SystemChrome.setPreferredOrientations([]);
     gFFI.dialogManager.dismissAll();
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.manual,
         overlays: SystemUiOverlay.values);
@@ -731,6 +776,30 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           tooltip: translate('Keyboard'),
           onPressed: openKeyboard,
         ),
+      // 3.1 Shortcut Keys (Key Help Tools) toggle
+      if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
+        Obx(() => buildBtn(
+          icon: Icon(
+            Icons.keyboard_command_key,
+            color: !_keyHelpCollapsed.value ? Colors.white : Colors.white70,
+            size: 20,
+          ),
+          backgroundColor: !_keyHelpCollapsed.value
+              ? const Color(0xFF0071FF) // 展开时高亮蓝色底色
+              : const Color(0x604A5568), // 收起时暗灰色底色
+          borderRadius: BorderRadius.circular(19),
+          tooltip: localeName.startsWith('zh')
+              ? (!_keyHelpCollapsed.value ? '快捷按键 (已展开，点击收起)' : '快捷按键 (点击展开)')
+              : (!_keyHelpCollapsed.value ? 'Shortcut Keys (Active)' : 'Shortcut Keys'),
+          onPressed: () {
+            _keyHelpCollapsed.value = !_keyHelpCollapsed.value;
+            bind.mainSetLocalOption(
+              key: 'key_help_tools_collapsed',
+              value: _keyHelpCollapsed.value ? 'Y' : 'N',
+            );
+            if (mounted) setState(() {});
+          },
+        )),
       // 4. Input Method Picker (Android)
       if (isAndroid && !isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
@@ -885,23 +954,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             if (mounted) setState(() {});
           },
         ),
-      // 6. Chat
-      if (!isWeb)
-        buildBtn(
-          icon: isAndroid
-              ? SvgPicture.asset(
-                  'assets/chat.svg',
-                  width: 20,
-                  height: 20,
-                  colorFilter:
-                      const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-                )
-              : const Icon(Icons.message, color: Colors.white, size: 20),
-          tooltip: translate('Chat'),
-          onPressed: () => isAndroid
-              ? showChatOptions(widget.id)
-              : onPressedTextChat(widget.id),
-        ),
       // 7. More Actions
       buildBtn(
         icon: const Icon(Icons.more_vert, color: Colors.white, size: 20),
@@ -966,11 +1018,21 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         _fabDragFingerStart = event.position;
         _fabDragInitPos = fabPos;
         _isFabDragging = false;
+        _isCollapseLongPressed = false;
+        _collapseLongPressTimer?.cancel();
+        _collapseLongPressTimer = Timer(const Duration(milliseconds: 500), () {
+          if (!_isFabDragging) {
+            _isCollapseLongPressed = true;
+            HapticFeedback.mediumImpact();
+            _toggleScreenOrientation();
+          }
+        });
       },
       onPointerMove: (event) {
         final delta = event.position - _fabDragFingerStart;
         if (!_isFabDragging && delta.distance > 4.0) {
           _isFabDragging = true;
+          _collapseLongPressTimer?.cancel();
         }
         if (_isFabDragging) {
           setState(() {
@@ -983,6 +1045,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         }
       },
       onPointerUp: (event) {
+        _collapseLongPressTimer?.cancel();
+        if (_isCollapseLongPressed) {
+          _isCollapseLongPressed = false;
+          return;
+        }
         if (_isFabDragging) {
           _saveFabPosition(orientation);
           _isFabDragging = false;
@@ -992,13 +1059,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         }
       },
       onPointerCancel: (event) {
+        _collapseLongPressTimer?.cancel();
         if (_isFabDragging) {
           _saveFabPosition(orientation);
           _isFabDragging = false;
         }
       },
       child: Tooltip(
-        message: translate('Collapse'),
+        message: translate('Collapse') +
+            (localeName.startsWith('zh') ? ' (长按横竖屏切换)' : ' (Long press to rotate)'),
         child: Container(
           width: 38,
           height: 38,
@@ -1086,11 +1155,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       !gFFI.inputModel.relativeMouseMode.value;
 
   Widget _buildKeyHelpTools(bool isTablet, bool keyboardIsVisible) {
-    return KeyHelpTools(
+    return Obx(() => KeyHelpTools(
         isTablet: isTablet,
         showBar: _showBar.value,
         keyboardIsVisible: keyboardIsVisible,
-        showGestureHelp: _showGestureHelp);
+        showGestureHelp: _showGestureHelp,
+        collapsed: _keyHelpCollapsed.value,
+        onCollapseToggle: (val) {
+          _keyHelpCollapsed.value = val;
+          bind.mainSetLocalOption(
+            key: 'key_help_tools_collapsed',
+            value: val ? 'Y' : 'N',
+          );
+        }));
   }
 
   Widget getBodyForMobile() {
@@ -1359,38 +1436,59 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final y = size.height;
     final mobileActionMenus = _getMobileActionMenus();
     final menus = toolbarControls(context, id, gFFI);
+    final chatMenus = !isWeb
+        ? [
+            TTextMenu(
+              child: Text(translate('Chat')),
+              trailingIcon: Transform.scale(
+                scale: (isDesktop || isWebDesktop) ? 0.8 : 1,
+                child: IgnorePointer(
+                  child: IconButton(
+                    onPressed: null,
+                    icon: Icon(Icons.chat_outlined, color: MyTheme.accent),
+                  ),
+                ),
+              ),
+              onPressed: () => isAndroid
+                  ? showChatOptions(widget.id)
+                  : onPressedTextChat(widget.id),
+            )
+          ]
+        : <TTextMenu>[];
 
-    final List<PopupMenuEntry<int>> more = [
-      ...mobileActionMenus
-          .asMap()
-          .entries
-          .map((e) =>
-              PopupMenuItem<int>(child: e.value.getChild(), value: e.key))
-          .toList(),
-      if (mobileActionMenus.isNotEmpty) PopupMenuDivider(),
-      ...menus
-          .asMap()
-          .entries
-          .map((e) => PopupMenuItem<int>(
-              child: e.value.getChild(),
-              value: e.key + mobileActionMenus.length))
-          .toList(),
+    final allMenus = [
+      ...mobileActionMenus,
+      ...chatMenus,
+      ...menus,
     ];
-    () async {
-      var index = await showMenu(
-        context: context,
-        position: RelativeRect.fromLTRB(x, y, x, y),
-        items: more,
-        elevation: 8,
-      );
-      if (index != null) {
-        if (index < mobileActionMenus.length) {
-          mobileActionMenus[index].onPressed?.call();
-        } else if (index < mobileActionMenus.length + more.length) {
-          menus[index - mobileActionMenus.length].onPressed?.call();
-        }
+
+    final List<PopupMenuEntry<int>> more = [];
+    int idx = 0;
+    if (mobileActionMenus.isNotEmpty) {
+      for (final m in mobileActionMenus) {
+        more.add(PopupMenuItem<int>(child: m.getChild(), value: idx++));
       }
-    }();
+      more.add(const PopupMenuDivider());
+    }
+    if (chatMenus.isNotEmpty) {
+      for (final m in chatMenus) {
+        more.add(PopupMenuItem<int>(child: m.getChild(), value: idx++));
+      }
+      more.add(const PopupMenuDivider());
+    }
+    for (final m in menus) {
+      more.add(PopupMenuItem<int>(child: m.getChild(), value: idx++));
+    }
+
+    final selected = await showMenu<int>(
+      context: context,
+      position: RelativeRect.fromLTRB(x, y, x, y),
+      items: more,
+      elevation: 8,
+    );
+    if (selected != null && selected >= 0 && selected < allMenus.length) {
+      allMenus[selected].onPressed?.call();
+    }
   }
 
   onPressedTextChat(String id) {
@@ -1512,6 +1610,8 @@ class KeyHelpTools extends StatefulWidget {
   final bool keyboardIsVisible;
   final bool showGestureHelp;
   final bool embedded;
+  final bool? collapsed;
+  final ValueChanged<bool>? onCollapseToggle;
   final ValueChanged<bool>? onExpandToggle;
 
   KeyHelpTools({
@@ -1520,6 +1620,8 @@ class KeyHelpTools extends StatefulWidget {
     required this.keyboardIsVisible,
     required this.showGestureHelp,
     this.embedded = false,
+    this.collapsed,
+    this.onCollapseToggle,
     this.onExpandToggle,
   });
 
@@ -1548,10 +1650,18 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
   Orientation? _previousOrientation;
 
   @override
+  void didUpdateWidget(KeyHelpTools oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.collapsed != null && widget.collapsed != oldWidget.collapsed) {
+      _collapsed = widget.collapsed!;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
-    _collapsed =
-        bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y';
+    _collapsed = widget.collapsed ??
+        (bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y');
     if (widget.onExpandToggle != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         widget.onExpandToggle!(_fn);
@@ -1809,68 +1919,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     if (!widget.embedded && _collapsed) {
       gFFI.cursorModel
           .keyHelpToolsVisibilityChanged(null, widget.keyboardIsVisible);
-      final size = MediaQuery.of(context).size;
-      final curPos = _isCollapsedPosInit
-          ? _collapsedPos
-          : Offset(max(0.0, size.width - 64 - 10), 10);
-      return Positioned(
-        left: curPos.dx,
-        top: curPos.dy,
-        child: Listener(
-          onPointerDown: (event) {
-            _collapsedDragStartPos = event.position;
-            _isCollapsedDragging = false;
-          },
-          onPointerMove: (event) {
-            if (!_isCollapsedDragging &&
-                (event.position - _collapsedDragStartPos).distance > 5) {
-              _isCollapsedDragging = true;
-            }
-            if (_isCollapsedDragging) {
-              final newPos = Offset(
-                (_collapsedPos.dx + event.delta.dx)
-                    .clamp(0.0, max(0.0, size.width - 64)),
-                (_collapsedPos.dy + event.delta.dy)
-                    .clamp(0.0, max(0.0, size.height - 36)),
-              );
-              setState(() {
-                _collapsedPos = newPos;
-              });
-            }
-          },
-          onPointerUp: (event) {
-            if (!_isCollapsedDragging) {
-              setState(() {
-                _collapsed = false;
-                bind.mainSetLocalOption(
-                    key: 'key_help_tools_collapsed', value: 'N');
-              });
-            } else {
-              _trySaveCollapsedPos();
-            }
-            _isCollapsedDragging = false;
-          },
-          onPointerCancel: (_) {
-            if (_isCollapsedDragging) _trySaveCollapsedPos();
-            _isCollapsedDragging = false;
-          },
-          child: Material(
-            color: const Color(0xBB000000),
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.keyboard_outlined, size: 16, color: Colors.white),
-                  SizedBox(width: 4),
-                  Icon(Icons.expand_more, size: 14, color: Colors.white70),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     final size = MediaQuery.of(context).size;
@@ -1982,6 +2031,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       onTap: () {
         setState(() {
           _collapsed = true;
+          widget.onCollapseToggle?.call(true);
           bind.mainSetLocalOption(key: 'key_help_tools_collapsed', value: 'Y');
         });
       },
