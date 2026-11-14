@@ -43,6 +43,8 @@ void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
   }
 }
 
+final RxBool _autoPopupKeyboardOnText = false.obs;
+
 class RemotePage extends StatefulWidget {
   RemotePage(
       {Key? key,
@@ -136,7 +138,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _mobileFocusNode = FocusNode();
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
-  final _autoPopupKeyboardOnText = false.obs;
   StreamSubscription? _textCursorSubscription;
 
   InputModel get inputModel => gFFI.inputModel;
@@ -2362,6 +2363,7 @@ class CursorPaint extends StatelessWidget {
 
 void showOptions(
     BuildContext context, String id, OverlayDialogManager dialogManager) async {
+  final isZh = localeName.startsWith('zh');
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();
