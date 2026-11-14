@@ -29,6 +29,25 @@ This modified edition integrates several core productivity enhancements based on
 - **Single App Window Remote Control (Single App Mode)**: Allows capturing and controlling only a single specified application window instead of the entire desktop, delivering an immersive, borderless native-like experience on mobile devices.
 - **Android Secondary Display (USB Cast Mode)**: Leverages high-speed physical USB connection to extend an Android phone/tablet as an independent virtual secondary monitor for Windows with <0.5ms latency and full physical bandwidth, featuring automatic wake-up, resolution/position persistence, and in-app ADB service management.
 
+### Ultra-Low Latency Secondary Display with VDD (Virtual Display Driver)
+
+For the lowest possible latency and smooth 120Hz/144Hz refresh rate when using your Android tablet/phone as a secondary monitor, we highly recommend using **VDD (Virtual Display Driver / VDD Control)**:
+
+- **Why VDD?**: VDD is built on Microsoft's modern Indirect Display Driver (IddCx) architecture. It enables native GPU hardware rendering, direct DXGI Desktop Duplication frame grabbing, custom tablet resolutions (such as 16:10 `1920x1200` or `2560x1600`), and unlocks up to 120Hz/144Hz refresh rates, slashing input-to-display latency to under 2ms.
+- **Recommended Release**: [VDD Control & Virtual-Display-Driver v25.7.23](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23).
+
+#### Quick Setup Guide:
+1. **Download & Extract**: Grab the latest release archive from [Virtual-Display-Driver Releases (v25.7.23)](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23) and unpack it.
+2. **Install Driver**: Right-click `install.bat` and select **Run as Administrator** to import certificates and register the virtual display driver.
+3. **Configure Resolution & Refresh Rate in VDD Control**:
+   - Launch `VDD Control` (or edit `vdd_settings.xml`).
+   - Add your tablet's native resolution and desired high refresh rate (e.g., `1920 x 1200 @ 120Hz` or `2560 x 1600 @ 120Hz`).
+   - Enable at least one virtual display.
+4. **Select VDD in RustDesk**:
+   - In RustDesk Windows client, go to **Settings** -> **General/Other** -> **Virtual display driver** and select **VDD** (click the **VDD Guide** button on the right for quick reference).
+5. **Connect & Enjoy**:
+   - Plug in your Android device via USB (or initiate a secondary display session). RustDesk will automatically detect, configure, and reuse the active VDD display at full 120FPS with hardware direct streaming!
+
 below are the screenshots of set remote screen to 16:9 and 16:10 on 3:2 tablets.
 
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)

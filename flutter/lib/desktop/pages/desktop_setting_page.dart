@@ -599,6 +599,8 @@ class _GeneralState extends State<_General> {
     if (isWindows) {
       const driverKeys = ['auto', 'vdd', 'amyuni'];
       final driver = bind.mainGetOptionSync(key: kOptionUsbDisplayDriver);
+      final currentDriver =
+          driverKeys.contains(driver) ? driver : driverKeys.first;
       children.add(
         Padding(
           padding: const EdgeInsets.symmetric(
@@ -610,14 +612,34 @@ class _GeneralState extends State<_General> {
               ComboBox(
                 keys: driverKeys,
                 values: [translate('Auto'), 'VDD', 'Amyuni'],
-                initialKey:
-                    driverKeys.contains(driver) ? driver : driverKeys.first,
+                initialKey: currentDriver,
                 onChanged: (key) async {
                   await bind.mainSetOption(
                       key: kOptionUsbDisplayDriver, value: key);
                   setState(() {});
                 },
               ),
+              if (currentDriver == 'vdd') ...[
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    minimumSize: const Size(0, 32),
+                    side: BorderSide(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.5)),
+                  ),
+                  icon: const Icon(Icons.help_outline, size: 16),
+                  label: Text(
+                    localeName.startsWith('zh') ? 'VDD 配置指南' : 'VDD Guide',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  onPressed: () => showVddGuideDialog(context),
+                ),
+              ],
             ],
           ),
         ),
@@ -3157,6 +3179,161 @@ void changeSocks5Proxy() async {
       ],
       onSubmit: submit,
       onCancel: close,
+    );
+  });
+}
+
+Widget _buildVddGuideStep(
+  BuildContext context, {
+  required String step,
+  required String title,
+  required String desc,
+}) {
+  final primaryColor = Theme.of(context).colorScheme.primary;
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 10,
+          backgroundColor: primaryColor,
+          child: Text(
+            step,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                desc,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).textTheme.bodySmall?.color ??
+                      Colors.grey,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void showVddGuideDialog(BuildContext context) {
+  final isZh = localeName.startsWith('zh');
+  const vddReleaseUrl =
+      'https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23';
+
+  gFFI.dialogManager.show((setState, close, ctx) {
+    return CustomAlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.monitor, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            isZh ? 'VDD 虚拟显示驱动安装与极速配置指南' : 'VDD Virtual Display Driver Guide',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+      contentBoxConstraints:
+          const BoxConstraints(maxWidth: 620, maxHeight: 520),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color:
+                      Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                ),
+              ),
+              child: Text(
+                isZh
+                    ? '💡 优势原理：VDD (Virtual-Display-Driver) 基于微软 IddCx 架构，支持原生 GPU 硬件加速与 DXGI 显存直通抓屏，可解锁 120Hz/144Hz 高刷并完美匹配平板原生分辨率（如 16:10 1920x1200），比通用虚拟驱动延迟更低、操作更加丝滑跟手。'
+                    : '💡 Why VDD: Virtual-Display-Driver uses Microsoft IddCx indirect display architecture with native GPU acceleration and zero-copy DXGI capture, supporting 120Hz/144Hz and custom tablet aspect ratios for ultra-low latency.',
+                style: const TextStyle(fontSize: 13, height: 1.45),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isZh ? '【安装与配置指南】' : '【Installation & Setup Steps】',
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            const SizedBox(height: 10),
+            _buildVddGuideStep(
+              context,
+              step: '1',
+              title: isZh ? '下载驱动包与 VDD Control 控制台' : 'Download VDD & VDD Control',
+              desc: isZh
+                  ? '点击下方“打开发布页”按钮进入 GitHub，下载 Virtual-Display-Driver (包含 VDD Control) 并解压到电脑本地。'
+                  : 'Click "Open GitHub Release" below to download Virtual-Display-Driver (with VDD Control) and extract it.',
+            ),
+            _buildVddGuideStep(
+              context,
+              step: '2',
+              title: isZh ? '安装驱动程序' : 'Install Driver',
+              desc: isZh
+                  ? '右键以管理员身份运行解压目录中的 install.bat 或驱动安装程序，根据提示完成证书导入与驱动安装。'
+                  : 'Right click install.bat and Run as Administrator to import certificate and register the IddCx driver.',
+            ),
+            _buildVddGuideStep(
+              context,
+              step: '3',
+              title: isZh ? '在 VDD Control 中配置平板高刷分辨率' : 'Configure Resolution & 120Hz',
+              desc: isZh
+                  ? '运行 VDD Control (或编辑 vdd_settings.xml)，添加匹配你平板屏幕的原生分辨率与高刷新率（例如 1920x1200 @ 120Hz 或 2560x1600 @ 120Hz），并开启至少 1 个虚拟屏幕。'
+                  : 'Open VDD Control (or edit vdd_settings.xml), add your tablet resolution (e.g. 1920x1200 or 2560x1600 @ 120Hz), and enable at least 1 virtual display.',
+            ),
+            _buildVddGuideStep(
+              context,
+              step: '4',
+              title: isZh ? 'RustDesk 自动极速接管' : 'Enjoy Low Latency in RustDesk',
+              desc: isZh
+                  ? '当前虚拟显示器驱动保持选择“VDD”。插上 USB 数据线或发起副屏连接，RustDesk 会自动识别并复用 VDD 虚拟显示器，以 120FPS 极速帧率流畅运行！'
+                  : 'Keep "VDD" selected. When connecting via USB or secondary display, RustDesk will automatically reuse the VDD display at 120FPS.',
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        dialogButton(
+          isZh ? '打开下载页面 (GitHub)' : 'Open GitHub Release',
+          icon: const Icon(Icons.open_in_new, size: 16),
+          onPressed: () async {
+            await launchUrl(Uri.parse(vddReleaseUrl));
+          },
+        ),
+        dialogButton(
+          'Close',
+          isOutline: true,
+          onPressed: close,
+        ),
+      ],
     );
   });
 }

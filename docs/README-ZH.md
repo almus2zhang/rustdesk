@@ -30,6 +30,25 @@
 - **单程序远程操控 (Single App Mode)**：支持仅捕获和独立传输电脑端的单个指定应用程序窗口，画面靠齐无冗余桌面黑边，在手机/平板上实现如原生 App 般的沉浸式操控体验。
 - **安卓设备当独立副屏 (USB 设备投屏)**：支持物理 USB 数据线免驱连接，将 Android 手机/平板极速扩展为 Windows 电脑的独立虚拟副屏。独享数百兆物理带宽与低于 0.5ms 超低延迟，免去物理显卡欺骗锁，支持自动唤醒、位置分辨率自动记忆与软件内一键重启 ADB 服务。
 
+### 借助 VDD 虚拟显示驱动获得极致低延迟副屏体验
+
+为了在将安卓手机/平板作为电脑副屏时获得极致的流畅度与更低的操作延迟，强烈推荐配合 **VDD (Virtual Display Driver / VDD Control)** 使用：
+
+- **为什么推荐 VDD？**：VDD 基于微软现代 IddCx (Indirect Display Driver) 架构，支持原生 GPU 硬件加速渲染与 DXGI 显存直通零拷贝抓屏。它不仅支持自定义任意平板专属原生分辨率（如 16:10 的 `1920x1200` 或 `2560x1600`），更可解锁 120Hz / 144Hz 高刷新率，相比通用虚拟驱动延迟大幅降低，触控跟手感显著提升。
+- **推荐版本与工具**：[VDD Control & Virtual-Display-Driver v25.7.23](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23)。
+
+#### 快速安装与配置指南：
+1. **下载解压**：访问 [Virtual-Display-Driver Release v25.7.23](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23) 下载压缩包并解压至本地。
+2. **安装驱动**：右键以管理员身份运行解压目录中的 `install.bat`，根据提示完成证书导入与虚拟显卡驱动注册。
+3. **在 VDD Control 中配置平板高刷分辨率**：
+   - 打开 `VDD Control`（或修改 `vdd_settings.xml`）。
+   - 添加匹配你平板屏幕的原生分辨率与高刷新率（例如 `1920 x 1200 @ 120Hz` 或 `2560 x 1600 @ 120Hz`）。
+   - 保持开启至少 1 个虚拟屏幕。
+4. **RustDesk 设置**：
+   - 在 RustDesk Windows 端：进入 **设置** -> **常规/其他** -> **虚拟显示器驱动**，选择 **VDD**（选项右侧设有“VDD 配置指南”按钮可随时查阅）。
+5. **即插即用**：
+   - 插入 USB 数据线（或开启无线副屏），RustDesk 会自动极速识别并复用该 VDD 虚拟屏幕，享受 120FPS 超低延迟副屏投屏！
+
 以下是在 3:2 比例平板上将远程屏幕设置为 16:9 和 16:10 比例的截图：
 
 ![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
