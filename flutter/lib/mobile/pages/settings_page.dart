@@ -697,7 +697,7 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
       ));
 
       enhancementsTiles.add(_getPopupDialogRadioEntry(
-        title: isZh ? '软键盘光标间距 / Keyboard cursor margin' : 'Keyboard cursor margin',
+        title: '软键盘光标间距 / Keyboard cursor margin',
         list: [
           _RadioEntry('10 px', '10'),
           _RadioEntry('20 px', '20'),
