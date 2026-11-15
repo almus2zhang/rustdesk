@@ -3749,7 +3749,8 @@ class CursorModel with ChangeNotifier {
     if (image == null) {
       return;
     }
-    if (await _updateCache(rgba, image, id, hotx, hoty, width, height)) {
+    final isTextHint = evt['is_text'] == 'true';
+    if (await _updateCache(rgba, image, id, hotx, hoty, width, height, isTextHint: isTextHint)) {
       _images[id]?.item1.dispose();
       _images[id] = Tuple3(image, hotx, hoty);
     }
@@ -3766,8 +3767,9 @@ class CursorModel with ChangeNotifier {
     double hotx,
     double hoty,
     int w,
-    int h,
-  ) async {
+    int h, {
+    bool isTextHint = false,
+  }) async {
     Uint8List? data;
     img2.Image imgOrigin = img2.Image.fromBytes(
         width: w, height: h, bytes: rgba.buffer, order: img2.ChannelOrder.rgba);
@@ -3781,7 +3783,6 @@ class CursorModel with ChangeNotifier {
       }
       data = imgBytes.buffer.asUint8List();
     }
-    final isTextHint = isWindows && (evt['is_text'] == 'true');
     final cache = CursorData(
       peerId: peerId,
       id: id,

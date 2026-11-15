@@ -991,7 +991,7 @@ mod windows {
         device_names
     }
 
-    fn device_string_of(name: &str) -> Option<String> {
+    pub fn device_string_of(name: &str) -> Option<String> {
         let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
         dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
         let mut i_dev_num = 0;
