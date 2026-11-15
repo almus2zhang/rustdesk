@@ -665,6 +665,7 @@ impl InvokeUiSession for FlutterHandler {
     fn set_cursor_data(&self, cd: CursorData) {
         let colors = hbb_common::compress::decompress(&cd.colors);
         let is_text = crate::platform::is_text_cursor(cd.id);
+        let is_text_str = if is_text { "true".to_string() } else { "false".to_string() };
         self.push_event(
             "cursor_data",
             &[
@@ -677,7 +678,7 @@ impl InvokeUiSession for FlutterHandler {
                     "colors",
                     &serde_json::ser::to_string(&colors).unwrap_or("".to_owned()),
                 ),
-                ("is_text", if is_text { "true" } else { "false" }),
+                ("is_text", &is_text_str),
             ],
             &[],
         );
@@ -685,11 +686,12 @@ impl InvokeUiSession for FlutterHandler {
 
     fn set_cursor_id(&self, id: String) {
         let is_text = crate::platform::is_text_cursor(id.parse::<u64>().unwrap_or(0));
+        let is_text_str = if is_text { "true".to_string() } else { "false".to_string() };
         self.push_event(
             "cursor_id",
             &[
                 ("id", &id.to_string()),
-                ("is_text", if is_text { "true" } else { "false" }),
+                ("is_text", &is_text_str),
             ],
             &[],
         );

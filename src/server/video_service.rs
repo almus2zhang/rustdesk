@@ -76,6 +76,7 @@ lazy_static::lazy_static! {
     static ref DISPLAY_CONN_IDS: Arc<Mutex<HashMap<usize, HashSet<i32>>>> = Default::default();
     pub static ref VIDEO_QOS: Arc<Mutex<VideoQoS>> = Default::default();
     static ref SERVER_PERF_MS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+    static ref CURRENT_DRIVER_ID: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
     pub static ref IS_UAC_RUNNING: Arc<Mutex<bool>> = Default::default();
     pub static ref IS_FOREGROUND_WINDOW_ELEVATED: Arc<Mutex<bool>> = Default::default();
     static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
@@ -553,6 +554,7 @@ fn get_capturer_monitor(
     };
     #[cfg(not(windows))]
     let driver_id = 0u8;
+    CURRENT_DRIVER_ID.store(driver_id, std::sync::atomic::Ordering::Relaxed);
     log::debug!(
         "#displays={}, current={}, origin: {:?}, width={}, height={}, cpus={}/{}, name:{}",
         ndisplay,
@@ -1287,6 +1289,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 crate::server::connection::is_loopback_active(),
                 crate::server::connection::is_usb_display_active(),
             );
+            let driver_id = CURRENT_DRIVER_ID.load(std::sync::atomic::Ordering::Relaxed);
             set_last_server_perf(perf_cap_ms / count, perf_conv_ms / count, perf_enc_ms / count, driver_id);
             perf_wouldblock = 0;
             perf_frames = 0;
