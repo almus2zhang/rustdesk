@@ -179,6 +179,16 @@ pub fn clip_cursor(rect: Option<(i32, i32, i32, i32)>) -> bool {
 
 pub fn reset_input_cache() {}
 
+lazy_static::lazy_static! {
+    static ref IDC_IBEAM_CURSOR: u64 = unsafe {
+        winapi::um::winuser::LoadCursorW(std::ptr::null_mut(), winapi::um::winuser::IDC_IBEAM) as u64
+    };
+}
+
+pub fn is_text_cursor(hcursor: u64) -> bool {
+    hcursor != 0 && hcursor == *IDC_IBEAM_CURSOR
+}
+
 pub fn get_cursor() -> ResultType<Option<u64>> {
     unsafe {
         #[allow(invalid_value)]

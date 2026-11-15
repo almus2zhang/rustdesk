@@ -664,6 +664,7 @@ impl FlutterHandler {
 impl InvokeUiSession for FlutterHandler {
     fn set_cursor_data(&self, cd: CursorData) {
         let colors = hbb_common::compress::decompress(&cd.colors);
+        let is_text = crate::platform::is_text_cursor(cd.id);
         self.push_event(
             "cursor_data",
             &[
@@ -676,13 +677,22 @@ impl InvokeUiSession for FlutterHandler {
                     "colors",
                     &serde_json::ser::to_string(&colors).unwrap_or("".to_owned()),
                 ),
+                ("is_text", if is_text { "true" } else { "false" }),
             ],
             &[],
         );
     }
 
     fn set_cursor_id(&self, id: String) {
-        self.push_event("cursor_id", &[("id", &id.to_string())], &[]);
+        let is_text = crate::platform::is_text_cursor(id.parse::<u64>().unwrap_or(0));
+        self.push_event(
+            "cursor_id",
+            &[
+                ("id", &id.to_string()),
+                ("is_text", if is_text { "true" } else { "false" }),
+            ],
+            &[],
+        );
     }
 
     fn set_cursor_position(&self, cp: CursorPosition) {

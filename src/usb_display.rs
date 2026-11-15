@@ -331,7 +331,6 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
                 existing
             } else {
                 ensure_vdd_resolution(width, height).ok();
-                send_vdd_pipe_command("SETDISPLAYCOUNT 1").ok();
                 let mut found = None;
                 for _ in 0..15 {
                     std::thread::sleep(Duration::from_millis(100));

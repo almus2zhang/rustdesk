@@ -3074,6 +3074,7 @@ class CursorData {
   double hoty;
   final int width;
   final int height;
+  final bool isTextHint;
 
   CursorData({
     required this.peerId,
@@ -3085,6 +3086,7 @@ class CursorData {
     required this.hotyOrigin,
     required this.width,
     required this.height,
+    this.isTextHint = false,
   })  : hotx = hotxOrigin * scale,
         hoty = hotxOrigin * scale;
 
@@ -3247,6 +3249,12 @@ class CursorModel with ChangeNotifier {
 
   void _checkIsTextCursor() {
     if (_cache != null) {
+      if (_cache!.isTextHint) {
+        if (!_isTextCursor.value) {
+          _isTextCursor.value = true;
+        }
+        return;
+      }
       final isIbeam = _detectIsIbeam(_cache!);
       if (_isTextCursor.value != isIbeam) {
         _isTextCursor.value = isIbeam;
@@ -3260,11 +3268,6 @@ class CursorModel with ChangeNotifier {
 
   static bool _detectIsIbeam(CursorData data) {
     if (data.width <= 0 || data.height <= 0) return false;
-    final cx = data.width / 2.0;
-    final cy = data.height / 2.0;
-    if ((data.hotxOrigin - cx).abs() > 4 || (data.hotyOrigin - cy).abs() > 6) {
-      return false;
-    }
     final img = data.image;
     int minX = img.width, maxX = 0;
     int minY = img.height, maxY = 0;
@@ -3284,6 +3287,11 @@ class CursorModel with ChangeNotifier {
     if (nonTrans == 0) return false;
     final activeW = maxX - minX + 1;
     final activeH = maxY - minY + 1;
+    final midX = (minX + maxX) / 2.0;
+    final midY = (minY + maxY) / 2.0;
+    if ((data.hotxOrigin - midX).abs() > 6 || (data.hotyOrigin - midY).abs() > 8) {
+      return false;
+    }
     return activeH >= 10 && activeW <= 16 && (activeH / activeW) >= 1.2;
   }
 
@@ -3773,6 +3781,7 @@ class CursorModel with ChangeNotifier {
       }
       data = imgBytes.buffer.asUint8List();
     }
+    final isTextHint = isWindows && (evt['is_text'] == 'true');
     final cache = CursorData(
       peerId: peerId,
       id: id,
@@ -3783,6 +3792,7 @@ class CursorModel with ChangeNotifier {
       hotyOrigin: hoty,
       width: w,
       height: h,
+      isTextHint: isTextHint,
     );
     _cacheMap[id] = cache;
     return true;
@@ -3810,6 +3820,14 @@ class CursorModel with ChangeNotifier {
   }
 
   updateCursorId(Map<String, dynamic> evt) {
+    if (evt.containsKey('id')) {
+      _id = evt['id'].toString();
+    }
+    if (evt['is_text'] == 'true') {
+      _isTextCursor.value = true;
+    } else if (evt['is_text'] == 'false') {
+      _isTextCursor.value = false;
+    }
     if (!_updateCurData()) {
       debugPrint(
           'WARNING: updateCursorId $_id, cache is ${_cache == null ? "null" : "not null"}. without notifyListeners()');

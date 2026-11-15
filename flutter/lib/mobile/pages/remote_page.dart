@@ -713,12 +713,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     Widget buildBtn(
         {required Widget icon,
         required VoidCallback? onPressed,
+        VoidCallback? onLongPress,
         Color? backgroundColor,
         BorderRadius? borderRadius,
         String? tooltip}) {
       Widget btn = GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
+        onLongPress: onLongPress,
         child: Container(
           width: 38,
           height: 38,
@@ -772,6 +774,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           icon: const Icon(Icons.keyboard, color: Colors.white, size: 20),
           tooltip: translate('Keyboard'),
           onPressed: openKeyboard,
+          onLongPress: () async {
+            final cur = !_autoPopupKeyboardOnText.value;
+            _autoPopupKeyboardOnText.value = cur;
+            await bind.mainSetLocalOption(
+              key: 'auto_popup_keyboard_on_text',
+              value: cur ? 'true' : 'false',
+            );
+            BotToast.showText(
+              text: localeName.startsWith('zh')
+                  ? (cur ? '已开启光标变为文本时自动弹出软键盘' : '已关闭文本光标自动弹出软键盘')
+                  : (cur ? 'Auto keyboard on text cursor enabled' : 'Auto keyboard on text cursor disabled'),
+            );
+          },
         ),
       // 3.1 Shortcut Keys (Key Help Tools) toggle
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
@@ -2370,6 +2385,8 @@ class CursorPaint extends StatelessWidget {
 void showOptions(
     BuildContext context, String id, OverlayDialogManager dialogManager) async {
   final isZh = localeName.startsWith('zh');
+  _autoPopupKeyboardOnText.value =
+      bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();

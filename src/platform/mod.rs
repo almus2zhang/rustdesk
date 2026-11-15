@@ -8,6 +8,11 @@ pub use windows::*;
 #[cfg(windows)]
 pub mod windows;
 
+#[cfg(not(windows))]
+pub fn is_text_cursor(_hcursor: u64) -> bool {
+    false
+}
+
 #[cfg(windows)]
 pub mod win_device;
 
