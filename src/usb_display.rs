@@ -370,18 +370,19 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
         y = 0;
     }
 
-    crate::platform::windows::attach_display_to_desktop(&name, x, y, width, height).ok();
-    let (w, h) =
-        closest_resolution(&name, width, height).unwrap_or((width as usize, height as usize));
-    if let Err(e) = crate::platform::change_resolution(&name, w, h) {
-        log::warn!(
-            "Failed to set VDD display '{}' to {}x{}: {:?}",
-            name,
-            w,
-            h,
-            e
-        );
-    }
+    let (target_w, target_h) = closest_resolution(&name, width, height)
+        .unwrap_or((width as usize, height as usize));
+
+    crate::platform::windows::attach_display_to_desktop(
+        &name,
+        x,
+        y,
+        target_w as u32,
+        target_h as u32,
+    )?;
+
+    std::thread::sleep(Duration::from_millis(150));
+
     if x != 0 || y != 0 {
         crate::platform::windows::set_display_position(&name, x, y).ok();
     }
@@ -394,8 +395,8 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
         name,
         x,
         y,
-        w,
-        h,
+        target_w,
+        target_h,
         width,
         height
     );
@@ -409,7 +410,9 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
         let driver = secondary_driver();
         if driver != SecondaryDriver::Amyuni {
             if let Some(name) = virtual_display_manager::find_vdd_display() {
-                return plug_in_vdd_display(Some(&name), width, height);
+                if let Ok(idx) = plug_in_vdd_display(Some(&name), width, height) {
+                    return Ok(idx);
+                }
             }
             if driver == SecondaryDriver::Vdd
                 || get_vdd_settings_path().exists()

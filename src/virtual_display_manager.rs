@@ -54,7 +54,8 @@ pub fn is_virtual_display(name: &str) -> bool {
 /// Whether `name` belongs to the MikeTheTech VDD monitor specifically.
 #[cfg(target_os = "windows")]
 pub fn is_vdd_display(name: &str) -> bool {
-    windows::device_string_matches(name, VDD_DEVICE_STRING.trim_end_matches('\0'))
+    windows::device_string_matches(name, "Virtual Display Driver")
+        || windows::device_string_matches(name, "mttvdd")
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -929,14 +930,16 @@ mod windows {
     const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
     #[inline]
+    pub(super) fn from_wide(slice: &[u16]) -> String {
+        let len = slice.iter().position(|&c| c == 0).unwrap_or(slice.len());
+        String::from_utf16_lossy(&slice[..len]).trim().to_string()
+    }
+
+    #[inline]
     pub(super) fn is_device_name(device_name: &str, name: &str) -> bool {
-        if name.len() == device_name.len() {
-            name == device_name
-        } else if name.len() > device_name.len() {
-            false
-        } else {
-            &device_name[..name.len()] == name && device_name.as_bytes()[name.len() as usize] == 0
-        }
+        let d1 = device_name.trim_matches('\0').trim();
+        let d2 = name.trim_matches('\0').trim();
+        d1.eq_ignore_ascii_case(d2)
     }
 
     pub(super) fn get_device_names(device_string: Option<&str>) -> Vec<String> {
@@ -975,17 +978,15 @@ mod windows {
                 continue;
             }
 
-            if let (Ok(device_name), Ok(ds)) = (
-                String::from_utf16(&dd.DeviceName),
-                String::from_utf16(&dd.DeviceString),
-            ) {
-                if let Some(s) = device_string {
-                    if ds.len() >= s.len() && &ds[..s.len()] == s {
-                        device_names.push(device_name);
-                    }
-                } else {
-                    device_names.push(device_name);
+            let dev_name = from_wide(&dd.DeviceName);
+            let ds = from_wide(&dd.DeviceString);
+            if let Some(s) = device_string {
+                let s_clean = s.trim_matches('\0').trim();
+                if ds.to_lowercase().contains(&s_clean.to_lowercase()) {
+                    device_names.push(dev_name);
                 }
+            } else {
+                device_names.push(dev_name);
             }
         }
         device_names
@@ -1000,21 +1001,18 @@ mod windows {
                 break;
             }
             i_dev_num += 1;
-            let Ok(dev_name) = String::from_utf16(&dd.DeviceName) else {
-                continue;
-            };
+            let dev_name = from_wide(&dd.DeviceName);
             if is_device_name(&dev_name, name) {
-                if let Ok(ds) = String::from_utf16(&dd.DeviceString) {
-                    let ds_clean = ds.trim_matches('\0').trim();
-                    if !ds_clean.is_empty() {
-                        return Some(ds_clean.to_string());
-                    }
+                let ds = from_wide(&dd.DeviceString);
+                if !ds.is_empty() {
+                    return Some(ds);
                 }
                 let mut dd_mon: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
                 dd_mon.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
                 if unsafe { EnumDisplayDevicesW(dd.DeviceName.as_ptr(), 0, &mut dd_mon, 0) } != 0 {
-                    if let Ok(ds_mon) = String::from_utf16(&dd_mon.DeviceString) {
-                        return Some(ds_mon.trim_matches('\0').trim().to_string());
+                    let ds_mon = from_wide(&dd_mon.DeviceString);
+                    if !ds_mon.is_empty() {
+                        return Some(ds_mon);
                     }
                 }
             }
@@ -1026,38 +1024,52 @@ mod windows {
         let mut dd: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
         dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
         let mut i_dev_num = 0;
+        let mut vdd_candidates: Vec<(String, bool)> = Vec::new();
         loop {
             if unsafe { EnumDisplayDevicesW(null_mut(), i_dev_num, &mut dd, 0) } == 0 {
                 break;
             }
             i_dev_num += 1;
-            if (dd.StateFlags & 8) > 0 {
+            let dev_name = from_wide(&dd.DeviceName);
+            if dev_name.is_empty() {
                 continue;
             }
-            let Ok(dev_name) = String::from_utf16(&dd.DeviceName) else {
-                continue;
-            };
-            let dev_name = dev_name.trim_matches('\0').trim().to_string();
 
-            if let Ok(ds) = String::from_utf16(&dd.DeviceString) {
-                let ds = ds.trim_matches('\0').trim().to_lowercase();
-                if ds.contains("virtual display driver") || ds.contains("mttvdd") {
-                    return Some(dev_name);
-                }
-            }
+            let ds = from_wide(&dd.DeviceString).to_lowercase();
+            let dev_id = from_wide(&dd.DeviceID).to_lowercase();
+            let dev_key = from_wide(&dd.DeviceKey).to_lowercase();
+            let mut is_vdd = ds.contains("virtual display driver")
+                || ds.contains("mttvdd")
+                || dev_id.contains("mttvdd")
+                || dev_id.contains("virtual display driver")
+                || dev_key.contains("mttvdd");
 
-            let mut dd_mon: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
-            dd_mon.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
-            if unsafe { EnumDisplayDevicesW(dd.DeviceName.as_ptr(), 0, &mut dd_mon, 0) } != 0 {
-                if let Ok(ds_mon) = String::from_utf16(&dd_mon.DeviceString) {
-                    let ds_mon = ds_mon.trim_matches('\0').trim().to_lowercase();
-                    if ds_mon.contains("virtual display driver") || ds_mon.contains("mttvdd") {
-                        return Some(dev_name);
+            if !is_vdd {
+                let mut dd_mon: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+                dd_mon.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+                if unsafe { EnumDisplayDevicesW(dd.DeviceName.as_ptr(), 0, &mut dd_mon, 0) } != 0 {
+                    let ds_mon = from_wide(&dd_mon.DeviceString).to_lowercase();
+                    let mon_id = from_wide(&dd_mon.DeviceID).to_lowercase();
+                    if ds_mon.contains("virtual display driver")
+                        || ds_mon.contains("mttvdd")
+                        || mon_id.contains("mttvdd")
+                        || mon_id.contains("virtual display driver")
+                    {
+                        is_vdd = true;
                     }
                 }
             }
+
+            if is_vdd {
+                let is_attached = (dd.StateFlags & 1) != 0;
+                vdd_candidates.push((dev_name, is_attached));
+            }
         }
-        None
+
+        if let Some((dev_name, _)) = vdd_candidates.iter().find(|(_, attached)| !*attached) {
+            return Some(dev_name.clone());
+        }
+        vdd_candidates.last().map(|(dev_name, _)| dev_name.clone())
     }
 
     pub(super) fn device_string_matches(name: &str, needle: &str) -> bool {

@@ -4201,6 +4201,14 @@ impl Connection {
 
     #[cfg(windows)]
     async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
+        if self.is_secondary_session || crate::usb_display::is_usb_display_active() {
+            log::info!(
+                "Ignoring toggle_virtual_display (display={}, on={}) during secondary display session to avoid duplicate virtual display",
+                t.display,
+                t.on
+            );
+            return;
+        }
         let make_msg = |text: String| {
             let mut msg_out = Message::new();
             let res = MessageBox {
@@ -4309,6 +4317,11 @@ impl Connection {
                             displays
                                 .iter()
                                 .position(|d| crate::usb_display::is_this_usb_display(&d.name()))
+                                .or_else(|| {
+                                    displays.iter().position(|d| {
+                                        crate::virtual_display_manager::is_vdd_display(&d.name())
+                                    })
+                                })
                                 .unwrap_or(displays.len().saturating_sub(1))
                         };
 

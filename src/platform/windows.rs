@@ -3165,13 +3165,72 @@ pub fn attach_display_to_desktop(
         dm.u1.s2_mut().dmPosition.y = y as _;
         const CDS_UPDATEREGISTRY: DWORD = 0x00000001;
         const CDS_NORESET: DWORD = 0x10000000;
-        let res = ChangeDisplaySettingsExW(
+        let mut res = ChangeDisplaySettingsExW(
             device_name.as_ptr(),
             &mut dm,
             NULL as _,
             CDS_UPDATEREGISTRY | CDS_NORESET,
             NULL as _,
         );
+        if res != DISP_CHANGE_SUCCESSFUL {
+            log::warn!(
+                "ChangeDisplaySettingsExW attempt for '{}' ({}x{} at {},{}) returned {}, scanning supported modes",
+                name, width, height, x, y, res
+            );
+            let mut enum_dm: DEVMODEW = std::mem::zeroed();
+            enum_dm.dmSize = std::mem::size_of::<DEVMODEW>() as _;
+            let mut mode_idx = 0;
+            let mut best_mode: Option<(u32, u32)> = None;
+            let target_ratio = width as f64 / height.max(1) as f64;
+            let mut best_score = f64::MAX;
+
+            while EnumDisplaySettingsW(device_name.as_ptr(), mode_idx, &mut enum_dm) != 0 {
+                let mw = enum_dm.dmPelsWidth;
+                let mh = enum_dm.dmPelsHeight;
+                if mw > 0 && mh > 0 {
+                    let dw = mw as f64 - width as f64;
+                    let dh = mh as f64 - height as f64;
+                    let ratio_penalty = ((mw as f64 / mh as f64) - target_ratio).abs() * width.max(height) as f64;
+                    let score = dw * dw + dh * dh + ratio_penalty * ratio_penalty;
+                    if score < best_score {
+                        best_score = score;
+                        best_mode = Some((mw, mh));
+                    }
+                }
+                mode_idx += 1;
+            }
+
+            if let Some((bw, bh)) = best_mode {
+                log::info!("attach_display_to_desktop: retrying with supported mode {}x{}", bw, bh);
+                dm.dmPelsWidth = bw as _;
+                dm.dmPelsHeight = bh as _;
+                res = ChangeDisplaySettingsExW(
+                    device_name.as_ptr(),
+                    &mut dm,
+                    NULL as _,
+                    CDS_UPDATEREGISTRY | CDS_NORESET,
+                    NULL as _,
+                );
+            }
+
+            if res != DISP_CHANGE_SUCCESSFUL {
+                for (fw, fh) in [(1920, 1080), (1920, 1200), (1280, 720), (2560, 1440)] {
+                    dm.dmPelsWidth = fw;
+                    dm.dmPelsHeight = fh;
+                    res = ChangeDisplaySettingsExW(
+                        device_name.as_ptr(),
+                        &mut dm,
+                        NULL as _,
+                        CDS_UPDATEREGISTRY | CDS_NORESET,
+                        NULL as _,
+                    );
+                    if res == DISP_CHANGE_SUCCESSFUL {
+                        log::info!("attach_display_to_desktop: fallback succeeded with {}x{}", fw, fh);
+                        break;
+                    }
+                }
+            }
+        }
         ChangeDisplaySettingsExW(NULL as _, NULL as _, NULL as _, 0, NULL as _);
         if res == DISP_CHANGE_SUCCESSFUL {
             log::info!(
@@ -3179,8 +3238,8 @@ pub fn attach_display_to_desktop(
                 name,
                 x,
                 y,
-                width,
-                height
+                dm.dmPelsWidth,
+                dm.dmPelsHeight
             );
             return Ok(());
         }
