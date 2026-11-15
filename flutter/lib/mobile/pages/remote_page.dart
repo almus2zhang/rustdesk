@@ -98,6 +98,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         }
       }
     }
+    if (_showEdit || keyboardVisibilityController.isVisible) {
+      Timer(const Duration(milliseconds: 50), () {
+        if (mounted) _adjustCanvasForTextCursor();
+      });
+    }
   }
 
   Timer? _timer;
@@ -294,11 +299,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _autoPopupKeyboardOnText.value =
         bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
     _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
-      if (isText &&
-          _autoPopupKeyboardOnText.value &&
-          !_showEdit &&
-          !keyboardVisibilityController.isVisible) {
-        openKeyboard();
+      if (isText && _autoPopupKeyboardOnText.value) {
+        if (!_showEdit && !keyboardVisibilityController.isVisible) {
+          openKeyboard();
+        } else {
+          _adjustCanvasForTextCursor();
+        }
       }
     });
     gFFI.qualityMonitorModel.checkShowQualityMonitor(sessionId);
@@ -412,6 +418,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           if (mounted) _physicalFocusNode.requestFocus();
         });
       }
+      gFFI.canvasModel.restoreMobileOffsetAfterSoftKeyboard();
 
       // Workaround for iOS: physical keyboard input fails after virtual keyboard is hidden
       // https://github.com/flutter/flutter/issues/39900
@@ -436,6 +443,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
             overlays: isAndroid ? [] : SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
+      });
+      Timer(const Duration(milliseconds: 150), () {
+        if (mounted) _adjustCanvasForTextCursor();
+      });
+      Timer(const Duration(milliseconds: 300), () {
+        if (mounted) _adjustCanvasForTextCursor();
       });
     }
     // update for Scaffold
@@ -550,6 +563,37 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       char = 'VK_SPACE';
     }
     inputModel.inputKey(char);
+  }
+
+  void _closeSoftKeyboard() {
+    _showEdit = false;
+    gFFI.invokeMethod("enable_soft_keyboard", false);
+    _mobileFocusNode.unfocus();
+    if (isAndroid) {
+      _physicalFocusNode.requestFocus();
+    }
+    gFFI.canvasModel.restoreMobileOffsetAfterSoftKeyboard();
+    if (mounted) setState(() {});
+  }
+
+  void _adjustCanvasForTextCursor([double? forcedKeyboardHeight]) {
+    if (!_autoPopupKeyboardOnText.value) return;
+    if (!isTabletLayoutMode(context)) return;
+    if (!gFFI.cursorModel.isTextCursor.value) return;
+
+    final media = MediaQuery.of(context);
+    final viewInsetsBottom = forcedKeyboardHeight ?? media.viewInsets.bottom;
+    if (viewInsetsBottom <= 0) return;
+
+    final marginStr = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
+    final margin = double.tryParse(marginStr) ?? 30.0;
+    final screenH = media.size.height;
+    final keyboardTop = screenH - viewInsetsBottom;
+
+    gFFI.canvasModel.adjustForKeyboardAboveCursor(
+      keyboardTop: keyboardTop,
+      margin: margin,
+    );
   }
 
   void openKeyboard() {
@@ -1204,7 +1248,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   Listener(
                     behavior: HitTestBehavior.translucent,
                     onPointerDown: (event) {
-                      if (_showEdit) {
+                      final isText = gFFI.cursorModel.isTextCursor.value;
+                      final isKeyboardVisible =
+                          _showEdit || keyboardVisibilityController.isVisible;
+                      if (isKeyboardVisible && !isText) {
+                        _closeSoftKeyboard();
+                      } else if (_showEdit) {
                         _mobileFocusNode.requestFocus();
                       }
                     },
@@ -1301,10 +1350,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               } else {
                 // Instant tap response with zero arena timeout!
                 if (showKeyboardHideFab) {
-                  _showEdit = false;
-                  gFFI.invokeMethod("enable_soft_keyboard", false);
-                  _mobileFocusNode.unfocus();
-                  _physicalFocusNode.requestFocus();
+                  _closeSoftKeyboard();
                 } else if (_showGestureHelp) {
                   _showGestureHelp = false;
                 } else {
@@ -3240,6 +3286,27 @@ void showOptions(
                         value: val ? 'true' : 'false');
                   },
                 )),
+          if (isAndroid)
+            Obx(() {
+              if (!_autoPopupKeyboardOnText.value) return const SizedBox.shrink();
+              final curMargin = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
+              final marginDisplay = curMargin.isEmpty ? '30' : curMargin;
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                title: Text(
+                  isZh ? '软键盘光标间距' : 'Keyboard cursor margin',
+                  style: const TextStyle(fontSize: 14),
+                ),
+                trailing: Text(
+                  '$marginDisplay px',
+                  style: const TextStyle(fontSize: 14, color: Colors.blue),
+                ),
+                onTap: () {
+                  _showCursorMarginDialog(context, isZh);
+                },
+              );
+            }),
           const Divider(color: MyTheme.border),
           ...toggles,
           privacyModeWidget,
@@ -3249,6 +3316,36 @@ void showOptions(
   }, clickMaskDismiss: true, backDismiss: true).then((value) {
     _disableAndroidSoftKeyboard();
   });
+}
+
+void _showCursorMarginDialog(BuildContext context, bool isZh) {
+  final current = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
+  final selected = current.isEmpty ? '30' : current;
+  final options = ['10', '20', '30', '40', '50', '60', '80', '100'];
+  showDialog(
+    context: context,
+    builder: (ctx) {
+      return SimpleDialog(
+        title: Text(isZh ? '设置软键盘光标间距' : 'Set Keyboard Cursor Margin'),
+        children: options.map((opt) {
+          final label = opt == '30' ? '$opt px (默认 / Default)' : '$opt px';
+          return RadioListTile<String>(
+            title: Text(label),
+            value: opt,
+            groupValue: selected,
+            onChanged: (val) async {
+              if (val != null) {
+                await bind.mainSetLocalOption(
+                    key: 'keyboard_cursor_margin', value: val);
+                Navigator.of(ctx).pop();
+                gFFI.dialogManager.dismissAll();
+              }
+            },
+          );
+        }).toList(),
+      );
+    },
+  );
 }
 
 Resolution _getPhonePortraitDimensions(BuildContext context) {

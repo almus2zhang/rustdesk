@@ -3010,8 +3010,24 @@ class CanvasModel with ChangeNotifier {
 
   void saveMobileOffsetBeforeSoftKeyboard() {
     _timerMobileRestoreCanvasOffset?.cancel();
-    _offsetBeforeMobileSoftKeyboard = Offset(_x, _y);
-    _scaleBeforeMobileSoftKeyboard = _scale;
+    if (_offsetBeforeMobileSoftKeyboard == null) {
+      _offsetBeforeMobileSoftKeyboard = Offset(_x, _y);
+      _scaleBeforeMobileSoftKeyboard = _scale;
+    }
+  }
+
+  void adjustForKeyboardAboveCursor({required double keyboardTop, required double margin}) {
+    final cursorModel = parent.target?.cursorModel;
+    if (cursorModel == null) return;
+    saveMobileOffsetBeforeSoftKeyboard();
+    final targetCursorScreenY = keyboardTop - margin;
+    final adjust = getAdjustY();
+    final s = _scale;
+    final cursorY = cursorModel.y - cursorModel.hoty;
+    final targetY = targetCursorScreenY - cursorY * s - adjust;
+    _y = min(0.0, targetY);
+    isMobileCanvasChanged = true;
+    notifyListeners();
   }
 
   void restoreMobileOffsetAfterSoftKeyboard() {

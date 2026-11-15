@@ -3247,6 +3247,35 @@ pub fn attach_display_to_desktop(
     }
 }
 
+pub fn is_display_attached_to_desktop(name: &str) -> bool {
+    let device_name = str_to_device_name(name);
+    unsafe {
+        let mut dd: DISPLAY_DEVICEW = std::mem::zeroed();
+        dd.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+        let mut i = 0;
+        loop {
+            if EnumDisplayDevicesW(NULL as _, i, &mut dd, 0) == 0 {
+                break;
+            }
+            i += 1;
+            let mut match_name = true;
+            for (idx, &c) in device_name.iter().enumerate() {
+                if dd.DeviceName[idx] != c {
+                    match_name = false;
+                    break;
+                }
+                if c == 0 {
+                    break;
+                }
+            }
+            if match_name {
+                return (dd.StateFlags & 0x00000001) != 0;
+            }
+        }
+    }
+    false
+}
+
 pub fn get_next_desktop_right_edge() -> i32 {
     let mut max_right = 0;
     unsafe {

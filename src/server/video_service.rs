@@ -88,7 +88,7 @@ pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64, driver_id: u8) {
     let cap_t = (cap * 10.0).round().clamp(0.0, 65535.0) as i64;
     let conv_t = (conv * 10.0).round().clamp(0.0, 4095.0) as i64;
     let enc_t = (enc * 10.0).round().clamp(0.0, 4095.0) as i64;
-    let packed = (0x5045i64 << 48)
+    let packed = (0x5046i64 << 48)
         | ((driver_id as i64 & 0xff) << 40)
         | ((cap_t & 0xffff) << 24)
         | ((conv_t & 0xfff) << 12)
@@ -101,7 +101,8 @@ pub fn get_last_server_perf_packed() -> i64 {
 }
 
 pub fn unpack_server_perf(packed: i64) -> Option<(String, Option<String>)> {
-    if (packed >> 48) == 0x5045 {
+    let magic = ((packed >> 48) & 0xffff) as u16;
+    if magic == 0x5046 {
         let driver_id = ((packed >> 40) & 0xff) as u8;
         let cap_t = (((packed >> 24) & 0xffff) as f64) / 10.0;
         let conv_t = (((packed >> 12) & 0xfff) as f64) / 10.0;
@@ -118,6 +119,12 @@ pub fn unpack_server_perf(packed: i64) -> Option<(String, Option<String>)> {
             _ => None,
         };
         Some((format!("{:.1}/{:.1}/{:.1}", cap_t, conv_t, enc_t), driver_name))
+    } else if magic == 0x5045 {
+        // Backwards compatibility with previous version format (no driver_id, cap_t at bit 32)
+        let cap_t = (((packed >> 32) & 0xffff) as f64) / 10.0;
+        let conv_t = (((packed >> 16) & 0xffff) as f64) / 10.0;
+        let enc_t = ((packed & 0xffff) as f64) / 10.0;
+        Some((format!("{:.1}/{:.1}/{:.1}", cap_t, conv_t, enc_t), None))
     } else {
         None
     }

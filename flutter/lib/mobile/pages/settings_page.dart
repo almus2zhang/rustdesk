@@ -695,6 +695,30 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
           setState(() {});
         },
       ));
+
+      enhancementsTiles.add(_getPopupDialogRadioEntry(
+        title: isZh ? '软键盘光标间距 / Keyboard cursor margin' : 'Keyboard cursor margin',
+        list: [
+          _RadioEntry('10 px', '10'),
+          _RadioEntry('20 px', '20'),
+          _RadioEntry('30 px (默认 / Default)', '30'),
+          _RadioEntry('40 px', '40'),
+          _RadioEntry('50 px', '50'),
+          _RadioEntry('60 px', '60'),
+          _RadioEntry('80 px', '80'),
+          _RadioEntry('100 px', '100'),
+        ],
+        getter: () {
+          final m = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
+          if (m.isEmpty) return '30';
+          return m;
+        },
+        asyncSetter: (value) async {
+          await bind.mainSetLocalOption(
+              key: 'keyboard_cursor_margin', value: value);
+          setState(() {});
+        },
+      ));
     }
 
     final disabledSettings = bind.isDisableSettings();

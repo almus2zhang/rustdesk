@@ -29,6 +29,7 @@ lazy_static::lazy_static! {
     // Its geometry belongs to the user: never plug it out or restore per-peer
     // positions onto it.
     static ref USB_DISPLAY_REUSED_VDD: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
+    static ref USB_DISPLAY_WAS_ALREADY_ATTACHED: Arc<AtomicBool> = Arc::new(AtomicBool::new(false));
     static ref LAST_VDD_REFRESH: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
 }
 
@@ -370,6 +371,10 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
         y = 0;
     }
 
+    let was_attached = crate::platform::windows::is_display_attached_to_desktop(&name);
+    USB_DISPLAY_WAS_ALREADY_ATTACHED.store(was_attached, Ordering::SeqCst);
+    log::info!("VDD display '{}' pre-session attached status: {}", name, was_attached);
+
     let (target_w, target_h) = closest_resolution(&name, width, height)
         .unwrap_or((width as usize, height as usize));
 
@@ -562,15 +567,22 @@ pub fn plug_out_usb_display() -> ResultType<()> {
         idx_lock.take();
 
         if USB_DISPLAY_REUSED_VDD.load(Ordering::SeqCst) {
+            let was_attached = USB_DISPLAY_WAS_ALREADY_ATTACHED.load(Ordering::SeqCst);
             if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
-                log::info!(
-                    "Detaching VDD display '{}' from desktop so windows return to primary",
-                    dev_name
-                );
-                crate::platform::windows::detach_display_from_desktop(dev_name).ok();
+                if was_attached {
+                    log::info!(
+                        "VDD display '{}' was already attached prior to session; keeping it attached",
+                        dev_name
+                    );
+                } else {
+                    log::info!(
+                        "Detaching VDD display '{}' from desktop so windows return to primary",
+                        dev_name
+                    );
+                    crate::platform::windows::detach_display_from_desktop(dev_name).ok();
+                }
             }
-            // Do not call SETDISPLAYCOUNT 0; detaching the display returns windows to
-            // the primary screen while keeping the VDD driver and its pipe alive.
+            USB_DISPLAY_WAS_ALREADY_ATTACHED.store(false, Ordering::SeqCst);
         }
         // Only remove monitors this process actually created. Monitors added
         // by the user, by another process, or reused from a previous session
