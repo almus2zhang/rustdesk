@@ -728,6 +728,7 @@ impl InvokeUiSession for FlutterHandler {
                 ),
                 ("chroma", &status.chroma.map_or(NULL, |it| it.to_string())),
                 ("server_perf", &status.server_perf.unwrap_or(NULL)),
+                ("display_driver", &status.display_driver.unwrap_or(NULL)),
             ],
             &[],
         );

@@ -169,12 +169,7 @@ pub fn restore_usb_display_settings(peer_id: &str) {
 /// Check whether a given monitor display name is the USB virtual display
 pub fn is_this_usb_display(name: &str) -> bool {
     if let Some(dev_name) = USB_DISPLAY_DEVICE_NAME.lock().unwrap().as_ref() {
-        // Strict match only: "\\.\DISPLAY1" is a prefix of "\\.\DISPLAY10",
-        // so substring matching used to misidentify a physical monitor as the
-        // virtual one. The Amyuni DeviceString check below is the fallback.
-        if name == dev_name {
-            return true;
-        }
+        return name == dev_name;
     }
     #[cfg(windows)]
     {
@@ -329,26 +324,27 @@ pub fn ensure_vdd_resolution(w: u32, h: u32) -> ResultType<bool> {
 /// Plug in or attach MttVDD virtual display, restore per-client position, and set resolution.
 #[cfg(windows)]
 fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> ResultType<u32> {
-    ensure_vdd_resolution(width, height).ok();
-    send_vdd_pipe_command("SETDISPLAYCOUNT 1").ok();
-
     let name = match name_opt {
         Some(n) => n.to_string(),
         None => {
-            let mut found = virtual_display_manager::find_vdd_display();
-            if found.is_none() {
-                for _ in 0..10 {
+            if let Some(existing) = virtual_display_manager::find_vdd_display() {
+                existing
+            } else {
+                ensure_vdd_resolution(width, height).ok();
+                send_vdd_pipe_command("SETDISPLAYCOUNT 1").ok();
+                let mut found = None;
+                for _ in 0..15 {
                     std::thread::sleep(Duration::from_millis(100));
                     found = virtual_display_manager::find_vdd_display();
                     if found.is_some() {
                         break;
                     }
                 }
-            }
-            match found {
-                Some(n) => n,
-                None => {
-                    hbb_common::bail!("No VDD display detected after plug in");
+                match found {
+                    Some(n) => n,
+                    None => {
+                        hbb_common::bail!("No VDD display detected after plug in");
+                    }
                 }
             }
         }
@@ -416,11 +412,14 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             if let Some(name) = virtual_display_manager::find_vdd_display() {
                 return plug_in_vdd_display(Some(&name), width, height);
             }
-            if driver == SecondaryDriver::Vdd {
+            if driver == SecondaryDriver::Vdd
+                || get_vdd_settings_path().exists()
+                || std::path::Path::new(r"\\.\pipe\MTTVirtualDisplayPipe").exists()
+            {
                 if let Ok(idx) = plug_in_vdd_display(None, width, height) {
                     return Ok(idx);
                 }
-                log::warn!("usb-display-driver=vdd but no enabled Virtual Display Driver monitor was found; falling back to Amyuni");
+                log::warn!("Virtual Display Driver monitor was not found; falling back to Amyuni");
             }
         }
         USB_DISPLAY_REUSED_VDD.store(false, Ordering::SeqCst);

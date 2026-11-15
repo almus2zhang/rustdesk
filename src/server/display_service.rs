@@ -197,7 +197,7 @@ fn displays_to_msg(displays: Vec<DisplayInfo>) -> Message {
     msg_out
 }
 
-fn check_get_displays_changed_msg() -> Option<Message> {
+pub(crate) fn check_get_displays_changed_msg() -> Option<Message> {
     #[cfg(target_os = "linux")]
     {
         if !is_x11() {

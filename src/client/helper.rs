@@ -14,6 +14,7 @@ pub struct QualityStatus {
     pub codec_format: Option<CodecFormat>,
     pub chroma: Option<String>,
     pub server_perf: Option<String>,
+    pub display_driver: Option<String>,
 }
 
 #[inline]

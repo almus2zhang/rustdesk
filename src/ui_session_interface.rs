@@ -1931,11 +1931,14 @@ impl<T: InvokeUiSession> Interface for Session<T> {
 
     async fn handle_test_delay(&self, t: TestDelay, peer: &mut Stream) {
         if !t.from_client {
-            let server_perf = crate::server::video_service::unpack_server_perf(t.time);
+            let (server_perf, display_driver) = crate::server::video_service::unpack_server_perf(t.time)
+                .map(|(p, d)| (Some(p), d))
+                .unwrap_or((None, None));
             self.update_quality_status(QualityStatus {
                 delay: Some(t.last_delay as _),
                 target_bitrate: Some(t.target_bitrate as _),
                 server_perf,
+                display_driver,
                 ..Default::default()
             });
             handle_test_delay(t, peer).await;

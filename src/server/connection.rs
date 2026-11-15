@@ -4317,6 +4317,9 @@ impl Connection {
                             target_idx,
                             peer_id
                         );
+                        if let Some(displays_msg) = crate::server::display_service::check_get_displays_changed_msg() {
+                            self.send(displays_msg).await;
+                        }
                         let mut misc = Misc::new();
                         misc.set_follow_current_display(target_idx as i32);
                         let mut msg = Message::new();

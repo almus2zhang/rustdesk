@@ -131,6 +131,7 @@ class FfiModel with ChangeNotifier {
   RxBool waitForFirstImage = true.obs;
   bool isRefreshing = false;
   RxBool isDirectSurface = false.obs;
+  int? _pendingFollowDisplay;
 
   Timer? timerScreenshot;
 
@@ -1825,7 +1826,21 @@ class FfiModel with ChangeNotifier {
       _pi.displays.value = newDisplays;
       _pi.displaysCount.value = _pi.displays.length;
 
-      if (_pi.currentDisplay == kAllDisplayValue) {
+      if (_pendingFollowDisplay != null &&
+          _pendingFollowDisplay! < _pi.displays.length) {
+        final target = _pendingFollowDisplay!;
+        _pendingFollowDisplay = null;
+        _pi.currentDisplay = target;
+        try {
+          CurrentDisplayState.find(peerId).value = target;
+        } catch (e) {}
+        bind.sessionSwitchDisplay(
+          isDesktop: isDesktop,
+          sessionId: sessionId,
+          value: Int32List.fromList([target]),
+        );
+        updateCurDisplay(sessionId);
+      } else if (_pi.currentDisplay == kAllDisplayValue) {
         updateCurDisplay(sessionId);
         // to-do: What if the displays are changed?
       } else {
@@ -1833,6 +1848,9 @@ class FfiModel with ChangeNotifier {
             _pi.currentDisplay < _pi.displays.length) {
           updateCurDisplay(sessionId);
         } else {
+          if (_pendingFollowDisplay != null) {
+            return;
+          }
           if (_pi.displays.isNotEmpty) {
             // Notify to switch display
             msgBox(sessionId, 'custom-nook-nocancel-hasclose-info', 'Prompt',
@@ -1912,7 +1930,13 @@ class FfiModel with ChangeNotifier {
       if (pi.currentDisplay == kAllDisplayValue) {
         return;
       }
-      _pi.currentDisplay = int.parse(evt['display_idx']);
+      final targetIdx = int.parse(evt['display_idx']);
+      if (targetIdx >= _pi.displays.length) {
+        _pendingFollowDisplay = targetIdx;
+        return;
+      }
+      _pendingFollowDisplay = null;
+      _pi.currentDisplay = targetIdx;
       try {
         CurrentDisplayState.find(peerId).value = _pi.currentDisplay;
       } catch (e) {
@@ -3873,6 +3897,8 @@ class QualityMonitorData {
   String? codecFormat;
   String? chroma;
   String? serverPerf;
+  String? displayDriver;
+  double? capMs;
 }
 
 class QualityMonitorModel with ChangeNotifier {
@@ -3881,6 +3907,7 @@ class QualityMonitorModel with ChangeNotifier {
   QualityMonitorModel(this.parent);
   var _show = false;
   final _data = QualityMonitorData();
+  final RxBool isFastCap = false.obs;
 
   bool get show => _show;
   QualityMonitorData get data => _data;
@@ -3937,7 +3964,15 @@ class QualityMonitorModel with ChangeNotifier {
       }
       if (evt.containsKey('server_perf') && (evt['server_perf'] as String).isNotEmpty) {
         _data.serverPerf = evt['server_perf'];
+        final parts = (evt['server_perf'] as String).split('/');
+        if (parts.isNotEmpty) {
+          _data.capMs = double.tryParse(parts[0]);
+        }
       }
+      if (evt.containsKey('display_driver') && (evt['display_driver'] as String).isNotEmpty) {
+        _data.displayDriver = evt['display_driver'];
+      }
+      isFastCap.value = (_data.capMs != null && _data.capMs! > 0 && _data.capMs! < 10.0);
       notifyListeners();
     } catch (e) {
       //

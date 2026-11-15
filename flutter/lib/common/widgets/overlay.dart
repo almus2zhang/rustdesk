@@ -605,7 +605,16 @@ class QualityMonitor extends StatelessWidget {
                           qualityMonitorModel.data.serverPerf!.isNotEmpty)
                         _row("Cap/Con/Enc",
                             "${qualityMonitorModel.data.serverPerf}ms",
-                            rightColor: Colors.lightBlueAccent),
+                            rightColor: (qualityMonitorModel.data.capMs != null &&
+                                    qualityMonitorModel.data.capMs! > 0 &&
+                                    qualityMonitorModel.data.capMs! < 10.0)
+                                ? const Color(0xFF00E676)
+                                : Colors.lightBlueAccent),
+                      if (qualityMonitorModel.data.displayDriver != null &&
+                          qualityMonitorModel.data.displayDriver!.isNotEmpty)
+                        _row("Display Driver",
+                            qualityMonitorModel.data.displayDriver!,
+                            rightColor: Colors.amberAccent),
                       _row("Target Bitrate",
                           "${qualityMonitorModel.data.targetBitrate ?? '-'}kb"),
                       _row(

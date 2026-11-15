@@ -752,14 +752,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         },
       ),
       // 2. Display / Monitor
-      buildBtn(
-        icon: const Icon(Icons.tv, color: Colors.white, size: 20),
+      Obx(() => buildBtn(
+        icon: Icon(
+          Icons.tv,
+          color: gFFI.qualityMonitorModel.isFastCap.value
+              ? const Color(0xFF00E676)
+              : Colors.white,
+          size: 20,
+        ),
         tooltip: translate('Display'),
         onPressed: () {
           setState(() => _showEdit = false);
           showOptions(context, widget.id, gFFI.dialogManager);
         },
-      ),
+      )),
       // 3. Soft Keyboard
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
@@ -1320,7 +1326,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? const Icon(Icons.expand_more, color: Colors.white, size: 24)
                   : (_showBar.value
                       ? const Icon(Icons.close, color: Colors.white, size: 24)
-                      : _buildHamburgerIcon(_isCurrentDisplayVdd())),
+                      : _buildHamburgerIcon(gFFI.qualityMonitorModel.isFastCap.value)),
             ),
           ),
         ));

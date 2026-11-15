@@ -81,7 +81,18 @@ pub fn is_any_virtual_display(_name: &str) -> bool {
 /// Find an already enabled MikeTheTech VDD monitor by its device string.
 /// Amyuni, Honor, GameViewer, Meta and other virtual monitors are ignored so
 /// that a machine with several IDD drivers never picks the wrong screen.
-#[cfg(target_os = "windows")]
+pub fn get_display_driver_string(name: &str) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows::device_string_of(name)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = name;
+        None
+    }
+}
+
 pub fn find_vdd_display() -> Option<String> {
     if let Ok(displays) = crate::server::display_service::try_get_displays() {
         if let Some(d) = displays.iter().find(|d| is_vdd_display(&d.name())) {
@@ -993,7 +1004,19 @@ mod windows {
                 continue;
             };
             if is_device_name(&dev_name, name) {
-                return String::from_utf16(&dd.DeviceString).ok();
+                if let Ok(ds) = String::from_utf16(&dd.DeviceString) {
+                    let ds_clean = ds.trim_matches('\0').trim();
+                    if !ds_clean.is_empty() {
+                        return Some(ds_clean.to_string());
+                    }
+                }
+                let mut dd_mon: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+                dd_mon.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+                if unsafe { EnumDisplayDevicesW(dd.DeviceName.as_ptr(), 0, &mut dd_mon, 0) } != 0 {
+                    if let Ok(ds_mon) = String::from_utf16(&dd_mon.DeviceString) {
+                        return Some(ds_mon.trim_matches('\0').trim().to_string());
+                    }
+                }
             }
         }
         None
@@ -1011,14 +1034,26 @@ mod windows {
             if (dd.StateFlags & 8) > 0 {
                 continue;
             }
-            if let (Ok(dev_name), Ok(ds)) = (
-                String::from_utf16(&dd.DeviceName),
-                String::from_utf16(&dd.DeviceString),
-            ) {
-                let dev_name = dev_name.trim_matches('\0').to_string();
-                let ds = ds.trim_matches('\0');
-                if ds == "Virtual Display Driver" || ds.to_lowercase().contains("mttvdd") {
+            let Ok(dev_name) = String::from_utf16(&dd.DeviceName) else {
+                continue;
+            };
+            let dev_name = dev_name.trim_matches('\0').trim().to_string();
+
+            if let Ok(ds) = String::from_utf16(&dd.DeviceString) {
+                let ds = ds.trim_matches('\0').trim().to_lowercase();
+                if ds.contains("virtual display driver") || ds.contains("mttvdd") {
                     return Some(dev_name);
+                }
+            }
+
+            let mut dd_mon: DISPLAY_DEVICEW = unsafe { std::mem::zeroed() };
+            dd_mon.cb = std::mem::size_of::<DISPLAY_DEVICEW>() as DWORD;
+            if unsafe { EnumDisplayDevicesW(dd.DeviceName.as_ptr(), 0, &mut dd_mon, 0) } != 0 {
+                if let Ok(ds_mon) = String::from_utf16(&dd_mon.DeviceString) {
+                    let ds_mon = ds_mon.trim_matches('\0').trim().to_lowercase();
+                    if ds_mon.contains("virtual display driver") || ds_mon.contains("mttvdd") {
+                        return Some(dev_name);
+                    }
                 }
             }
         }

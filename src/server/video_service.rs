@@ -83,11 +83,15 @@ lazy_static::lazy_static! {
     static ref DIRECT_WINDOW_CAPTURE: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(true));
 }
 
-pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64) {
-    let cap_t = (cap * 10.0).round().clamp(0.0, 9999.0) as i64;
-    let conv_t = (conv * 10.0).round().clamp(0.0, 9999.0) as i64;
-    let enc_t = (enc * 10.0).round().clamp(0.0, 9999.0) as i64;
-    let packed = (0x5045i64 << 48) | (cap_t << 32) | (conv_t << 16) | enc_t;
+pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64, driver_id: u8) {
+    let cap_t = (cap * 10.0).round().clamp(0.0, 65535.0) as i64;
+    let conv_t = (conv * 10.0).round().clamp(0.0, 4095.0) as i64;
+    let enc_t = (enc * 10.0).round().clamp(0.0, 4095.0) as i64;
+    let packed = (0x5045i64 << 48)
+        | ((driver_id as i64 & 0xff) << 40)
+        | ((cap_t & 0xffff) << 24)
+        | ((conv_t & 0xfff) << 12)
+        | (enc_t & 0xfff);
     SERVER_PERF_MS.store(packed, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -95,12 +99,24 @@ pub fn get_last_server_perf_packed() -> i64 {
     SERVER_PERF_MS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-pub fn unpack_server_perf(packed: i64) -> Option<String> {
+pub fn unpack_server_perf(packed: i64) -> Option<(String, Option<String>)> {
     if (packed >> 48) == 0x5045 {
-        let cap_t = ((packed >> 32) & 0xffff) as f64 / 10.0;
-        let conv_t = ((packed >> 16) & 0xffff) as f64 / 10.0;
-        let enc_t = (packed & 0xffff) as f64 / 10.0;
-        Some(format!("{:.1}/{:.1}/{:.1}", cap_t, conv_t, enc_t))
+        let driver_id = ((packed >> 40) & 0xff) as u8;
+        let cap_t = (((packed >> 24) & 0xffff) as f64) / 10.0;
+        let conv_t = (((packed >> 12) & 0xfff) as f64) / 10.0;
+        let enc_t = ((packed & 0xfff) as f64) / 10.0;
+        let driver_name = match driver_id {
+            1 => Some("AMD".to_string()),
+            2 => Some("Meta VM".to_string()),
+            3 => Some("Gameviewer VDA".to_string()),
+            4 => Some("USB MMVD".to_string()),
+            5 => Some("VDD".to_string()),
+            6 => Some("NVIDIA".to_string()),
+            7 => Some("Intel".to_string()),
+            8 => Some("Honor VD".to_string()),
+            _ => None,
+        };
+        Some((format!("{:.1}/{:.1}/{:.1}", cap_t, conv_t, enc_t), driver_name))
     } else {
         None
     }
@@ -512,6 +528,31 @@ fn get_capturer_monitor(
         }
     }
     let name = display.name();
+    #[cfg(windows)]
+    let driver_id = {
+        let s = crate::virtual_display_manager::get_display_driver_string(&name).unwrap_or_default().to_lowercase();
+        if s.contains("virtual display driver") || s.contains("mttvdd") {
+            5
+        } else if s.contains("usb mobile monitor") {
+            4
+        } else if s.contains("gameviewer") {
+            3
+        } else if s.contains("meta virtual") {
+            2
+        } else if s.contains("honor") {
+            8
+        } else if s.contains("radeon") || s.contains("amd") {
+            1
+        } else if s.contains("geforce") || s.contains("nvidia") {
+            6
+        } else if s.contains("intel") {
+            7
+        } else {
+            0
+        }
+    };
+    #[cfg(not(windows))]
+    let driver_id = 0u8;
     log::debug!(
         "#displays={}, current={}, origin: {:?}, width={}, height={}, cpus={}/{}, name:{}",
         ndisplay,
@@ -1246,7 +1287,7 @@ fn run(vs: VideoService) -> ResultType<()> {
                 crate::server::connection::is_loopback_active(),
                 crate::server::connection::is_usb_display_active(),
             );
-            set_last_server_perf(perf_cap_ms / count, perf_conv_ms / count, perf_enc_ms / count);
+            set_last_server_perf(perf_cap_ms / count, perf_conv_ms / count, perf_enc_ms / count, driver_id);
             perf_wouldblock = 0;
             perf_frames = 0;
             perf_cap_ms = 0.0;
