@@ -3494,35 +3494,104 @@ void showOptions(
                           isZh ? '非文本光标收回方式' : 'Dismiss trigger',
                           style: const TextStyle(fontSize: 14),
                         ),
-                        DropdownButton<String>(
-                          value: _keyboardDismissMode.value,
-                          isDense: true,
-                          underline: const SizedBox.shrink(),
-                          items: [
-                            DropdownMenuItem(
-                              value: 'any',
-                              child: Text(
-                                isZh ? '触摸/滑动即收回' : 'Touch/Slide',
-                                style: const TextStyle(fontSize: 13, color: Colors.blue),
-                              ),
-                            ),
-                            DropdownMenuItem(
-                              value: 'tap',
-                              child: Text(
-                                isZh ? '仅点击才收回' : 'Tap only',
-                                style: const TextStyle(fontSize: 13, color: Colors.blue),
-                              ),
-                            ),
-                          ],
-                          onChanged: (val) async {
-                            if (val != null) {
-                              _keyboardDismissMode.value = val;
+                      ],
+                    ),
+                    const SizedBox(height: 2.0),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6.0),
+                            onTap: () async {
+                              _keyboardDismissMode.value = 'any';
                               await bind.mainSetLocalOption(
                                 key: 'keyboard_dismiss_mode',
-                                value: val,
+                                value: 'any',
                               );
-                            }
-                          },
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'any',
+                                    groupValue: _keyboardDismissMode.value,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: (val) async {
+                                      if (val != null) {
+                                        _keyboardDismissMode.value = val;
+                                        await bind.mainSetLocalOption(
+                                          key: 'keyboard_dismiss_mode',
+                                          value: val,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 2.0),
+                                  Flexible(
+                                    child: Text(
+                                      isZh ? '触摸/滑动收回' : 'Touch/Slide',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _keyboardDismissMode.value == 'any'
+                                            ? Colors.blue
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6.0),
+                            onTap: () async {
+                              _keyboardDismissMode.value = 'tap';
+                              await bind.mainSetLocalOption(
+                                key: 'keyboard_dismiss_mode',
+                                value: 'tap',
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'tap',
+                                    groupValue: _keyboardDismissMode.value,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: (val) async {
+                                      if (val != null) {
+                                        _keyboardDismissMode.value = val;
+                                        await bind.mainSetLocalOption(
+                                          key: 'keyboard_dismiss_mode',
+                                          value: val,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 2.0),
+                                  Flexible(
+                                    child: Text(
+                                      isZh ? '仅点击才收回' : 'Tap only',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _keyboardDismissMode.value == 'tap'
+                                            ? Colors.blue
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),

@@ -3023,21 +3023,26 @@ class CanvasModel with ChangeNotifier {
   void adjustForKeyboardAboveCursor({required double keyboardTop, required double margin}) {
     final cursorModel = parent.target?.cursorModel;
     if (cursorModel == null) return;
-    final targetCursorScreenY = keyboardTop - margin;
+    final cursorImg = cursorModel.image;
+    final cursorH = (cursorImg != null && cursorImg.height > 0)
+        ? cursorImg.height.toDouble()
+        : 24.0;
+    final cursorHotY = cursorModel.hoty;
+    final cursorRemoteBottom = cursorModel.y - cursorHotY + cursorH;
     final adjust = getAdjustY();
     final s = _scale;
-    final cursorY = cursorModel.y - cursorModel.hoty;
-    final currentCursorScreenY = cursorY * s + _y + adjust;
+    final currentCursorScreenBottom = cursorRemoteBottom * s + _y + adjust;
+    final targetCursorScreenBottom = keyboardTop - margin;
 
-    // 如果当前光标在键盘上方且留有安全距离（空间放得下），画面完全不挪动，直接弹出键盘
-    if (currentCursorScreenY <= targetCursorScreenY) {
+    // 如果当前光标底端已在键盘上方且留有安全距离（空间放得下），画面完全不挪动，直接弹出键盘
+    if (currentCursorScreenBottom <= targetCursorScreenBottom) {
       return;
     }
 
-    // 空间放不下（光标会被键盘遮挡或距离太近）时，才挪动画面
+    // 空间放不下（光标会被键盘遮挡或距离太近）时，按物理屏幕像素差值向上平移画面
+    final shiftNeeded = currentCursorScreenBottom - targetCursorScreenBottom;
     saveMobileOffsetBeforeSoftKeyboard();
-    final targetY = targetCursorScreenY - cursorY * s - adjust;
-    _y = min(0.0, targetY);
+    _y -= shiftNeeded;
     isMobileCanvasChanged = true;
     notifyListeners();
   }
