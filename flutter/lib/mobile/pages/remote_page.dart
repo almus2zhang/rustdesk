@@ -1377,8 +1377,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           final adjust = canvas.getAdjustY();
           final curX = (cm.x - cm.hotx) * s + canvas.x;
           final curY = (cm.y - cm.hoty) * s + canvas.y + adjust;
-          final posX = curX.clamp(0.0, max(0.0, size.width - 24.0));
-          final posY = curY.clamp(0.0, max(0.0, size.height - 24.0));
+          final posX = curX.clamp(0.0, max(0.0, size.width - 24.0)).toDouble();
+          final posY = curY.clamp(0.0, max(0.0, size.height - 24.0)).toDouble();
           return Positioned(
             left: posX,
             top: posY,
