@@ -902,6 +902,200 @@ pub mod amyuni_idd {
     }
 }
 
+pub mod vdd {
+    use hbb_common::{bail, log, ResultType};
+    use std::path::{Path, PathBuf};
+
+    pub const HARDWARE_ID: &str = "Root\\MttVDD";
+    pub const INF_NAME: &str = "MttVDD.inf";
+    pub const VDD_DIR_NAME: &str = "VirtualDisplayDriver";
+
+    pub fn locate_vdd_driver_dir() -> Option<PathBuf> {
+        // 1. Current executable directory / VirtualDisplayDriver
+        if let Ok(cur_exe) = std::env::current_exe() {
+            if let Some(parent) = cur_exe.parent() {
+                let p = parent.join(VDD_DIR_NAME);
+                if p.join(INF_NAME).exists() {
+                    return Some(p);
+                }
+            }
+        }
+        // 2. Installed directory / VirtualDisplayDriver
+        #[cfg(target_os = "windows")]
+        {
+            let (_, path, _, _) = crate::platform::windows::get_install_info();
+            if !path.is_empty() {
+                let p = PathBuf::from(&path).join(VDD_DIR_NAME);
+                if p.join(INF_NAME).exists() {
+                    return Some(p);
+                }
+            }
+        }
+        // 3. System fallback: C:\VirtualDisplayDriver
+        let p = PathBuf::from(r"C:\VirtualDisplayDriver");
+        if p.join(INF_NAME).exists() {
+            return Some(p);
+        }
+        None
+    }
+
+    pub fn is_driver_installed() -> bool {
+        #[cfg(target_os = "windows")]
+        {
+            if super::windows::find_any_vdd_device_name().is_some() {
+                return true;
+            }
+            let drivers = super::windows::get_display_drivers();
+            if drivers.iter().any(|(s, _)| {
+                let s_lower = s.to_lowercase();
+                s_lower.contains("virtual display driver") || s_lower.contains("mttvdd")
+            }) {
+                return true;
+            }
+            use winreg::{enums::*, RegKey};
+            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            if hklm
+                .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services\MttVDD")
+                .is_ok()
+            {
+                return true;
+            }
+            false
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            false
+        }
+    }
+
+    pub fn install_driver() -> ResultType<()> {
+        #[cfg(target_os = "windows")]
+        {
+            log::info!("Installing VDD (Virtual Display Driver)");
+            let driver_dir = locate_vdd_driver_dir().ok_or_else(|| {
+                hbb_common::anyhow::anyhow!("VirtualDisplayDriver directory not found")
+            })?;
+            let inf_path = driver_dir.join(INF_NAME);
+            if !inf_path.exists() {
+                bail!("MttVDD.inf not found in {:?}", driver_dir);
+            }
+
+            // Ensure C:\VirtualDisplayDriver and vdd_settings.xml exist
+            let target_config_dir = Path::new(r"C:\VirtualDisplayDriver");
+            if !target_config_dir.exists() {
+                let _ = std::fs::create_dir_all(target_config_dir);
+            }
+            let target_settings = target_config_dir.join("vdd_settings.xml");
+            if !target_settings.exists() {
+                let src_settings = driver_dir.join("vdd_settings.xml");
+                if src_settings.exists() {
+                    let _ = std::fs::copy(&src_settings, &target_settings);
+                }
+            }
+
+            let inf_path_str = inf_path.to_string_lossy().to_string();
+
+            // Try adding driver to DriverStore via pnputil first
+            let _ = std::process::Command::new("pnputil")
+                .args(&["/add-driver", &inf_path_str, "/install"])
+                .output();
+
+            // Create device node and update driver via SetupAPI
+            let mut reboot_required = false;
+            unsafe {
+                if let Err(e) = crate::platform::win_device::install_driver(
+                    &inf_path_str,
+                    HARDWARE_ID,
+                    &mut reboot_required,
+                ) {
+                    log::warn!(
+                        "win_device::install_driver failed or partially succeeded: {:?}",
+                        e
+                    );
+                }
+            }
+
+            // Set RustDesk's virtual display driver preference to "vdd"
+            hbb_common::config::Config::set_option("virtual-display-driver".into(), "vdd".into());
+            log::info!(
+                "VDD installation completed (reboot_required={})",
+                reboot_required
+            );
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            bail!("VDD installation only supported on Windows");
+        }
+    }
+
+    pub fn uninstall_driver() -> ResultType<()> {
+        #[cfg(target_os = "windows")]
+        {
+            log::info!("Uninstalling VDD (Virtual Display Driver)");
+
+            // 1. Remove device node via SetupAPI
+            let mut reboot_required = false;
+            unsafe {
+                if let Err(e) = crate::platform::win_device::uninstall_driver(
+                    HARDWARE_ID,
+                    &mut reboot_required,
+                ) {
+                    log::warn!("win_device::uninstall_driver failed: {:?}", e);
+                }
+            }
+
+            // 2. Remove OEM driver package from DriverStore via pnputil
+            if let Ok(output) = std::process::Command::new("pnputil")
+                .arg("/enum-drivers")
+                .output()
+            {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let mut current_oem = String::new();
+                for line in stdout.lines() {
+                    let line_trimmed = line.trim();
+                    if line_trimmed.starts_with("Published Name:") {
+                        if let Some(name) = line_trimmed.split(':').nth(1) {
+                            current_oem = name.trim().to_string();
+                        }
+                    } else if line_trimmed.starts_with("Original Name:") {
+                        if let Some(orig) = line_trimmed.split(':').nth(1) {
+                            if orig.trim().eq_ignore_ascii_case(INF_NAME) && !current_oem.is_empty()
+                            {
+                                log::info!(
+                                    "Deleting driver package {} ({})",
+                                    current_oem,
+                                    orig.trim()
+                                );
+                                let _ = std::process::Command::new("pnputil")
+                                    .args(&[
+                                        "/delete-driver",
+                                        &current_oem,
+                                        "/uninstall",
+                                        "/force",
+                                    ])
+                                    .output();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Clear virtual-display-driver config if it was "vdd"
+            if crate::common::get_virtual_display_driver() == "vdd" {
+                hbb_common::config::Config::set_option("virtual-display-driver".into(), "".into());
+            }
+
+            log::info!("VDD uninstall completed");
+            Ok(())
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            bail!("VDD uninstallation only supported on Windows");
+        }
+    }
+}
+
 mod windows {
     use std::ptr::null_mut;
     use winapi::{

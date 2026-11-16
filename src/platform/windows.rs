@@ -112,6 +112,7 @@ pub const SET_FOREGROUND_WINDOW: &'static str = "SET_FOREGROUND_WINDOW";
 const REG_NAME_INSTALL_DESKTOPSHORTCUTS: &str = "DESKTOPSHORTCUTS";
 const REG_NAME_INSTALL_STARTMENUSHORTCUTS: &str = "STARTMENUSHORTCUTS";
 pub const REG_NAME_INSTALL_PRINTER: &str = "PRINTER";
+pub const REG_NAME_INSTALL_VDD: &str = "VDD";
 
 pub fn get_focused_display(displays: Vec<DisplayInfo>) -> Option<usize> {
     unsafe {
@@ -1330,6 +1331,10 @@ pub fn get_install_options() -> String {
     if let Some(printer) = printer {
         opts.insert(REG_NAME_INSTALL_PRINTER, printer);
     }
+    let vdd = get_reg_of_hkcr(&subkey, REG_NAME_INSTALL_VDD);
+    if let Some(vdd) = vdd {
+        opts.insert(REG_NAME_INSTALL_VDD, vdd);
+    }
     serde_json::to_string(&opts).unwrap_or("{}".to_owned())
 }
 
@@ -1488,6 +1493,7 @@ fn get_after_install(
     reg_value_start_menu_shortcuts: Option<String>,
     reg_value_desktop_shortcuts: Option<String>,
     reg_value_printer: Option<String>,
+    reg_value_vdd: Option<String>,
 ) -> String {
     let app_name = crate::get_app_name();
     let ext = app_name.to_lowercase();
@@ -1518,6 +1524,13 @@ fn get_after_install(
             )
         })
         .unwrap_or_default();
+    let reg_vdd = reg_value_vdd
+        .map(|v| {
+            format!(
+                "reg add HKEY_CLASSES_ROOT\\.{ext} /f /v {REG_NAME_INSTALL_VDD} /t REG_SZ /d \"{v}\""
+            )
+        })
+        .unwrap_or_default();
 
     format!("
     chcp 65001
@@ -1525,6 +1538,7 @@ fn get_after_install(
     {desktop_shortcuts}
     {start_menu_shortcuts}
     {reg_printer}
+    {reg_vdd}
     reg add HKEY_CLASSES_ROOT\\.{ext}\\DefaultIcon /f
     reg add HKEY_CLASSES_ROOT\\.{ext}\\DefaultIcon /f /ve /t REG_SZ  /d \"\\\"{exe}\\\",0\"
     reg add HKEY_CLASSES_ROOT\\.{ext}\\shell /f
@@ -1545,7 +1559,7 @@ fn get_after_install(
 }
 
 pub fn install_me(options: &str, path: String, silent: bool, debug: bool) -> ResultType<()> {
-    let uninstall_str = get_uninstall(false, false);
+    let uninstall_str = get_uninstall(false, false, false);
     let mut path = path.trim_end_matches('\\').to_owned();
     let (subkey, _path, start_menu, exe) = get_default_install_info();
     let mut exe = exe;
@@ -1615,6 +1629,7 @@ oLink.Save
     let mut reg_value_desktop_shortcuts = "0".to_owned();
     let mut reg_value_start_menu_shortcuts = "0".to_owned();
     let mut reg_value_printer = "0".to_owned();
+    let mut reg_value_vdd = "0".to_owned();
     let mut shortcuts = Default::default();
     if options.contains("desktopicon") {
         shortcuts = format!(
@@ -1637,6 +1652,10 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
     let install_printer = options.contains("printer") && is_win_10_or_greater();
     if install_printer {
         reg_value_printer = "1".to_owned();
+    }
+    let install_vdd = options.contains("vdd") && is_win_10_or_greater();
+    if install_vdd {
+        reg_value_vdd = "1".to_owned();
     }
 
     let meta = std::fs::symlink_metadata(&current_exe)?;
@@ -1688,6 +1707,12 @@ copy /Y \"{tmp_path}\\{app_name} Tray.lnk\" \"%PROGRAMDATA%\\Microsoft\\Windows\
         "".to_owned()
     };
 
+    let install_vdd_cmd = if install_vdd {
+        format!("\"{}\" --install-vdd", &src_exe)
+    } else {
+        "".to_owned()
+    };
+
     // Remember to check if `update_me` need to be changed if changing the `cmds`.
     // No need to merge the existing dup code, because the code in these two functions are too critical.
     // New code should be written in a common function.
@@ -1720,6 +1745,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 {import_config}
 {after_install}
 {install_remote_printer}
+{install_vdd_cmd}
 {sleep}
     ",
         display_icon = get_custom_icon(&path, &cur_exe).unwrap_or(exe.to_string()),
@@ -1729,7 +1755,8 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
             &exe,
             Some(reg_value_start_menu_shortcuts),
             Some(reg_value_desktop_shortcuts),
-            Some(reg_value_printer)
+            Some(reg_value_printer),
+            Some(reg_value_vdd),
         ),
         sleep = if debug { "timeout 300" } else { "" },
         dels = if debug { "" } else { &dels },
@@ -1744,7 +1771,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{path}\\\"
 pub fn run_after_install() -> ResultType<()> {
     let (_, _, _, exe) = get_install_info();
     run_cmds(
-        get_after_install(&exe, None, None, None),
+        get_after_install(&exe, None, None, None, None),
         true,
         "after_install",
     )
@@ -1789,7 +1816,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
 /// The `uninstall_printer` parameter determines whether the command to uninstall the remote printer
 /// is included in the generated uninstall script. If `uninstall_printer` is `false`, the printer
 /// related command is omitted from the script.
-fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
+fn get_uninstall(kill_self: bool, uninstall_printer: bool, uninstall_vdd: bool) -> String {
     let reg_uninstall_string = get_reg("UninstallString");
     if reg_uninstall_string.to_lowercase().contains("msiexec.exe") {
         return reg_uninstall_string;
@@ -1797,11 +1824,15 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
 
     let mut uninstall_cert_cmd = "".to_string();
     let mut uninstall_printer_cmd = "".to_string();
+    let mut uninstall_vdd_cmd = "".to_string();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(exe_path) = exe.to_str() {
             uninstall_cert_cmd = format!("\"{}\" --uninstall-cert", exe_path);
             if uninstall_printer {
                 uninstall_printer_cmd = format!("\"{}\" --uninstall-remote-printer", &exe_path);
+            }
+            if uninstall_vdd {
+                uninstall_vdd_cmd = format!("\"{}\" --uninstall-vdd", &exe_path);
             }
         }
     }
@@ -1810,6 +1841,7 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
         "
     {before_uninstall}
     {uninstall_printer_cmd}
+    {uninstall_vdd_cmd}
     {uninstall_cert_cmd}
     reg delete {subkey} /f
     {uninstall_amyuni_idd}
@@ -1825,7 +1857,46 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> String {
 }
 
 pub fn uninstall_me(kill_self: bool) -> ResultType<()> {
-    run_cmds(get_uninstall(kill_self, true), true, "uninstall")
+    let mut uninstall_vdd = false;
+    #[cfg(windows)]
+    if crate::virtual_display_manager::vdd::is_driver_installed() {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use winapi::um::winuser::{
+            MessageBoxW, IDYES, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO,
+        };
+
+        let title = OsStr::new(&crate::get_app_name())
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let text_cn = "检测到已安装虚拟显示器驱动 (VDD 120 FPS)，是否同时卸载？";
+        let text_en =
+            "Virtual Display Driver (VDD 120 FPS) is detected. Do you want to uninstall it as well?";
+        let locale = crate::common::get_locale();
+        let prompt_text = if locale.to_lowercase().starts_with("zh") {
+            text_cn
+        } else {
+            text_en
+        };
+        let text = OsStr::new(prompt_text)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        let ret = unsafe {
+            MessageBoxW(
+                null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                MB_YESNO | MB_ICONQUESTION | MB_TOPMOST | MB_SETFOREGROUND,
+            )
+        };
+        if ret == IDYES {
+            uninstall_vdd = true;
+        }
+    }
+    run_cmds(get_uninstall(kill_self, true, uninstall_vdd), true, "uninstall")
 }
 
 fn write_cmds(cmds: String, ext: &str, tip: &str) -> ResultType<std::path::PathBuf> {
@@ -2131,7 +2202,7 @@ pub fn update_install_option(k: &str, v: &str) -> ResultType<()> {
     if !is_installed() || !crate::is_server() {
         return Ok(());
     }
-    if ![REG_NAME_INSTALL_PRINTER].contains(&k) || !["0", "1"].contains(&v) {
+    if ![REG_NAME_INSTALL_PRINTER, REG_NAME_INSTALL_VDD].contains(&k) || !["0", "1"].contains(&v) {
         return Ok(());
     }
     let app_name = crate::get_app_name();

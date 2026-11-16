@@ -310,6 +310,18 @@ pub fn core_main() -> Option<Vec<String>> {
                     log::error!("Win10 or greater required!");
                 }
                 return None;
+            } else if args[0] == "--install-vdd" {
+                #[cfg(windows)]
+                hbb_common::allow_err!(
+                    crate::virtual_display_manager::vdd::install_driver()
+                );
+                return None;
+            } else if args[0] == "--uninstall-vdd" {
+                #[cfg(windows)]
+                hbb_common::allow_err!(
+                    crate::virtual_display_manager::vdd::uninstall_driver()
+                );
+                return None;
             } else if args[0] == "--uninstall-remote-printer" {
                 #[cfg(windows)]
                 if crate::platform::is_win_10_or_greater() {

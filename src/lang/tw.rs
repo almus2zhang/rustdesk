@@ -661,6 +661,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("printer-{}-not-installed-tip", "{} 印表機未安裝。"),
         ("printer-{}-ready-tip", "{} 印表機已安裝，您可以使用列印功能了。"),
         ("Install {} Printer", "安裝 {} 印表機"),
+        ("Install Virtual Display Driver (VDD 120 FPS)", "安裝虛擬顯示器驅動 (VDD 120 FPS)"),
         ("Outgoing Print Jobs", "傳出的列印任務"),
         ("Incoming Print Jobs", "傳入的列印任務"),
         ("Incoming Print Job", "傳入的列印任務"),

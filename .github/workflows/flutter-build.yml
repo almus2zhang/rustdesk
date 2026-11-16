@@ -187,6 +187,14 @@ jobs:
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
           mv -Force .\usbmmidd_v2 ./rustdesk
 
+          # Download Virtual Display Driver (VDD) and extract it to ./rustdesk/VirtualDisplayDriver
+          try {
+            Invoke-WebRequest -Uri https://github.com/itsmequinn/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip -OutFile VirtualDisplayDriver.zip
+            Expand-Archive VirtualDisplayDriver.zip -DestinationPath ./rustdesk/VirtualDisplayDriver
+          } catch {
+            Write-Host "Ignore VirtualDisplayDriver download error: $_"
+          }
+
           # Download printer driver files and extract them to ./rustdesk
           try {
             Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip
@@ -395,6 +403,8 @@ jobs:
           # we need the x64 exe to install and uninstall the driver.
           rm -rf ./usbmmidd_v2/deviceinstaller.exe ./usbmmidd_v2/usbmmidd.bat
           mv ./usbmmidd_v2 ./Release || true
+          curl -LJ -o ./VirtualDisplayDriver.zip https://github.com/itsmequinn/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip || true
+          unzip VirtualDisplayDriver.zip -d ./Release/VirtualDisplayDriver || true
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res
