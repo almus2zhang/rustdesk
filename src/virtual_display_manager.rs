@@ -1082,7 +1082,7 @@ pub mod vdd {
             }
 
             // 3. Clear virtual-display-driver config if it was "vdd"
-            if crate::common::get_virtual_display_driver() == "vdd" {
+            if hbb_common::config::Config::get_option("virtual-display-driver") == "vdd" {
                 hbb_common::config::Config::set_option("virtual-display-driver".into(), "".into());
             }
 

@@ -1862,9 +1862,7 @@ pub fn uninstall_me(kill_self: bool) -> ResultType<()> {
     if crate::virtual_display_manager::vdd::is_driver_installed() {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
-        use winapi::um::winuser::{
-            MessageBoxW, IDYES, MB_ICONQUESTION, MB_SETFOREGROUND, MB_TOPMOST, MB_YESNO,
-        };
+
 
         let title = OsStr::new(&crate::get_app_name())
             .encode_wide()
@@ -1873,7 +1871,7 @@ pub fn uninstall_me(kill_self: bool) -> ResultType<()> {
         let text_cn = "检测到已安装虚拟显示器驱动 (VDD 120 FPS)，是否同时卸载？";
         let text_en =
             "Virtual Display Driver (VDD 120 FPS) is detected. Do you want to uninstall it as well?";
-        let locale = crate::common::get_locale();
+        let locale = sys_locale::get_locale().unwrap_or_default();
         let prompt_text = if locale.to_lowercase().starts_with("zh") {
             text_cn
         } else {
