@@ -613,6 +613,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void _adjustCanvasForTextCursor([double? forcedKeyboardHeight]) {
     if (!_autoPopupKeyboardOnText.value) return;
+    if (!isTabletLayoutMode(context)) return;
     if (!gFFI.cursorModel.isTextCursor.value) return;
 
     final media = MediaQuery.of(context);
