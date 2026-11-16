@@ -1677,17 +1677,17 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
             .collect::<Vec<u16>>();
 
         let ret = unsafe {
-            winuser::MessageBoxW(
+            MessageBoxW(
                 null_mut(),
                 text.as_ptr(),
                 title.as_ptr(),
-                winuser::MB_YESNO
-                    | winuser::MB_ICONQUESTION
-                    | winuser::MB_TOPMOST
-                    | winuser::MB_SETFOREGROUND,
+                MB_YESNO
+                    | MB_ICONQUESTION
+                    | MB_TOPMOST
+                    | MB_SETFOREGROUND,
             )
         };
-        if ret == winuser::IDYES {
+        if ret == IDYES {
             install_vdd = true;
         }
     }
@@ -3795,17 +3795,17 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
             .collect::<Vec<u16>>();
 
         let ret = unsafe {
-            winuser::MessageBoxW(
+            MessageBoxW(
                 null_mut(),
                 text.as_ptr(),
                 title.as_ptr(),
-                winuser::MB_YESNO
-                    | winuser::MB_ICONQUESTION
-                    | winuser::MB_TOPMOST
-                    | winuser::MB_SETFOREGROUND,
+                MB_YESNO
+                    | MB_ICONQUESTION
+                    | MB_TOPMOST
+                    | MB_SETFOREGROUND,
             )
         };
-        if ret == winuser::IDYES {
+        if ret == IDYES {
             install_vdd_cmd = format!("\"{}\" --install-vdd", &src_exe);
         }
     }

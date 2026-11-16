@@ -44,6 +44,7 @@ void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
 }
 
 final RxBool _autoPopupKeyboardOnText = false.obs;
+final RxString _keyboardPopupMode = 'tap'.obs;
 final RxDouble _keyboardCursorMargin = 30.0.obs;
 final RxString _keyboardDismissMode = 'any'.obs;
 final RxInt _keyboardPopupDelayMs = 200.obs;
@@ -120,6 +121,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Offset? _pointerDownPos;
   DateTime? _pointerDownTime;
   bool _pointerMoved = false;
+  DateTime? _lastScreenTapTime;
 
   void _toggleControlBarOrientation() {
     _isControlBarVertical.value = !_isControlBarVertical.value;
@@ -305,6 +307,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     gFFI.inputModel.listenToMouse(true);
     _autoPopupKeyboardOnText.value =
         bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
+    _keyboardPopupMode.value =
+        bind.mainGetLocalOption(key: 'keyboard_popup_mode');
+    if (_keyboardPopupMode.value.isEmpty) {
+      _keyboardPopupMode.value = 'tap';
+    }
     _keyboardCursorMargin.value = (double.tryParse(
             bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
         30.0);
@@ -319,25 +326,41 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
       _textCursorPopupTimer?.cancel();
       if (isText && _autoPopupKeyboardOnText.value) {
-        final delayMs = _keyboardPopupDelayMs.value;
-        if (delayMs <= 0) {
-          if (!_showEdit && !keyboardVisibilityController.isVisible) {
-            openKeyboard();
-          } else {
-            _adjustCanvasForTextCursor();
+        if (_keyboardPopupMode.value == 'tap') {
+          // 点击屏幕才弹出模式：仅当最近 1200ms 内用户在屏幕上有过点击交互时才弹出
+          final now = DateTime.now();
+          final diff = _lastScreenTapTime == null
+              ? 999999
+              : now.difference(_lastScreenTapTime!).inMilliseconds;
+          if (diff < 1200) {
+            if (!_showEdit && !keyboardVisibilityController.isVisible) {
+              openKeyboard();
+            } else {
+              _adjustCanvasForTextCursor();
+            }
           }
         } else {
-          _textCursorPopupTimer = Timer(Duration(milliseconds: delayMs), () {
-            if (mounted &&
-                gFFI.cursorModel.isTextCursor.value &&
-                _autoPopupKeyboardOnText.value) {
-              if (!_showEdit && !keyboardVisibilityController.isVisible) {
-                openKeyboard();
-              } else {
-                _adjustCanvasForTextCursor();
-              }
+          // 自动弹出模式
+          final delayMs = _keyboardPopupDelayMs.value;
+          if (delayMs <= 0) {
+            if (!_showEdit && !keyboardVisibilityController.isVisible) {
+              openKeyboard();
+            } else {
+              _adjustCanvasForTextCursor();
             }
-          });
+          } else {
+            _textCursorPopupTimer = Timer(Duration(milliseconds: delayMs), () {
+              if (mounted &&
+                  gFFI.cursorModel.isTextCursor.value &&
+                  _autoPopupKeyboardOnText.value) {
+                if (!_showEdit && !keyboardVisibilityController.isVisible) {
+                  openKeyboard();
+                } else {
+                  _adjustCanvasForTextCursor();
+                }
+              }
+            });
+          }
         }
       }
     });
@@ -1278,83 +1301,96 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         Positioned.fill(
           child: RawTouchGestureDetectorRegion(
             ffi: gFFI,
-            child: Container(
-              color: Colors.transparent,
-              child: Stack(
-                children: [
-                  Listener(
-                    behavior: HitTestBehavior.translucent,
-                    onPointerDown: (event) {
-                      _pointerDownPos = event.position;
-                      _pointerDownTime = DateTime.now();
-                      _pointerMoved = false;
+            child: Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerDown: (event) {
+                _pointerDownPos = event.position;
+                _pointerDownTime = DateTime.now();
+                _pointerMoved = false;
 
-                      final isText = gFFI.cursorModel.isTextCursor.value;
-                      final isKeyboardVisible =
-                          _showEdit || keyboardVisibilityController.isVisible;
+                final isText = gFFI.cursorModel.isTextCursor.value;
+                final isKeyboardVisible =
+                    _showEdit || keyboardVisibilityController.isVisible;
 
-                      if (_keyboardDismissMode.value == 'any') {
-                        // 保持现在：触摸/按下即收回软键盘
-                        if (isKeyboardVisible && !isText) {
-                          _closeSoftKeyboard();
-                        } else if (_showEdit && isText) {
-                          _mobileFocusNode.requestFocus();
-                        }
-                      } else {
-                        // 只有点击才消失：在按下时不收回，等待up时判断是否为有效点击
-                        if (_showEdit && isText) {
-                          _mobileFocusNode.requestFocus();
-                        }
+                if (_keyboardDismissMode.value == 'any') {
+                  // 触摸/按下即收回软键盘
+                  if (isKeyboardVisible && !isText) {
+                    _closeSoftKeyboard();
+                  } else if (_showEdit && isText) {
+                    _mobileFocusNode.requestFocus();
+                  }
+                } else {
+                  if (_showEdit && isText) {
+                    _mobileFocusNode.requestFocus();
+                  }
+                }
+              },
+              onPointerMove: (event) {
+                if (_pointerDownPos != null) {
+                  final dist = (event.position - _pointerDownPos!).distance;
+                  if (dist > 15.0) {
+                    _pointerMoved = true;
+                  }
+                }
+              },
+              onPointerUp: (event) {
+                final bool isTap = !_pointerMoved &&
+                    _pointerDownPos != null &&
+                    (event.position - _pointerDownPos!).distance < 15.0 &&
+                    DateTime.now().difference(_pointerDownTime ?? DateTime.now()).inMilliseconds < 600;
+
+                if (isTap) {
+                  _lastScreenTapTime = DateTime.now();
+                  final isText = gFFI.cursorModel.isTextCursor.value;
+                  final isKeyboardVisible =
+                      _showEdit || keyboardVisibilityController.isVisible;
+
+                  // 1. 如果光标是文本光标且启用了文本软键盘功能，点击时呼出软键盘
+                  if (_autoPopupKeyboardOnText.value) {
+                    if (isText) {
+                      if (!isKeyboardVisible) {
+                        openKeyboard();
+                      } else if (_showEdit) {
+                        _mobileFocusNode.requestFocus();
                       }
-                    },
-                    onPointerMove: (event) {
-                      if (_pointerDownPos != null) {
-                        final dist = (event.position - _pointerDownPos!).distance;
-                        if (dist > 15.0) {
-                          _pointerMoved = true;
-                        }
-                      }
-                    },
-                    onPointerUp: (event) {
-                      if (_keyboardDismissMode.value == 'tap') {
-                        // 只有点击才消失：仅当未滑动且距离在15px内且时长<600ms时才收回
-                        if (!_pointerMoved && _pointerDownPos != null) {
-                          final dist = (event.position - _pointerDownPos!).distance;
-                          final duration = DateTime.now()
-                              .difference(_pointerDownTime ?? DateTime.now());
-                          if (dist < 15.0 && duration.inMilliseconds < 600) {
-                            final isText = gFFI.cursorModel.isTextCursor.value;
-                            final isKeyboardVisible = _showEdit ||
-                                keyboardVisibilityController.isVisible;
-                            if (isKeyboardVisible && !isText) {
-                              _closeSoftKeyboard();
-                            }
-                          }
-                        }
-                      }
-                      _pointerDownPos = null;
-                      _pointerDownTime = null;
-                      _pointerMoved = false;
-                    },
-                    onPointerCancel: (event) {
-                      _pointerDownPos = null;
-                      _pointerDownTime = null;
-                      _pointerMoved = false;
-                    },
-                    child: SizedBox.expand(
+                    }
+                  }
+
+                  // 2. 如果开启了“仅点击才收回”：非文本光标且软键盘开启时，点击收回软键盘
+                  if (_keyboardDismissMode.value == 'tap') {
+                    if (isKeyboardVisible && !isText) {
+                      _closeSoftKeyboard();
+                    }
+                  }
+                }
+
+                _pointerDownPos = null;
+                _pointerDownTime = null;
+                _pointerMoved = false;
+              },
+              onPointerCancel: (event) {
+                _pointerDownPos = null;
+                _pointerDownTime = null;
+                _pointerMoved = false;
+              },
+              child: Container(
+                color: Colors.transparent,
+                child: Stack(
+                  children: [
+                    SizedBox.expand(
                       child: ImagePaint(ffiModel: gFFI.ffiModel),
                     ),
-                  ),
-                  if (showCursorPaint) CursorPaint(widget.id),
-                  if (gFFI.ffiModel.touchMode)
-                    FloatingMouse(
-                      ffi: gFFI,
-                    )
-                  else
-                    FloatingMouseWidgets(
-                      ffi: gFFI,
-                    ),
-                ],
+                    if (showCursorPaint) CursorPaint(widget.id),
+                    if (gFFI.ffiModel.touchMode)
+                      FloatingMouse(
+                        ffi: gFFI,
+                      )
+                    else
+                      FloatingMouseWidgets(
+                        ffi: gFFI,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2532,6 +2568,11 @@ void showOptions(
   final isZh = localeName.startsWith('zh');
   _autoPopupKeyboardOnText.value =
       bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
+  _keyboardPopupMode.value =
+      bind.mainGetLocalOption(key: 'keyboard_popup_mode');
+  if (_keyboardPopupMode.value.isEmpty) {
+    _keyboardPopupMode.value = 'tap';
+  }
   _keyboardCursorMargin.value = (double.tryParse(
           bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
       30.0);
@@ -3385,7 +3426,7 @@ void showOptions(
                   contentPadding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                   title: Text(
-                    isZh ? '光标变为文本时自动弹出软键盘' : 'Auto popup keyboard on text cursor',
+                    isZh ? '文字输入感应弹出软键盘' : 'Auto popup keyboard on text cursor',
                     style: const TextStyle(fontSize: 14),
                   ),
                   value: _autoPopupKeyboardOnText.value,
@@ -3396,7 +3437,7 @@ void showOptions(
                         value: val ? 'true' : 'false');
                   },
                 )),
-                    if (isAndroid)
+          if (isAndroid)
             Obx(() {
               if (!_autoPopupKeyboardOnText.value) return const SizedBox.shrink();
               final marginVal = _keyboardCursorMargin.value;
@@ -3405,6 +3446,116 @@ void showOptions(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isZh ? '软键盘弹出触发方式' : 'Popup trigger',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2.0),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6.0),
+                            onTap: () async {
+                              _keyboardPopupMode.value = 'tap';
+                              await bind.mainSetLocalOption(
+                                key: 'keyboard_popup_mode',
+                                value: 'tap',
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'tap',
+                                    groupValue: _keyboardPopupMode.value,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: (val) async {
+                                      if (val != null) {
+                                        _keyboardPopupMode.value = val;
+                                        await bind.mainSetLocalOption(
+                                          key: 'keyboard_popup_mode',
+                                          value: val,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 2.0),
+                                  Flexible(
+                                    child: Text(
+                                      isZh ? '点击屏幕才弹出' : 'Tap screen',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _keyboardPopupMode.value == 'tap'
+                                            ? Colors.blue
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(6.0),
+                            onTap: () async {
+                              _keyboardPopupMode.value = 'auto';
+                              await bind.mainSetLocalOption(
+                                key: 'keyboard_popup_mode',
+                                value: 'auto',
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Radio<String>(
+                                    value: 'auto',
+                                    groupValue: _keyboardPopupMode.value,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                    onChanged: (val) async {
+                                      if (val != null) {
+                                        _keyboardPopupMode.value = val;
+                                        await bind.mainSetLocalOption(
+                                          key: 'keyboard_popup_mode',
+                                          value: val,
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(width: 2.0),
+                                  Flexible(
+                                    child: Text(
+                                      isZh ? '自动弹出' : 'Automatic',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _keyboardPopupMode.value == 'auto'
+                                            ? Colors.blue
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4.0),
+                    if (_keyboardPopupMode.value == 'auto') ...[
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -3485,6 +3636,7 @@ void showOptions(
                       ),
                     ),
                     const SizedBox(height: 4.0),
+                    ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
