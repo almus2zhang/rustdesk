@@ -715,6 +715,29 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
       ));
 
       enhancementsTiles.add(_getPopupDialogRadioEntry(
+        title: '文本光标软键盘弹出延迟 / Keyboard popup delay',
+        list: [
+          _RadioEntry('0 ms (即时弹出 / Immediate)', '0'),
+          _RadioEntry('100 ms', '100'),
+          _RadioEntry('200 ms (推荐默认 / Default)', '200'),
+          _RadioEntry('300 ms', '300'),
+          _RadioEntry('500 ms (0.5秒)', '500'),
+          _RadioEntry('800 ms', '800'),
+          _RadioEntry('1000 ms (1秒)', '1000'),
+        ],
+        getter: () {
+          final m = bind.mainGetLocalOption(key: 'keyboard_popup_delay_ms');
+          if (m.isEmpty) return '200';
+          return m;
+        },
+        asyncSetter: (value) async {
+          await bind.mainSetLocalOption(
+              key: 'keyboard_popup_delay_ms', value: value);
+          setState(() {});
+        },
+      ));
+
+      enhancementsTiles.add(_getPopupDialogRadioEntry(
         title: '软键盘光标间距 / Keyboard cursor margin',
         list: [
           _RadioEntry('10 px', '10'),

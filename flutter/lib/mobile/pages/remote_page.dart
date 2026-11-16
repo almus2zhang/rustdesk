@@ -46,6 +46,7 @@ void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
 final RxBool _autoPopupKeyboardOnText = false.obs;
 final RxDouble _keyboardCursorMargin = 30.0.obs;
 final RxString _keyboardDismissMode = 'any'.obs;
+final RxInt _keyboardPopupDelayMs = 200.obs;
 
 class RemotePage extends StatefulWidget {
   RemotePage(
@@ -149,6 +150,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
   StreamSubscription? _textCursorSubscription;
+  Timer? _textCursorPopupTimer;
 
   InputModel get inputModel => gFFI.inputModel;
   SessionID get sessionId => gFFI.sessionId;
@@ -311,12 +313,31 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (_keyboardDismissMode.value.isEmpty) {
       _keyboardDismissMode.value = 'any';
     }
+    _keyboardPopupDelayMs.value = (int.tryParse(
+            bind.mainGetLocalOption(key: 'keyboard_popup_delay_ms')) ??
+        200);
     _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
+      _textCursorPopupTimer?.cancel();
       if (isText && _autoPopupKeyboardOnText.value) {
-        if (!_showEdit && !keyboardVisibilityController.isVisible) {
-          openKeyboard();
+        final delayMs = _keyboardPopupDelayMs.value;
+        if (delayMs <= 0) {
+          if (!_showEdit && !keyboardVisibilityController.isVisible) {
+            openKeyboard();
+          } else {
+            _adjustCanvasForTextCursor();
+          }
         } else {
-          _adjustCanvasForTextCursor();
+          _textCursorPopupTimer = Timer(Duration(milliseconds: delayMs), () {
+            if (mounted &&
+                gFFI.cursorModel.isTextCursor.value &&
+                _autoPopupKeyboardOnText.value) {
+              if (!_showEdit && !keyboardVisibilityController.isVisible) {
+                openKeyboard();
+              } else {
+                _adjustCanvasForTextCursor();
+              }
+            }
+          });
         }
       }
     });
@@ -357,6 +378,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Future<void> dispose() async {
     _displaysSubscription?.cancel();
     _textCursorSubscription?.cancel();
+    _textCursorPopupTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -591,7 +613,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void _adjustCanvasForTextCursor([double? forcedKeyboardHeight]) {
     if (!_autoPopupKeyboardOnText.value) return;
-    if (!isTabletLayoutMode(context)) return;
     if (!gFFI.cursorModel.isTextCursor.value) return;
 
     final media = MediaQuery.of(context);
@@ -2500,6 +2521,9 @@ void showOptions(
   if (_keyboardDismissMode.value.isEmpty) {
     _keyboardDismissMode.value = 'any';
   }
+  _keyboardPopupDelayMs.value = (int.tryParse(
+          bind.mainGetLocalOption(key: 'keyboard_popup_delay_ms')) ??
+      200);
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();
@@ -3396,6 +3420,46 @@ void showOptions(
                         onChangeEnd: (val) async {
                           await bind.mainSetLocalOption(
                             key: 'keyboard_cursor_margin',
+                            value: val.round().toString(),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4.0),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isZh ? '软键盘弹出延迟' : 'Popup delay',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        Text(
+                          '${_keyboardPopupDelayMs.value} ms',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3.0,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
+                      ),
+                      child: Slider(
+                        value: _keyboardPopupDelayMs.value.toDouble().clamp(0.0, 1000.0),
+                        min: 0.0,
+                        max: 1000.0,
+                        divisions: 20,
+                        label: '${_keyboardPopupDelayMs.value} ms',
+                        onChanged: (val) {
+                          _keyboardPopupDelayMs.value = val.round();
+                        },
+                        onChangeEnd: (val) async {
+                          await bind.mainSetLocalOption(
+                            key: 'keyboard_popup_delay_ms',
                             value: val.round().toString(),
                           );
                         },

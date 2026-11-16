@@ -3000,6 +3000,9 @@ class CanvasModel with ChangeNotifier {
 
   void mobileFocusCanvasCursor() {
     _timerMobileFocusCanvasCursor?.cancel();
+    if (bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true') {
+      return;
+    }
     _timerMobileFocusCanvasCursor =
         Timer(Duration(milliseconds: 100), () async {
       updateSize();
@@ -3033,6 +3036,12 @@ class CanvasModel with ChangeNotifier {
   void restoreMobileOffsetAfterSoftKeyboard() {
     _timerMobileRestoreCanvasOffset?.cancel();
     _timerMobileFocusCanvasCursor?.cancel();
+    if (bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true') {
+      _offsetBeforeMobileSoftKeyboard = null;
+      _scaleBeforeMobileSoftKeyboard = null;
+      updateSize();
+      return;
+    }
     final targetOffset = _offsetBeforeMobileSoftKeyboard;
     final targetScale = _scaleBeforeMobileSoftKeyboard;
     if (targetOffset == null || targetScale == null) {
