@@ -44,6 +44,7 @@ void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
 }
 
 final RxBool _autoPopupKeyboardOnText = false.obs;
+final RxDouble _keyboardCursorMargin = 30.0.obs;
 
 class RemotePage extends StatefulWidget {
   RemotePage(
@@ -114,6 +115,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _collapseLongPressTimer;
   bool _isCollapseLongPressed = false;
   bool _showGestureHelp = false;
+  Offset? _pointerDownPos;
+  DateTime? _pointerDownTime;
+  bool _pointerMoved = false;
 
   void _toggleControlBarOrientation() {
     _isControlBarVertical.value = !_isControlBarVertical.value;
@@ -298,6 +302,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     gFFI.inputModel.listenToMouse(true);
     _autoPopupKeyboardOnText.value =
         bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
+    _keyboardCursorMargin.value = (double.tryParse(
+            bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
+        30.0);
     _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
       if (isText && _autoPopupKeyboardOnText.value) {
         if (!_showEdit && !keyboardVisibilityController.isVisible) {
@@ -585,8 +592,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final viewInsetsBottom = forcedKeyboardHeight ?? media.viewInsets.bottom;
     if (viewInsetsBottom <= 0) return;
 
-    final marginStr = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
-    final margin = double.tryParse(marginStr) ?? 30.0;
+    final margin = _keyboardCursorMargin.value;
     final screenH = media.size.height;
     final keyboardTop = screenH - viewInsetsBottom;
 
@@ -1248,14 +1254,43 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   Listener(
                     behavior: HitTestBehavior.translucent,
                     onPointerDown: (event) {
-                      final isText = gFFI.cursorModel.isTextCursor.value;
-                      final isKeyboardVisible =
-                          _showEdit || keyboardVisibilityController.isVisible;
-                      if (isKeyboardVisible && !isText) {
-                        _closeSoftKeyboard();
-                      } else if (_showEdit) {
+                      _pointerDownPos = event.position;
+                      _pointerDownTime = DateTime.now();
+                      _pointerMoved = false;
+                      if (_showEdit && gFFI.cursorModel.isTextCursor.value) {
                         _mobileFocusNode.requestFocus();
                       }
+                    },
+                    onPointerMove: (event) {
+                      if (_pointerDownPos != null) {
+                        final dist = (event.position - _pointerDownPos!).distance;
+                        if (dist > 15.0) {
+                          _pointerMoved = true;
+                        }
+                      }
+                    },
+                    onPointerUp: (event) {
+                      if (!_pointerMoved && _pointerDownPos != null) {
+                        final dist = (event.position - _pointerDownPos!).distance;
+                        final duration = DateTime.now()
+                            .difference(_pointerDownTime ?? DateTime.now());
+                        if (dist < 15.0 && duration.inMilliseconds < 600) {
+                          final isText = gFFI.cursorModel.isTextCursor.value;
+                          final isKeyboardVisible = _showEdit ||
+                              keyboardVisibilityController.isVisible;
+                          if (isKeyboardVisible && !isText) {
+                            _closeSoftKeyboard();
+                          }
+                        }
+                      }
+                      _pointerDownPos = null;
+                      _pointerDownTime = null;
+                      _pointerMoved = false;
+                    },
+                    onPointerCancel: (event) {
+                      _pointerDownPos = null;
+                      _pointerDownTime = null;
+                      _pointerMoved = false;
                     },
                     child: SizedBox.expand(
                       child: ImagePaint(ffiModel: gFFI.ffiModel),
@@ -2433,6 +2468,9 @@ void showOptions(
   final isZh = localeName.startsWith('zh');
   _autoPopupKeyboardOnText.value =
       bind.mainGetLocalOption(key: 'auto_popup_keyboard_on_text') == 'true';
+  _keyboardCursorMargin.value = (double.tryParse(
+          bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
+      30.0);
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();
@@ -3286,25 +3324,56 @@ void showOptions(
                         value: val ? 'true' : 'false');
                   },
                 )),
-          if (isAndroid)
+                    if (isAndroid)
             Obx(() {
               if (!_autoPopupKeyboardOnText.value) return const SizedBox.shrink();
-              final curMargin = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
-              final marginDisplay = curMargin.isEmpty ? '30' : curMargin;
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                title: Text(
-                  isZh ? '软键盘光标间距' : 'Keyboard cursor margin',
-                  style: const TextStyle(fontSize: 14),
+              final marginVal = _keyboardCursorMargin.value;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isZh ? '软键盘光标安全间距' : 'Keyboard cursor margin',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        Text(
+                          '${marginVal.round()} px',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        trackHeight: 3.0,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
+                      ),
+                      child: Slider(
+                        value: marginVal.clamp(0.0, 120.0),
+                        min: 0.0,
+                        max: 120.0,
+                        divisions: 24,
+                        label: '${marginVal.round()} px',
+                        onChanged: (val) {
+                          _keyboardCursorMargin.value = val;
+                        },
+                        onChangeEnd: (val) async {
+                          await bind.mainSetLocalOption(
+                            key: 'keyboard_cursor_margin',
+                            value: val.round().toString(),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
-                trailing: Text(
-                  '$marginDisplay px',
-                  style: const TextStyle(fontSize: 14, color: Colors.blue),
-                ),
-                onTap: () {
-                  _showCursorMarginDialog(context, isZh);
-                },
               );
             }),
           const Divider(color: MyTheme.border),
@@ -3316,36 +3385,6 @@ void showOptions(
   }, clickMaskDismiss: true, backDismiss: true).then((value) {
     _disableAndroidSoftKeyboard();
   });
-}
-
-void _showCursorMarginDialog(BuildContext context, bool isZh) {
-  final current = bind.mainGetLocalOption(key: 'keyboard_cursor_margin');
-  final selected = current.isEmpty ? '30' : current;
-  final options = ['10', '20', '30', '40', '50', '60', '80', '100'];
-  showDialog(
-    context: context,
-    builder: (ctx) {
-      return SimpleDialog(
-        title: Text(isZh ? '设置软键盘光标间距' : 'Set Keyboard Cursor Margin'),
-        children: options.map((opt) {
-          final label = opt == '30' ? '$opt px (默认 / Default)' : '$opt px';
-          return RadioListTile<String>(
-            title: Text(label),
-            value: opt,
-            groupValue: selected,
-            onChanged: (val) async {
-              if (val != null) {
-                await bind.mainSetLocalOption(
-                    key: 'keyboard_cursor_margin', value: val);
-                Navigator.of(ctx).pop();
-                gFFI.dialogManager.dismissAll();
-              }
-            },
-          );
-        }).toList(),
-      );
-    },
-  );
 }
 
 Resolution _getPhonePortraitDimensions(BuildContext context) {
