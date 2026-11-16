@@ -45,6 +45,7 @@ void _disableAndroidSoftKeyboard({bool? isKeyboardVisible}) {
 
 final RxBool _autoPopupKeyboardOnText = false.obs;
 final RxDouble _keyboardCursorMargin = 30.0.obs;
+final RxString _keyboardDismissMode = 'any'.obs;
 
 class RemotePage extends StatefulWidget {
   RemotePage(
@@ -305,6 +306,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _keyboardCursorMargin.value = (double.tryParse(
             bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
         30.0);
+    _keyboardDismissMode.value =
+        bind.mainGetLocalOption(key: 'keyboard_dismiss_mode');
+    if (_keyboardDismissMode.value.isEmpty) {
+      _keyboardDismissMode.value = 'any';
+    }
     _textCursorSubscription = gFFI.cursorModel.isTextCursor.listen((isText) {
       if (isText && _autoPopupKeyboardOnText.value) {
         if (!_showEdit && !keyboardVisibilityController.isVisible) {
@@ -1257,8 +1263,23 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       _pointerDownPos = event.position;
                       _pointerDownTime = DateTime.now();
                       _pointerMoved = false;
-                      if (_showEdit && gFFI.cursorModel.isTextCursor.value) {
-                        _mobileFocusNode.requestFocus();
+
+                      final isText = gFFI.cursorModel.isTextCursor.value;
+                      final isKeyboardVisible =
+                          _showEdit || keyboardVisibilityController.isVisible;
+
+                      if (_keyboardDismissMode.value == 'any') {
+                        // 保持现在：触摸/按下即收回软键盘
+                        if (isKeyboardVisible && !isText) {
+                          _closeSoftKeyboard();
+                        } else if (_showEdit && isText) {
+                          _mobileFocusNode.requestFocus();
+                        }
+                      } else {
+                        // 只有点击才消失：在按下时不收回，等待up时判断是否为有效点击
+                        if (_showEdit && isText) {
+                          _mobileFocusNode.requestFocus();
+                        }
                       }
                     },
                     onPointerMove: (event) {
@@ -1270,16 +1291,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       }
                     },
                     onPointerUp: (event) {
-                      if (!_pointerMoved && _pointerDownPos != null) {
-                        final dist = (event.position - _pointerDownPos!).distance;
-                        final duration = DateTime.now()
-                            .difference(_pointerDownTime ?? DateTime.now());
-                        if (dist < 15.0 && duration.inMilliseconds < 600) {
-                          final isText = gFFI.cursorModel.isTextCursor.value;
-                          final isKeyboardVisible = _showEdit ||
-                              keyboardVisibilityController.isVisible;
-                          if (isKeyboardVisible && !isText) {
-                            _closeSoftKeyboard();
+                      if (_keyboardDismissMode.value == 'tap') {
+                        // 只有点击才消失：仅当未滑动且距离在15px内且时长<600ms时才收回
+                        if (!_pointerMoved && _pointerDownPos != null) {
+                          final dist = (event.position - _pointerDownPos!).distance;
+                          final duration = DateTime.now()
+                              .difference(_pointerDownTime ?? DateTime.now());
+                          if (dist < 15.0 && duration.inMilliseconds < 600) {
+                            final isText = gFFI.cursorModel.isTextCursor.value;
+                            final isKeyboardVisible = _showEdit ||
+                                keyboardVisibilityController.isVisible;
+                            if (isKeyboardVisible && !isText) {
+                              _closeSoftKeyboard();
+                            }
                           }
                         }
                       }
@@ -2471,6 +2495,11 @@ void showOptions(
   _keyboardCursorMargin.value = (double.tryParse(
           bind.mainGetLocalOption(key: 'keyboard_cursor_margin')) ??
       30.0);
+  _keyboardDismissMode.value =
+      bind.mainGetLocalOption(key: 'keyboard_dismiss_mode');
+  if (_keyboardDismissMode.value.isEmpty) {
+    _keyboardDismissMode.value = 'any';
+  }
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();
@@ -3371,6 +3400,46 @@ void showOptions(
                           );
                         },
                       ),
+                    ),
+                    const SizedBox(height: 4.0),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          isZh ? '非文本光标收回方式' : 'Dismiss trigger',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                        DropdownButton<String>(
+                          value: _keyboardDismissMode.value,
+                          isDense: true,
+                          underline: const SizedBox.shrink(),
+                          items: [
+                            DropdownMenuItem(
+                              value: 'any',
+                              child: Text(
+                                isZh ? '触摸/滑动即收回' : 'Touch/Slide',
+                                style: const TextStyle(fontSize: 13, color: Colors.blue),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'tap',
+                              child: Text(
+                                isZh ? '仅点击才收回' : 'Tap only',
+                                style: const TextStyle(fontSize: 13, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                          onChanged: (val) async {
+                            if (val != null) {
+                              _keyboardDismissMode.value = val;
+                              await bind.mainSetLocalOption(
+                                key: 'keyboard_dismiss_mode',
+                                value: val,
+                              );
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),

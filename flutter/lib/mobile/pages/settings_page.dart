@@ -697,6 +697,24 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
       ));
 
       enhancementsTiles.add(_getPopupDialogRadioEntry(
+        title: '非文本光标软键盘收回方式 / Keyboard dismiss trigger',
+        list: [
+          _RadioEntry('触摸/滑动即收回 (默认 / Default)', 'any'),
+          _RadioEntry('仅点击屏幕才收回 (滑动不收回)', 'tap'),
+        ],
+        getter: () {
+          final m = bind.mainGetLocalOption(key: 'keyboard_dismiss_mode');
+          if (m.isEmpty) return 'any';
+          return m;
+        },
+        asyncSetter: (value) async {
+          await bind.mainSetLocalOption(
+              key: 'keyboard_dismiss_mode', value: value);
+          setState(() {});
+        },
+      ));
+
+      enhancementsTiles.add(_getPopupDialogRadioEntry(
         title: '软键盘光标间距 / Keyboard cursor margin',
         list: [
           _RadioEntry('10 px', '10'),
