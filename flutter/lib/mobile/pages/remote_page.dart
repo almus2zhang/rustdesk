@@ -47,6 +47,7 @@ final RxBool _autoPopupKeyboardOnText = false.obs;
 final RxDouble _keyboardCursorMargin = 30.0.obs;
 final RxString _keyboardDismissMode = 'any'.obs;
 final RxInt _keyboardPopupDelayMs = 200.obs;
+final RxDouble _floatingKeyboardHeight = 260.0.obs;
 
 class RemotePage extends StatefulWidget {
   RemotePage(
@@ -618,11 +619,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
     final media = MediaQuery.of(context);
     final viewInsetsBottom = forcedKeyboardHeight ?? media.viewInsets.bottom;
-    if (viewInsetsBottom <= 0) return;
+    
+    // 如果是吸底全宽键盘，使用系统上报的真实高度；如果是悬浮小键盘（viewInsets.bottom == 0），使用小键盘预估高度（如 260px）
+    final effectiveKeyboardH = viewInsetsBottom > 0
+        ? viewInsetsBottom
+        : _floatingKeyboardHeight.value;
 
     final margin = _keyboardCursorMargin.value;
     final screenH = media.size.height;
-    final keyboardTop = screenH - viewInsetsBottom;
+    final keyboardTop = screenH - effectiveKeyboardH;
 
     gFFI.canvasModel.adjustForKeyboardAboveCursor(
       keyboardTop: keyboardTop,
@@ -1362,24 +1367,39 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           child: QualityMonitor(gFFI.qualityMonitorModel),
         ),
         _buildKeyHelpTools(isTablet, keyboardIsVisible),
-        SizedBox(
-          width: 0,
-          height: 0,
-          child: !_showEdit
-              ? Container()
-              : TextFormField(
-                  textInputAction: TextInputAction.newline,
-                  autocorrect: true,
-                  enableSuggestions: true,
-                  autofocus: true,
-                  focusNode: _mobileFocusNode,
-                  maxLines: null,
-                  controller: _textController,
-                  // trick way to make backspace work always
-                  keyboardType: TextInputType.multiline,
-                  onChanged: handleSoftKeyboardInput,
-                ).workaroundFreezeLinuxMint(),
-        ),
+        () {
+          if (!_showEdit) {
+            return const SizedBox.shrink();
+          }
+          final cm = gFFI.cursorModel;
+          final canvas = gFFI.canvasModel;
+          final s = canvas.scale;
+          final adjust = canvas.getAdjustY();
+          final curX = (cm.x - cm.hotx) * s + canvas.x;
+          final curY = (cm.y - cm.hoty) * s + canvas.y + adjust;
+          final posX = curX.clamp(0.0, max(0.0, size.width - 24.0));
+          final posY = curY.clamp(0.0, max(0.0, size.height - 24.0));
+          return Positioned(
+            left: posX,
+            top: posY,
+            width: 24.0,
+            height: 24.0,
+            child: Opacity(
+              opacity: 0.0,
+              child: TextFormField(
+                textInputAction: TextInputAction.newline,
+                autocorrect: true,
+                enableSuggestions: true,
+                autofocus: true,
+                focusNode: _mobileFocusNode,
+                maxLines: null,
+                controller: _textController,
+                keyboardType: TextInputType.multiline,
+                onChanged: handleSoftKeyboardInput,
+              ).workaroundFreezeLinuxMint(),
+            ),
+          );
+        }(),
       ];
       final topPadding = padding.top;
       final leftPadding = padding.left;

@@ -3023,11 +3023,19 @@ class CanvasModel with ChangeNotifier {
   void adjustForKeyboardAboveCursor({required double keyboardTop, required double margin}) {
     final cursorModel = parent.target?.cursorModel;
     if (cursorModel == null) return;
-    saveMobileOffsetBeforeSoftKeyboard();
     final targetCursorScreenY = keyboardTop - margin;
     final adjust = getAdjustY();
     final s = _scale;
     final cursorY = cursorModel.y - cursorModel.hoty;
+    final currentCursorScreenY = cursorY * s + _y + adjust;
+
+    // 如果当前光标在键盘上方且留有安全距离（空间放得下），画面完全不挪动，直接弹出键盘
+    if (currentCursorScreenY <= targetCursorScreenY) {
+      return;
+    }
+
+    // 空间放不下（光标会被键盘遮挡或距离太近）时，才挪动画面
+    saveMobileOffsetBeforeSoftKeyboard();
     final targetY = targetCursorScreenY - cursorY * s - adjust;
     _y = min(0.0, targetY);
     isMobileCanvasChanged = true;
