@@ -27,8 +27,10 @@
 ### 核心定制特性 (Mod Features)
 本项目针对个人自用与生产力场景，基于官方源码进行了深度拓展与优化：
 - **动态 DNS 直连 (txt:dns)**：支持通过 DNS TXT 记录自动解析动态公网 `IP:端口`，配合 Lucky 等 STUN 打洞工具，实现 0 云服务器成本、独享物理宽带的极速 P2P 一键直连（使用教程详见：[Lucky STUN + DNS TXT 直连教程](https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk)）。
+- **安卓设备当独立副屏 (USB 设备投屏与 VDD 驱动)**：支持物理 USB 数据线免驱连接，将 Android 手机/平板极速扩展为 Windows 电脑的独立虚拟副屏。独享数百兆物理带宽与低于 0.5ms 超低延迟，免去物理显卡欺骗锁，支持自动唤醒、位置分辨率自动记忆、软件内一键重启 ADB 服务及 120 FPS 高帧率极速直通。
+- **智能文本光标软键盘联动**：移动端检测到远程文本输入光标时自动弹出软键盘，支持可调延迟（0~1000ms）、光标与键盘安全间距调节、非文本光标触摸滑动收回方式选择；支持系统悬浮小键盘（豆包/小键盘模式）零偏移不挪动画布，软键盘收起后自动平滑复原画面原始位置。
+- **全新移动端悬浮控制条与快捷键栏**：支持长按收起按钮自由切换横排/竖排布局、独立 ⌘ 快捷键工具栏一键折叠/展开、触控模式与鼠标模式高亮区分与快速切换。
 - **单程序远程操控 (Single App Mode)**：支持仅捕获和独立传输电脑端的单个指定应用程序窗口，画面靠齐无冗余桌面黑边，在手机/平板上实现如原生 App 般的沉浸式操控体验。
-- **安卓设备当独立副屏 (USB 设备投屏)**：支持物理 USB 数据线免驱连接，将 Android 手机/平板极速扩展为 Windows 电脑的独立虚拟副屏。独享数百兆物理带宽与低于 0.5ms 超低延迟，免去物理显卡欺骗锁，支持自动唤醒、位置分辨率自动记忆与软件内一键重启 ADB 服务。
 
 ### 借助 VDD 虚拟显示驱动获得极致低延迟副屏体验
 
@@ -49,15 +51,22 @@
 5. **即插即用**：
    - 插入 USB 数据线（或开启无线副屏），RustDesk 会自动极速识别并复用该 VDD 虚拟屏幕，享受 120FPS 超低延迟副屏投屏！
 
-以下是在 3:2 比例平板上将远程屏幕设置为 16:9 和 16:10 比例的截图：
+### 界面截图与功能展示
 
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod4.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod5.jpg)
+#### 1. 自动检测 USB 电脑副屏连接
+![自动检测 USB 副屏](../res/rustdesk-usb-prompt.jpg)
 
-### 截图示例
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
+#### 2. VDD 120 FPS 极速直通与竖排悬浮控制条
+![VDD 120FPS 极速直通](../res/rustdesk-desktop-vdd.jpg)
+
+#### 3. 显示设置（120 FPS、Direct Surface <2ms 极速直通、AV1/H.265 硬解）
+![显示设置](../res/rustdesk-display-settings.jpg)
+
+#### 4. 文本光标自动弹出软键盘与触控收回配置
+![软键盘设置](../res/rustdesk-keyboard-settings.jpg)
+
+#### 5. 远程桌面与应用沉浸式单窗口
+![远程桌面与单应用](../res/rustdesk-single-app-view.jpg)
 
 RustDesk 期待各位的贡献. 如何参与开发? 详情请看 [CONTRIBUTING-ZH.md](CONTRIBUTING-ZH.md).
 

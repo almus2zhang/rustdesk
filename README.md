@@ -26,8 +26,10 @@ Yet another remote desktop solution, written in Rust. Works out of the box with 
 ### Key Mod Features
 This modified edition integrates several core productivity enhancements based on the official RustDesk codebase:
 - **Dynamic DNS Direct Connect (txt:dns)**: Resolves dynamic `IP:Port` directly from DNS TXT records. Paired with Lucky STUN penetration, it enables full-speed P2P direct connection without requiring any dedicated cloud rendezvous or relay server (Tutorial: [Lucky STUN + DNS TXT Guide](https://ken.nasnas.site/archives/lucky-stun-txt-rustdesk)).
+- **Android Secondary Display (USB Cast Mode & VDD)**: Leverages high-speed physical USB connection or local network to extend an Android phone/tablet as an independent virtual secondary monitor for Windows with <0.5ms latency and full physical bandwidth, featuring automatic wake-up, resolution/position persistence, in-app ADB service management, and 120 FPS high refresh-rate streaming.
+- **Smart Soft Keyboard & Cursor Text Auto-Popup**: Automatically pops up the mobile soft keyboard when the remote cursor turns into a text editing cursor. Features customizable popup delay (0~1000ms), safe margin distance, dismiss options (gesture/touch vs tap-only), zero canvas shift for floating keyboards (e.g. Doubao/Gboard small floating IME), and automatic canvas restoration to the exact pre-keyboard position on dismiss.
+- **Redesigned Floating Mobile Control Bar**: Collapsible floating toolbar with long-press horizontal/vertical orientation toggle, independent ⌘ shortcut key tools toggle, and high-contrast touch vs mouse modes with direct tap configuration.
 - **Single App Window Remote Control (Single App Mode)**: Allows capturing and controlling only a single specified application window instead of the entire desktop, delivering an immersive, borderless native-like experience on mobile devices.
-- **Android Secondary Display (USB Cast Mode)**: Leverages high-speed physical USB connection to extend an Android phone/tablet as an independent virtual secondary monitor for Windows with <0.5ms latency and full physical bandwidth, featuring automatic wake-up, resolution/position persistence, and in-app ADB service management.
 
 ### Ultra-Low Latency Secondary Display with VDD (Virtual Display Driver)
 
@@ -48,16 +50,22 @@ For the lowest possible latency and smooth 120Hz/144Hz refresh rate when using y
 5. **Connect & Enjoy**:
    - Plug in your Android device via USB (or initiate a secondary display session). RustDesk will automatically detect, configure, and reuse the active VDD display at full 120FPS with hardware direct streaming!
 
-below are the screenshots of set remote screen to 16:9 and 16:10 on 3:2 tablets.
+### Screenshots & Features Showcase
 
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod3.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod4.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod5.jpg)
+#### 1. USB Secondary Display Auto Detection
+![USB Secondary Display Detection](res/rustdesk-usb-prompt.jpg)
 
-### Screenshots
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod.jpg)
-![image](https://raw.githubusercontent.com/almus2zhang/rustdesk/master/res/rustdesk-mod2.jpg)
-![image](https://user-images.githubusercontent.com/71636191/171661982-430285f0-2e12-4b1d-9957-4a58e375304d.png)
+#### 2. VDD 120 FPS Ultra-Low Latency Streaming & Vertical Control Bar
+![VDD 120FPS Streaming](res/rustdesk-desktop-vdd.jpg)
+
+#### 3. Display Settings (120 FPS, Direct Surface <2ms, AV1 / H.265 Hardware Decoding)
+![Display Settings](res/rustdesk-display-settings.jpg)
+
+#### 4. Smart Soft Keyboard & Cursor Text Auto-Popup Options
+![Smart Keyboard Options](res/rustdesk-keyboard-settings.jpg)
+
+#### 5. Desktop & Single Application Remote View
+![Remote Application View](res/rustdesk-single-app-view.jpg)
 
 RustDesk welcomes contribution from everyone. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for help getting started.
 
