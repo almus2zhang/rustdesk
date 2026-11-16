@@ -47,7 +47,6 @@ final RxBool _autoPopupKeyboardOnText = false.obs;
 final RxDouble _keyboardCursorMargin = 30.0.obs;
 final RxString _keyboardDismissMode = 'any'.obs;
 final RxInt _keyboardPopupDelayMs = 200.obs;
-final RxDouble _floatingKeyboardHeight = 260.0.obs;
 
 class RemotePage extends StatefulWidget {
   RemotePage(
@@ -619,15 +618,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
     final media = MediaQuery.of(context);
     final viewInsetsBottom = forcedKeyboardHeight ?? media.viewInsets.bottom;
-    
-    // 如果是吸底全宽键盘，使用系统上报的真实高度；如果是悬浮小键盘（viewInsets.bottom == 0），使用小键盘预估高度（如 260px）
-    final effectiveKeyboardH = viewInsetsBottom > 0
-        ? viewInsetsBottom
-        : _floatingKeyboardHeight.value;
+
+    // 悬浮小键盘时（viewInsets.bottom <= 0，没有挤占底部窗口），完全不挪动画布
+    if (viewInsetsBottom <= 0) return;
 
     final margin = _keyboardCursorMargin.value;
     final screenH = media.size.height;
-    final keyboardTop = screenH - effectiveKeyboardH;
+    final keyboardTop = screenH - viewInsetsBottom;
 
     gFFI.canvasModel.adjustForKeyboardAboveCursor(
       keyboardTop: keyboardTop,
@@ -636,6 +633,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   void openKeyboard() {
+    gFFI.canvasModel.saveMobileOffsetBeforeSoftKeyboard();
     gFFI.invokeMethod("enable_soft_keyboard", true);
     // destroy first, so that our _value trick can work
     _value = initText;
