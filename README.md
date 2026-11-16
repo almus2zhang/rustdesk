@@ -33,6 +33,11 @@ This modified edition integrates several core productivity enhancements based on
 
 ### Ultra-Low Latency Secondary Display with VDD (Virtual Display Driver)
 
+> [!IMPORTANT]
+> **Key Requirement for Ultra-Low Latency & 120 FPS:** <br>
+> To achieve millisecond ultra-low latency (<10ms / ~0ms) and 120 FPS high refresh-rate streaming, **you MUST go to [Settings] -> [General / Other] -> [Virtual display driver] in the Windows host menu and select [VDD]**! <br>
+> Selecting VDD activates direct GPU hardware acceleration and zero-copy DXGI desktop replication under Microsoft's IddCx architecture. If VDD is not selected in the menu, it falls back to standard drivers and cannot achieve ultra-low latency.
+
 For the lowest possible latency and smooth 120Hz/144Hz refresh rate when using your Android tablet/phone as a secondary monitor, we highly recommend using **VDD (Virtual Display Driver / VDD Control)**:
 
 - **Why VDD?**: VDD is built on Microsoft's modern Indirect Display Driver (IddCx) architecture. It enables native GPU hardware rendering, direct DXGI Desktop Duplication frame grabbing, custom tablet resolutions (such as 16:10 `1920x1200` or `2560x1600`), and unlocks up to 120Hz/144Hz refresh rates, slashing input-to-display latency to under 2ms.
