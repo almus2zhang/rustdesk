@@ -86,6 +86,12 @@ class RawTouchGestureDetectorRegion extends StatefulWidget {
 /// mouseMode only:
 ///   DoubleFiner -> right click
 ///   HoldDrag -> left drag
+enum TwoFingerModeState {
+  undecided,
+  scrolling,
+  canvasPanZoom,
+}
+
 class _RawTouchGestureDetectorRegionState
     extends State<RawTouchGestureDetectorRegion> {
   Offset _cacheLongPressPosition = Offset(0, 0);
@@ -120,7 +126,9 @@ class _RawTouchGestureDetectorRegionState
   double _oneFingerScrollX = 0;
   double _oneFingerScrollY = 0;
   Timer? _oneFingerInertiaTimer;
-  bool _twoFingerIsZooming = false;
+  TwoFingerModeState _twoFingerState = TwoFingerModeState.undecided;
+  Offset _twoFingerTotalFocalDelta = Offset.zero;
+  Timer? _twoFingerHoldTimer;
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -136,6 +144,7 @@ class _RawTouchGestureDetectorRegionState
   @override
   void dispose() {
     _oneFingerInertiaTimer?.cancel();
+    _twoFingerHoldTimer?.cancel();
     super.dispose();
   }
 
@@ -583,9 +592,12 @@ class _RawTouchGestureDetectorRegionState
       _lastSpecialHoldDragFocalPoint = d.focalPoint;
     }
     _scale = 1.0;
-    _twoFingerIsZooming = false;
+    _twoFingerState = TwoFingerModeState.undecided;
+    _twoFingerTotalFocalDelta = Offset.zero;
     _twoFingerScrollX = 0;
     _twoFingerScrollY = 0;
+    _twoFingerHoldTimer?.cancel();
+    _twoFingerHoldTimer = null;
     _remoteScaleAccumulator = 0.0;
     _hasRemoteScaleBaseline = false;
     _remoteScaleDirection = 0;
@@ -708,14 +720,38 @@ class _RawTouchGestureDetectorRegionState
       final twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
       final isWheelMode = twoFingerMode == 'wheel';
       if (isWheelMode) {
-        // If pinch-to-zoom is detected (scale changed significantly from 1.0), zoom canvas.
-        if (!_twoFingerIsZooming && (d.scale - 1.0).abs() > 0.05) {
-          _twoFingerIsZooming = true;
-          _twoFingerScrollX = 0;
-          _twoFingerScrollY = 0;
+        if (_twoFingerState == TwoFingerModeState.undecided) {
+          _twoFingerTotalFocalDelta += d.focalPointDelta;
+          final double scaleDiff = (d.scale - 1.0).abs();
+
+          // 1. 双指先收或者开（产生明显缩放意图，阈值 12%）-> 判定为画布缩放与拖动
+          if (scaleDiff >= 0.12) {
+            _twoFingerState = TwoFingerModeState.canvasPanZoom;
+            _twoFingerHoldTimer?.cancel();
+            _twoFingerHoldTimer = null;
+          }
+          // 2. 双指一开始没有触发缩放，焦点直接产生位移（阈值 10px）-> 严格锁定为远程滚轮
+          else if (_twoFingerTotalFocalDelta.distance >= 10.0) {
+            _twoFingerState = TwoFingerModeState.scrolling;
+            _twoFingerHoldTimer?.cancel();
+            _twoFingerHoldTimer = null;
+            // 将初始判定过程中的位移无缝计入，起步不丢帧
+            _twoFingerScrollX += _twoFingerTotalFocalDelta.dx * 1.35;
+            _twoFingerScrollY += _twoFingerTotalFocalDelta.dy * 1.35;
+          }
+          // 3. 双指先轻微收/开（>= 6%）且按着不动（停留超过 250ms）-> 判定为触发画面拖动
+          else if (scaleDiff >= 0.06 && _twoFingerHoldTimer == null) {
+            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 250), () {
+              if (_twoFingerState == TwoFingerModeState.undecided) {
+                _twoFingerState = TwoFingerModeState.canvasPanZoom;
+              }
+            });
+          }
         }
 
-        if (_twoFingerIsZooming) {
+        if (_twoFingerState == TwoFingerModeState.canvasPanZoom) {
+          // 双指缩放与画布拖动模式：
+          // 先收或者开，或者按着不动后，拖动画布与缩放
           if (_scale > 0 && d.scale > 0) {
             final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.5;
             ffi.canvasModel.updateScale(zoomRatio, d.focalPoint);
@@ -723,11 +759,13 @@ class _RawTouchGestureDetectorRegionState
             ffi.canvasModel.panX(d.focalPointDelta.dx);
             ffi.canvasModel.panY(d.focalPointDelta.dy);
           }
-        } else {
-          _twoFingerScrollX += d.focalPointDelta.dx;
-          _twoFingerScrollY += d.focalPointDelta.dy;
+        } else if (_twoFingerState == TwoFingerModeState.scrolling) {
+          // 滚轮模式：严格只滚动远程内容，画面绝对不动！
+          // 稍比手指走的快一些：引入 1.35x 敏捷度与降低累积阈值 (6.0)
+          _twoFingerScrollX += d.focalPointDelta.dx * 1.35;
+          _twoFingerScrollY += d.focalPointDelta.dy * 1.35;
 
-          const double threshold = 8.0;
+          const double threshold = 6.0;
           int scrollX = 0;
           int scrollY = 0;
 
@@ -778,7 +816,10 @@ class _RawTouchGestureDetectorRegionState
       }
     }
     _scale = 1;
-    _twoFingerIsZooming = false;
+    _twoFingerState = TwoFingerModeState.undecided;
+    _twoFingerTotalFocalDelta = Offset.zero;
+    _twoFingerHoldTimer?.cancel();
+    _twoFingerHoldTimer = null;
     _remoteScaleAccumulator = 0.0;
     _hasRemoteScaleBaseline = false;
     _remoteScaleDirection = 0;
