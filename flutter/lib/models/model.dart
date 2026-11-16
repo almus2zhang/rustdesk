@@ -3051,15 +3051,13 @@ class CanvasModel with ChangeNotifier {
     _timerMobileRestoreCanvasOffset?.cancel();
     _timerMobileFocusCanvasCursor?.cancel();
     final targetOffset = _offsetBeforeMobileSoftKeyboard;
-    final targetScale = _scaleBeforeMobileSoftKeyboard;
-    if (targetOffset == null || targetScale == null) {
+    if (targetOffset == null) {
       return;
     }
     _timerMobileRestoreCanvasOffset = Timer(Duration(milliseconds: 100), () {
       updateSize();
-      _x = targetOffset.dx;
+      // 只有纵向位置回到弹出之前，横向不动（键盘不会造成横向变化，保留用户主动挪动后的横向位置）
       _y = targetOffset.dy;
-      _scale = targetScale;
       _offsetBeforeMobileSoftKeyboard = null;
       _scaleBeforeMobileSoftKeyboard = null;
       notifyListeners();

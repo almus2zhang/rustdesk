@@ -121,7 +121,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Offset? _pointerDownPos;
   DateTime? _pointerDownTime;
   bool _pointerMoved = false;
-  DateTime? _lastScreenTapTime;
+  bool _pointerIsDown = false;
+  bool _pendingTapForText = false;
+  Timer? _pendingTapTimer;
 
   void _toggleControlBarOrientation() {
     _isControlBarVertical.value = !_isControlBarVertical.value;
@@ -327,12 +329,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       _textCursorPopupTimer?.cancel();
       if (isText && _autoPopupKeyboardOnText.value) {
         if (_keyboardPopupMode.value == 'tap') {
-          // 点击屏幕才弹出模式：仅当最近 1200ms 内用户在屏幕上有过点击交互时才弹出
-          final now = DateTime.now();
-          final diff = _lastScreenTapTime == null
-              ? 999999
-              : now.difference(_lastScreenTapTime!).inMilliseconds;
-          if (diff < 1200) {
+          // 点击才弹出模式：严格仅当用户刚刚完成了一次有效点击，且当前没有在滑动/按住屏幕
+          if (_pendingTapForText && !_pointerIsDown) {
+            _pendingTapForText = false;
+            _pendingTapTimer?.cancel();
             if (!_showEdit && !keyboardVisibilityController.isVisible) {
               openKeyboard();
             } else {
@@ -402,6 +402,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _displaysSubscription?.cancel();
     _textCursorSubscription?.cancel();
     _textCursorPopupTimer?.cancel();
+    _pendingTapTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // https://github.com/flutter/flutter/issues/64935
     super.dispose();
@@ -1304,9 +1305,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (event) {
+                _pointerIsDown = true;
                 _pointerDownPos = event.position;
                 _pointerDownTime = DateTime.now();
                 _pointerMoved = false;
+                _pendingTapForText = false;
+                _pendingTapTimer?.cancel();
 
                 final isText = gFFI.cursorModel.isTextCursor.value;
                 final isKeyboardVisible =
@@ -1328,40 +1332,52 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               onPointerMove: (event) {
                 if (_pointerDownPos != null) {
                   final dist = (event.position - _pointerDownPos!).distance;
-                  if (dist > 15.0) {
+                  // 划过移动超过 8px 即视为滑动，杜绝误判为点击，并取消所有待触发文本弹出
+                  if (dist > 8.0) {
                     _pointerMoved = true;
+                    _pendingTapForText = false;
+                    _pendingTapTimer?.cancel();
                   }
                 }
               },
               onPointerUp: (event) {
-                final bool isTap = !_pointerMoved &&
-                    _pointerDownPos != null &&
-                    (event.position - _pointerDownPos!).distance < 15.0 &&
-                    DateTime.now().difference(_pointerDownTime ?? DateTime.now()).inMilliseconds < 600;
+                final durationMs = DateTime.now().difference(_pointerDownTime ?? DateTime.now()).inMilliseconds;
+                final dist = _pointerDownPos != null ? (event.position - _pointerDownPos!).distance : 999.0;
+                // 严格点击判定：位移小于 8px 且触摸时长小于 350ms，划过时绝不误判
+                final bool isTap = !_pointerMoved && dist < 8.0 && durationMs < 350;
+                _pointerIsDown = false;
 
                 if (isTap) {
-                  _lastScreenTapTime = DateTime.now();
                   final isText = gFFI.cursorModel.isTextCursor.value;
                   final isKeyboardVisible =
                       _showEdit || keyboardVisibilityController.isVisible;
 
-                  // 1. 如果光标是文本光标且启用了文本软键盘功能，点击时呼出软键盘
                   if (_autoPopupKeyboardOnText.value) {
                     if (isText) {
+                      // 光标已经是文本光标，用户在此处点击直接弹出
                       if (!isKeyboardVisible) {
                         openKeyboard();
                       } else if (_showEdit) {
                         _mobileFocusNode.requestFocus();
                       }
+                    } else if (_keyboardPopupMode.value == 'tap') {
+                      // 光标尚不是文本光标，用户点击输入框后等待远端光标切换为文本（400ms窗口）
+                      _pendingTapForText = true;
+                      _pendingTapTimer?.cancel();
+                      _pendingTapTimer = Timer(const Duration(milliseconds: 400), () {
+                        _pendingTapForText = false;
+                      });
                     }
                   }
 
-                  // 2. 如果开启了“仅点击才收回”：非文本光标且软键盘开启时，点击收回软键盘
                   if (_keyboardDismissMode.value == 'tap') {
                     if (isKeyboardVisible && !isText) {
                       _closeSoftKeyboard();
                     }
                   }
+                } else {
+                  _pendingTapForText = false;
+                  _pendingTapTimer?.cancel();
                 }
 
                 _pointerDownPos = null;
@@ -1369,9 +1385,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 _pointerMoved = false;
               },
               onPointerCancel: (event) {
+                _pointerIsDown = false;
                 _pointerDownPos = null;
                 _pointerDownTime = null;
                 _pointerMoved = false;
+                _pendingTapForText = false;
+                _pendingTapTimer?.cancel();
               },
               child: Container(
                 color: Colors.transparent,
