@@ -1653,7 +1653,44 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
     if install_printer {
         reg_value_printer = "1".to_owned();
     }
-    let install_vdd = options.contains("vdd") && is_win_10_or_greater();
+    let mut install_vdd = options.contains("vdd") && is_win_10_or_greater();
+    if !install_vdd && is_win_10_or_greater() && !is_installed() && !silent {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let title = OsStr::new(&crate::get_app_name())
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let text_cn = "是否同时安装虚拟显示器驱动 (VDD 120 FPS)？\n\n(推荐勾选：可显著提升远程画面流畅度，支持最高 120Hz 高刷新率串流)";
+        let text_en =
+            "Do you want to install Virtual Display Driver (VDD 120 FPS)?\n\n(Recommended for ultra-low latency and up to 120Hz streaming)";
+        let locale = sys_locale::get_locale().unwrap_or_default();
+        let prompt_text = if locale.to_lowercase().starts_with("zh") {
+            text_cn
+        } else {
+            text_en
+        };
+        let text = OsStr::new(prompt_text)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        let ret = unsafe {
+            winuser::MessageBoxW(
+                null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                winuser::MB_YESNO
+                    | winuser::MB_ICONQUESTION
+                    | winuser::MB_TOPMOST
+                    | winuser::MB_SETFOREGROUND,
+            )
+        };
+        if ret == winuser::IDYES {
+            install_vdd = true;
+        }
+    }
     if install_vdd {
         reg_value_vdd = "1".to_owned();
     }
@@ -3731,6 +3768,48 @@ reg add {subkey} /f /v EstimatedSize /t REG_DWORD /d {size}
         ("".to_owned(), "".to_owned())
     };
 
+    let is_vdd_installed = crate::virtual_display_manager::vdd::is_driver_installed();
+    let mut install_vdd_cmd = "".to_string();
+    if is_vdd_installed {
+        install_vdd_cmd = format!("\"{}\" --install-vdd", &src_exe);
+    } else if is_win_10_or_greater() {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let title = OsStr::new(&crate::get_app_name())
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let text_cn = "检测到新版本支持虚拟显示器驱动 (VDD 120 FPS)，是否立即安装？\n\n(推荐安装：可显著降低远程串流延迟，支持最高 120Hz 高刷新率)";
+        let text_en =
+            "Do you want to install Virtual Display Driver (VDD 120 FPS)?\n\n(Recommended for ultra-low latency and up to 120Hz streaming)";
+        let locale = sys_locale::get_locale().unwrap_or_default();
+        let prompt_text = if locale.to_lowercase().starts_with("zh") {
+            text_cn
+        } else {
+            text_en
+        };
+        let text = OsStr::new(prompt_text)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        let ret = unsafe {
+            winuser::MessageBoxW(
+                null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                winuser::MB_YESNO
+                    | winuser::MB_ICONQUESTION
+                    | winuser::MB_TOPMOST
+                    | winuser::MB_SETFOREGROUND,
+            )
+        };
+        if ret == winuser::IDYES {
+            install_vdd_cmd = format!("\"{}\" --install-vdd", &src_exe);
+        }
+    }
+
     // We do not try to remove all files in the old version.
     // Because I don't know whether additional files will be installed here after installation, such as drivers.
     // Just copy files to the installation directory works fine.
@@ -3755,6 +3834,7 @@ taskkill /F /IM {app_name}.exe{filter}
 {restore_service_cmd}
 {uninstall_printer_cmd}
 {install_printer_cmd}
+{install_vdd_cmd}
 {sleep}
     ",
         app_name = app_name,

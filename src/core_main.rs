@@ -312,9 +312,14 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             } else if args[0] == "--install-vdd" {
                 #[cfg(windows)]
-                hbb_common::allow_err!(
-                    crate::virtual_display_manager::vdd::install_driver()
-                );
+                {
+                    let res = crate::virtual_display_manager::vdd::install_driver();
+                    let success = res.is_ok();
+                    if let Err(e) = &res {
+                        log::error!("Failed to install VDD: {}", e);
+                    }
+                    crate::virtual_display_manager::vdd::show_install_result(success);
+                }
                 return None;
             } else if args[0] == "--uninstall-vdd" {
                 #[cfg(windows)]

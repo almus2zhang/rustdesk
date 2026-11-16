@@ -187,12 +187,25 @@ jobs:
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
           mv -Force .\usbmmidd_v2 ./rustdesk
 
-          # Download Virtual Display Driver (VDD) and extract it to ./rustdesk/VirtualDisplayDriver
+          # Download Virtual Display Driver (VDD) and extract it to ./rustdesk
           try {
-            Invoke-WebRequest -Uri https://github.com/itsmequinn/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip -OutFile VirtualDisplayDriver.zip
-            Expand-Archive VirtualDisplayDriver.zip -DestinationPath ./rustdesk/VirtualDisplayDriver
+            $vdd_url = "https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip"
+            Write-Output "Downloading Virtual Display Driver from $vdd_url..."
+            Invoke-WebRequest -Uri $vdd_url -OutFile VirtualDisplayDriver.zip
+            Expand-Archive VirtualDisplayDriver.zip -DestinationPath ./rustdesk
+            if (Test-Path ./rustdesk/VirtualDisplayDriver/MttVDD.inf) {
+              Write-Output "VirtualDisplayDriver successfully verified at ./rustdesk/VirtualDisplayDriver."
+            } elseif (Test-Path ./rustdesk/MttVDD.inf) {
+              mkdir ./rustdesk/VirtualDisplayDriver -Force
+              Move-Item ./rustdesk/MttVDD.*, ./rustdesk/mttvdd.*, ./rustdesk/vdd_settings.xml ./rustdesk/VirtualDisplayDriver/ -Force
+              Write-Output "Moved VirtualDisplayDriver files to ./rustdesk/VirtualDisplayDriver."
+            } else {
+              Write-Error "VirtualDisplayDriver MttVDD.inf not found after extraction!"
+              exit 1
+            }
           } catch {
-            Write-Host "Ignore VirtualDisplayDriver download error: $_"
+            Write-Error "VirtualDisplayDriver download/extract error: $_"
+            exit 1
           }
 
           # Download printer driver files and extract them to ./rustdesk
@@ -403,8 +416,8 @@ jobs:
           # we need the x64 exe to install and uninstall the driver.
           rm -rf ./usbmmidd_v2/deviceinstaller.exe ./usbmmidd_v2/usbmmidd.bat
           mv ./usbmmidd_v2 ./Release || true
-          curl -LJ -o ./VirtualDisplayDriver.zip https://github.com/itsmequinn/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip || true
-          unzip VirtualDisplayDriver.zip -d ./Release/VirtualDisplayDriver || true
+          curl -LJ -o ./VirtualDisplayDriver.zip https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/download/25.7.23/VirtualDisplayDriver-x86.Driver.Only.zip || true
+          unzip VirtualDisplayDriver.zip -d ./Release || true
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res

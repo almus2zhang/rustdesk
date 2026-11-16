@@ -911,33 +911,96 @@ pub mod vdd {
     pub const VDD_DIR_NAME: &str = "VirtualDisplayDriver";
 
     pub fn locate_vdd_driver_dir() -> Option<PathBuf> {
-        // 1. Current executable directory / VirtualDisplayDriver
+        let check_dir = |dir: &Path| -> Option<PathBuf> {
+            if dir.join(INF_NAME).exists() {
+                return Some(dir.to_path_buf());
+            }
+            let sub = dir.join(VDD_DIR_NAME);
+            if sub.join(INF_NAME).exists() {
+                return Some(sub);
+            }
+            let sub_sub = sub.join(VDD_DIR_NAME);
+            if sub_sub.join(INF_NAME).exists() {
+                return Some(sub_sub);
+            }
+            None
+        };
+
+        // 1. Current executable directory
         if let Ok(cur_exe) = std::env::current_exe() {
             if let Some(parent) = cur_exe.parent() {
-                let p = parent.join(VDD_DIR_NAME);
-                if p.join(INF_NAME).exists() {
+                if let Some(p) = check_dir(parent) {
                     return Some(p);
                 }
             }
         }
-        // 2. Installed directory / VirtualDisplayDriver
+        // 2. Installed directory
         #[cfg(target_os = "windows")]
         {
             let (_, path, _, _) = crate::platform::windows::get_install_info();
             if !path.is_empty() {
-                let p = PathBuf::from(&path).join(VDD_DIR_NAME);
-                if p.join(INF_NAME).exists() {
+                if let Some(p) = check_dir(Path::new(&path)) {
                     return Some(p);
                 }
             }
         }
         // 3. System fallback: C:\VirtualDisplayDriver
-        let p = PathBuf::from(r"C:\VirtualDisplayDriver");
-        if p.join(INF_NAME).exists() {
+        if let Some(p) = check_dir(Path::new(r"C:\VirtualDisplayDriver")) {
             return Some(p);
         }
         None
     }
+
+    #[cfg(target_os = "windows")]
+    pub fn show_install_result(success: bool) {
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+
+        let title = OsStr::new(&crate::get_app_name())
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let text_cn = if success {
+            "虚拟显示器驱动 (VDD 120 FPS) 已成功安装并就绪！\n\n已为您自动设为默认虚拟驱动，现在可在被控菜单或设置中选择 VDD 使用 120 FPS 高刷新率。"
+        } else {
+            "虚拟显示器驱动 (VDD) 安装未能成功完成。\n\n请检查是否具有管理员权限或驱动文件是否完整。"
+        };
+        let text_en = if success {
+            "Virtual Display Driver (VDD 120 FPS) has been installed successfully!\n\n120 FPS streaming is now available."
+        } else {
+            "Failed to install Virtual Display Driver (VDD)."
+        };
+        let locale = sys_locale::get_locale().unwrap_or_default();
+        let prompt_text = if locale.to_lowercase().starts_with("zh") {
+            text_cn
+        } else {
+            text_en
+        };
+        let text = OsStr::new(prompt_text)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+
+        unsafe {
+            winapi::um::winuser::MessageBoxW(
+                std::ptr::null_mut(),
+                text.as_ptr(),
+                title.as_ptr(),
+                if success {
+                    winapi::um::winuser::MB_OK
+                        | winapi::um::winuser::MB_ICONINFORMATION
+                        | winapi::um::winuser::MB_TOPMOST
+                } else {
+                    winapi::um::winuser::MB_OK
+                        | winapi::um::winuser::MB_ICONWARNING
+                        | winapi::um::winuser::MB_TOPMOST
+                },
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    pub fn show_install_result(_success: bool) {}
 
     pub fn is_driver_installed() -> bool {
         #[cfg(target_os = "windows")]

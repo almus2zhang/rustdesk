@@ -2923,7 +2923,20 @@ pub fn main_get_common_sync(key: String) -> SyncReturn<String> {
 
 pub fn main_set_common(_key: String, _value: String) {
     #[cfg(target_os = "windows")]
-    if _key == "install-printer" && crate::platform::is_win_10_or_greater() {
+    if _key == "install-vdd" {
+        #[cfg(target_os = "windows")]
+        std::thread::spawn(move || {
+            let res = crate::virtual_display_manager::vdd::install_driver();
+            let success = res.is_ok();
+            crate::virtual_display_manager::vdd::show_install_result(success);
+        });
+    } else if _key == "uninstall-vdd" {
+        #[cfg(target_os = "windows")]
+        std::thread::spawn(move || {
+            let res = crate::virtual_display_manager::vdd::uninstall_driver();
+            crate::virtual_display_manager::vdd::show_install_result(!res.is_ok());
+        });
+    } else if _key == "install-printer" && crate::platform::is_win_10_or_greater() {
         std::thread::spawn(move || {
             let (success, msg) = match remote_printer::install_update_printer(&get_app_name()) {
                 Ok(_) => (true, "".to_owned()),

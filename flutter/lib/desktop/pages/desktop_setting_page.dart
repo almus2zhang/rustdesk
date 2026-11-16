@@ -639,6 +639,40 @@ class _GeneralState extends State<_General> {
                   ),
                   onPressed: () => showVddGuideDialog(context),
                 ),
+                if (isWindows) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    icon: const Icon(Icons.download_for_offline_outlined, size: 16),
+                    label: Text(
+                      localeName.startsWith('zh') ? '安装/更新驱动' : 'Install Driver',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () async {
+                      await bind.mainSetCommon(key: 'install-vdd', value: '');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: Text(
+                      localeName.startsWith('zh') ? '卸载驱动' : 'Uninstall Driver',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onPressed: () async {
+                      await bind.mainSetCommon(key: 'uninstall-vdd', value: '');
+                    },
+                  ),
+                ],
               ],
             ],
           ),
