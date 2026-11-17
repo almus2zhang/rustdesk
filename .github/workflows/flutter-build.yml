@@ -203,6 +203,9 @@ jobs:
               Write-Error "VirtualDisplayDriver MttVDD.inf not found after extraction!"
               exit 1
             }
+            # Also mirror to ./rustdesk/drivers/VirtualDisplayDriver so it is visible in both places
+            mkdir ./rustdesk/drivers/VirtualDisplayDriver -Force
+            Copy-Item ./rustdesk/VirtualDisplayDriver/* ./rustdesk/drivers/VirtualDisplayDriver/ -Force -Recurse
           } catch {
             Write-Error "VirtualDisplayDriver download/extract error: $_"
             exit 1

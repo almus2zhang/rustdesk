@@ -313,6 +313,12 @@ pub fn core_main() -> Option<Vec<String>> {
             } else if args[0] == "--install-vdd" {
                 #[cfg(windows)]
                 {
+                    if !crate::platform::is_elevated(None).unwrap_or(false) {
+                        if let Err(e) = crate::platform::windows::elevate("--install-vdd") {
+                            log::error!("Failed to elevate for --install-vdd: {}", e);
+                        }
+                        return None;
+                    }
                     let res = crate::virtual_display_manager::vdd::install_driver();
                     let success = res.is_ok();
                     if let Err(e) = &res {
@@ -323,9 +329,17 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             } else if args[0] == "--uninstall-vdd" {
                 #[cfg(windows)]
-                hbb_common::allow_err!(
-                    crate::virtual_display_manager::vdd::uninstall_driver()
-                );
+                {
+                    if !crate::platform::is_elevated(None).unwrap_or(false) {
+                        if let Err(e) = crate::platform::windows::elevate("--uninstall-vdd") {
+                            log::error!("Failed to elevate for --uninstall-vdd: {}", e);
+                        }
+                        return None;
+                    }
+                    hbb_common::allow_err!(
+                        crate::virtual_display_manager::vdd::uninstall_driver()
+                    );
+                }
                 return None;
             } else if args[0] == "--uninstall-remote-printer" {
                 #[cfg(windows)]

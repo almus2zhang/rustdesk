@@ -62,6 +62,7 @@ pub struct Capturer {
     // bound recovery so a persistently broken output still falls back to GDI
     // instead of spinning forever.
     recreate_attempts: u32,
+    frame_acquired: bool,
 }
 
 impl Capturer {
@@ -179,6 +180,7 @@ impl Capturer {
             adapter_desc1,
             rotate,
             recreate_attempts: 0,
+            frame_acquired: false,
         })
     }
 
@@ -344,9 +346,10 @@ impl Capturer {
             if self.device.0.is_null() || self.display.inner.0.is_null() {
                 return false;
             }
-            if !self.duplication.0.is_null() {
+            if self.frame_acquired && !self.duplication.0.is_null() {
                 (*self.duplication.0).ReleaseFrame();
             }
+            self.frame_acquired = false;
             let mut duplication = ptr::null_mut();
             let hres = (*self.display.inner.0)
                 .DuplicateOutput(self.device.0 as *mut _, &mut duplication);
@@ -370,14 +373,14 @@ impl Capturer {
         let mut info = mem::MaybeUninit::uninit().assume_init();
 
         let hres = (*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame);
-        if hres == DXGI_ERROR_ACCESS_LOST && crate::perf_stage_enabled(1) {
-            // Rebuild in place and treat this tick as "no frame". Never sleep
-            // here: the capture loop's next frame is the retry.
+        if (hres == DXGI_ERROR_ACCESS_LOST || hres == DXGI_ERROR_INVALID_CALL) && crate::perf_stage_enabled(1) {
+            self.frame_acquired = false;
             if self.recreate_duplication() || self.recreate_attempts < 8 {
                 return Err(std::io::ErrorKind::WouldBlock.into());
             }
         }
         wrap_hresult(hres)?;
+        self.frame_acquired = true;
         let frame = ComPtr(frame);
 
         if *info.LastPresentTime.QuadPart() == 0 {
@@ -515,20 +518,23 @@ impl Capturer {
             if self.duplication.0.is_null() {
                 return Err(std::io::ErrorKind::AddrNotAvailable.into());
             }
-            (*self.duplication.0).ReleaseFrame();
+            if self.frame_acquired {
+                (*self.duplication.0).ReleaseFrame();
+                self.frame_acquired = false;
+            }
             let mut frame = ptr::null_mut();
             #[allow(invalid_value)]
             let mut info = mem::MaybeUninit::uninit().assume_init();
 
             let hres = (*self.duplication.0).AcquireNextFrame(timeout, &mut info, &mut frame);
-            if hres == DXGI_ERROR_ACCESS_LOST && crate::perf_stage_enabled(1) {
-                // Keep the zero-copy texture path alive across virtual monitor
-                // mode changes instead of falling back to the slow GDI path.
+            if (hres == DXGI_ERROR_ACCESS_LOST || hres == DXGI_ERROR_INVALID_CALL) && crate::perf_stage_enabled(1) {
+                self.frame_acquired = false;
                 if self.recreate_duplication() || self.recreate_attempts < 8 {
                     return Err(std::io::ErrorKind::WouldBlock.into());
                 }
             }
             wrap_hresult(hres)?;
+            self.frame_acquired = true;
             let frame = ComPtr(frame);
 
             if info.AccumulatedFrames == 0 || *info.LastPresentTime.QuadPart() == 0 {
@@ -627,7 +633,9 @@ impl Capturer {
 
     fn unmap(&self) {
         unsafe {
-            (*self.duplication.0).ReleaseFrame();
+            if self.frame_acquired {
+                (*self.duplication.0).ReleaseFrame();
+            }
             if self.fastlane {
                 (*self.duplication.0).UnMapDesktopSurface();
             } else {

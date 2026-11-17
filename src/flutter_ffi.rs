@@ -2926,6 +2926,13 @@ pub fn main_set_common(_key: String, _value: String) {
     if _key == "install-vdd" {
         #[cfg(target_os = "windows")]
         std::thread::spawn(move || {
+            if !crate::platform::is_elevated(None).unwrap_or(false) {
+                if let Err(e) = crate::platform::windows::elevate("--install-vdd") {
+                    log::error!("Failed to elevate for install-vdd: {}", e);
+                    crate::virtual_display_manager::vdd::show_install_result(false);
+                }
+                return;
+            }
             let res = crate::virtual_display_manager::vdd::install_driver();
             let success = res.is_ok();
             crate::virtual_display_manager::vdd::show_install_result(success);
@@ -2933,6 +2940,13 @@ pub fn main_set_common(_key: String, _value: String) {
     } else if _key == "uninstall-vdd" {
         #[cfg(target_os = "windows")]
         std::thread::spawn(move || {
+            if !crate::platform::is_elevated(None).unwrap_or(false) {
+                if let Err(e) = crate::platform::windows::elevate("--uninstall-vdd") {
+                    log::error!("Failed to elevate for uninstall-vdd: {}", e);
+                    crate::virtual_display_manager::vdd::show_install_result(false);
+                }
+                return;
+            }
             let res = crate::virtual_display_manager::vdd::uninstall_driver();
             crate::virtual_display_manager::vdd::show_install_result(!res.is_ok());
         });

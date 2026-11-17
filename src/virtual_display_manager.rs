@@ -923,6 +923,10 @@ pub mod vdd {
             if sub_sub.join(INF_NAME).exists() {
                 return Some(sub_sub);
             }
+            let drivers_sub = dir.join("drivers").join(VDD_DIR_NAME);
+            if drivers_sub.join(INF_NAME).exists() {
+                return Some(drivers_sub);
+            }
             None
         };
 
@@ -1013,14 +1017,6 @@ pub mod vdd {
                 let s_lower = s.to_lowercase();
                 s_lower.contains("virtual display driver") || s_lower.contains("mttvdd")
             }) {
-                return true;
-            }
-            use winreg::{enums::*, RegKey};
-            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-            if hklm
-                .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\WUDF\Services\MttVDD")
-                .is_ok()
-            {
                 return true;
             }
             false
