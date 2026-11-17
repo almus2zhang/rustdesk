@@ -118,10 +118,13 @@ pub unsafe fn install_driver(
         .encode_wide()
         .chain(Some(0).into_iter())
         .collect::<Vec<u16>>();
-    let hardware_id = OsStr::new(hardware_id)
+    let hardware_id_wide = OsStr::new(hardware_id)
         .encode_wide()
         .chain(Some(0).into_iter())
         .collect::<Vec<u16>>();
+    // SPDRP_HARDWAREID requires REG_MULTI_SZ (double-null terminated)
+    let mut hardware_id_multi_sz = hardware_id_wide.clone();
+    hardware_id_multi_sz.push(0);
 
     let mut class_guid: GUID = std::mem::zeroed();
     let mut class_name: [u16; 32] = [0; 32];
@@ -162,8 +165,8 @@ pub unsafe fn install_driver(
         *dev_info,
         &mut dev_info_data,
         SPDRP_HARDWAREID,
-        hardware_id.as_ptr() as _,
-        (hardware_id.len() * 2) as _,
+        hardware_id_multi_sz.as_ptr() as _,
+        (hardware_id_multi_sz.len() * 2) as _,
     ) == FALSE
     {
         return Err(DeviceError::new_api_last_err(
@@ -178,7 +181,7 @@ pub unsafe fn install_driver(
     let mut reboot_required_ = FALSE;
     if UpdateDriverForPlugAndPlayDevicesW(
         null_mut(),
-        hardware_id.as_ptr(),
+        hardware_id_wide.as_ptr(),
         driver_inf_path.as_ptr(),
         1,
         &mut reboot_required_,
@@ -214,10 +217,11 @@ unsafe fn is_same_hardware_id(
         ));
     }
 
-    let cur_hardware_id = String::from_utf16_lossy(&cur_hardware_id)
-        .trim_end_matches(char::from(0))
-        .to_string();
-    Ok(cur_hardware_id == hardware_id)
+    let cur_hardware_id = String::from_utf16_lossy(&cur_hardware_id);
+    let matched = cur_hardware_id
+        .split('\0')
+        .any(|s| s.trim().eq_ignore_ascii_case(hardware_id));
+    Ok(matched)
 }
 
 pub unsafe fn uninstall_driver(

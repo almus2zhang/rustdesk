@@ -150,6 +150,10 @@ pub trait TraitCapturer {
     fn is_gdi(&self) -> bool;
     #[cfg(windows)]
     fn set_gdi(&mut self) -> bool;
+    #[cfg(windows)]
+    fn recreate_duplication(&mut self) -> bool {
+        false
+    }
 
     #[cfg(feature = "vram")]
     fn device(&self) -> AdapterDevice;

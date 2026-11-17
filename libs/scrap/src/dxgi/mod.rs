@@ -339,7 +339,7 @@ impl Capturer {
     /// DXGI_ERROR_ACCESS_LOST). This must stay non-blocking: no sleeps, no
     /// thread restarts. The caller simply treats the tick as "no frame" and
     /// retries with the fresh interface on its next iteration.
-    fn recreate_duplication(&mut self) -> bool {
+    pub fn recreate_duplication(&mut self) -> bool {
         unsafe {
             if self.device.0.is_null() || self.display.inner.0.is_null() {
                 return false;

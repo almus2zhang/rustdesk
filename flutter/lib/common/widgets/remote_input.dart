@@ -739,14 +739,14 @@ class _RawTouchGestureDetectorRegionState
           _twoFingerTotalFocalDelta += d.focalPointDelta;
           final double scaleDiff = (d.scale - 1.0).abs();
 
-          // 1. 双指先收或者开（产生明显缩放意图，阈值 12%）-> 判定为画布缩放与拖动
-          if (scaleDiff >= 0.12) {
+          // 1. 双指先大幅收或者开（明显缩放意图，阈值提高到 25%）-> 判定为画布缩放与拖动
+          if (scaleDiff >= 0.25) {
             _twoFingerState = TwoFingerModeState.canvasPanZoom;
             _twoFingerHoldTimer?.cancel();
             _twoFingerHoldTimer = null;
           }
-          // 2. 双指一开始没有触发缩放，焦点直接产生位移（阈值 10px）-> 严格锁定为远程滚轮
-          else if (_twoFingerTotalFocalDelta.distance >= 10.0) {
+          // 2. 双指轻微滑动（极小阈值 5.0px）-> 瞬间锁定为远程滚轮，坚决优先滚动！
+          else if (_twoFingerTotalFocalDelta.distance >= 5.0) {
             _twoFingerState = TwoFingerModeState.scrolling;
             _twoFingerHoldTimer?.cancel();
             _twoFingerHoldTimer = null;
@@ -754,9 +754,9 @@ class _RawTouchGestureDetectorRegionState
             _twoFingerScrollX += _twoFingerTotalFocalDelta.dx;
             _twoFingerScrollY += _twoFingerTotalFocalDelta.dy;
           }
-          // 3. 双指先轻微收/开（>= 6%）且按着不动（停留超过 250ms）-> 判定为触发画面拖动
-          else if (scaleDiff >= 0.06 && _twoFingerHoldTimer == null) {
-            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 250), () {
+          // 3. 双指明显收/开（>= 15%）且按着不动（停留超过 350ms）-> 判定为触发画面拖动
+          else if (scaleDiff >= 0.15 && _twoFingerHoldTimer == null) {
+            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 350), () {
               if (_twoFingerState == TwoFingerModeState.undecided) {
                 _twoFingerState = TwoFingerModeState.canvasPanZoom;
               }

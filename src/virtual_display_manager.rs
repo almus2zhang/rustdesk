@@ -1071,10 +1071,11 @@ pub mod vdd {
                     HARDWARE_ID,
                     &mut reboot_required,
                 ) {
-                    log::warn!(
-                        "win_device::install_driver failed or partially succeeded: {:?}",
+                    log::error!(
+                        "win_device::install_driver failed: {:?}",
                         e
                     );
+                    bail!("win_device::install_driver failed: {:?}", e);
                 }
             }
 

@@ -1654,7 +1654,7 @@ copy /Y \"{tmp_path}\\Uninstall {app_name}.lnk\" \"{start_menu}\\\"
         reg_value_printer = "1".to_owned();
     }
     let mut install_vdd = options.contains("vdd") && is_win_10_or_greater();
-    if !install_vdd && is_win_10_or_greater() && !is_installed() && !silent {
+    if !install_vdd && is_win_10_or_greater() && !silent && !crate::virtual_display_manager::vdd::is_driver_installed() {
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
 

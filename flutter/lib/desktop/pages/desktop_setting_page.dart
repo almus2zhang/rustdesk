@@ -619,7 +619,7 @@ class _GeneralState extends State<_General> {
                   setState(() {});
                 },
               ),
-              if (currentDriver == 'vdd') ...[
+              if (currentDriver == 'vdd' || currentDriver == 'auto') ...[
                 const SizedBox(width: 10),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
@@ -656,22 +656,24 @@ class _GeneralState extends State<_General> {
                       await bind.mainSetCommon(key: 'install-vdd', value: '');
                     },
                   ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      minimumSize: const Size(0, 32),
+                  if (currentDriver == 'vdd') ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        minimumSize: const Size(0, 32),
+                      ),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: Text(
+                        localeName.startsWith('zh') ? '卸载驱动' : 'Uninstall Driver',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      onPressed: () async {
+                        await bind.mainSetCommon(key: 'uninstall-vdd', value: '');
+                      },
                     ),
-                    icon: const Icon(Icons.delete_outline, size: 16),
-                    label: Text(
-                      localeName.startsWith('zh') ? '卸载驱动' : 'Uninstall Driver',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    onPressed: () async {
-                      await bind.mainSetCommon(key: 'uninstall-vdd', value: '');
-                    },
-                  ),
+                  ],
                 ],
               ],
             ],

@@ -27,7 +27,19 @@ use std::{
     time::{self, Duration, Instant},
 };
 #[cfg(windows)]
-use std::sync::{atomic::AtomicU64, Once};
+use std::sync::{atomic::{AtomicI64, AtomicU64, Ordering}, Once};
+
+static LAST_INPUT_TIME: AtomicI64 = AtomicI64::new(0);
+
+#[inline]
+pub fn update_last_input_time() {
+    LAST_INPUT_TIME.store(hbb_common::get_time(), Ordering::Relaxed);
+}
+
+#[inline]
+pub fn last_input_time() -> i64 {
+    LAST_INPUT_TIME.load(Ordering::Relaxed)
+}
 
 #[cfg(windows)]
 use winapi::um::winuser::WHEEL_DELTA;
@@ -747,6 +759,7 @@ pub fn handle_mouse(
     simulate: bool,
     show_cursor: bool,
 ) {
+    update_last_input_time();
     #[cfg(target_os = "macos")]
     {
         // having GUI (--server has tray, it is GUI too), run main GUI thread, otherwise crash
@@ -763,6 +776,7 @@ pub fn handle_mouse(
 // to-do: merge handle_mouse and handle_pointer
 #[allow(unreachable_code)]
 pub fn handle_pointer(evt: &PointerDeviceEvent, conn: i32) {
+    update_last_input_time();
     #[cfg(target_os = "macos")]
     {
         // having GUI, run main GUI thread, otherwise crash
@@ -1672,6 +1686,7 @@ pub fn handle_key(evt: &KeyEvent) {
 #[inline]
 #[cfg(target_os = "windows")]
 pub fn handle_key(evt: &KeyEvent) {
+    update_last_input_time();
     crate::portable_service::client::handle_key(evt);
 }
 
@@ -2470,6 +2485,7 @@ fn is_legacy_mode(evt: &KeyEvent) -> bool {
 }
 
 pub fn handle_key_(evt: &KeyEvent) {
+    update_last_input_time();
     if EXITING.load(Ordering::SeqCst) {
         return;
     }

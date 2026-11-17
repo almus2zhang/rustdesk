@@ -57,6 +57,11 @@ impl TraitCapturer for Capturer {
         self.inner.set_gdi()
     }
 
+    #[cfg(windows)]
+    fn recreate_duplication(&mut self) -> bool {
+        self.inner.recreate_duplication()
+    }
+
     #[cfg(feature = "vram")]
     fn device(&self) -> AdapterDevice {
         self.inner.device()

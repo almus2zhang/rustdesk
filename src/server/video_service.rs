@@ -890,6 +890,10 @@ fn run(vs: VideoService) -> ResultType<()> {
     }
     #[cfg(windows)]
     let mut window_not_found_count = 0usize;
+    #[cfg(windows)]
+    let mut wb_stall_start: Option<Instant> = None;
+    #[cfg(windows)]
+    let mut wb_stall_recreated = false;
 
     let mut perf_last_log = Instant::now();
     let mut perf_frames = 0usize;
@@ -1144,6 +1148,11 @@ fn run(vs: VideoService) -> ResultType<()> {
                     }
                     try_gdi = 0;
                 }
+                #[cfg(windows)]
+                {
+                    wb_stall_start = None;
+                    wb_stall_recreated = false;
+                }
                 Ok(())
             }
             Err(err) => {
@@ -1159,18 +1168,45 @@ fn run(vs: VideoService) -> ResultType<()> {
             Err(ref e) if e.kind() == WouldBlock => {
                 perf_wouldblock += 1;
                 #[cfg(windows)]
-                if try_gdi > 0 && !c.is_gdi() {
-                    // A freshly plugged virtual monitor legitimately yields no
-                    // frame for a while: AcquireNextFrame simply times out.
-                    // Use a wall-clock grace period so a lower fps cannot
-                    // stretch it into many seconds on the "waiting for image"
-                    // dialog.
-                    if Instant::now() >= no_image_deadline {
-                        c.set_gdi();
-                        try_gdi = 0;
-                        log::info!("No image, fall back to gdi");
-                    } else {
-                        try_gdi += 1;
+                {
+                    if try_gdi > 0 && !c.is_gdi() {
+                        // A freshly plugged virtual monitor legitimately yields no
+                        // frame for a while: AcquireNextFrame simply times out.
+                        // Use a wall-clock grace period so a lower fps cannot
+                        // stretch it into many seconds on the "waiting for image"
+                        // dialog.
+                        if Instant::now() >= no_image_deadline {
+                            c.set_gdi();
+                            try_gdi = 0;
+                            log::info!("No image, fall back to gdi");
+                        } else {
+                            try_gdi += 1;
+                        }
+                    } else if !c.is_gdi() && send_counter > 0 && !frame_controller.send_conn_ids.is_empty() {
+                        // Watchdog: detect capture freeze while user is actively interacting or session is ongoing
+                        let wb_start = *wb_stall_start.get_or_insert_with(Instant::now);
+                        let elapsed = wb_start.elapsed();
+                        let has_recent_input = (hbb_common::get_time() - super::input_service::last_input_time()) < 2500;
+                        if has_recent_input {
+                            if elapsed.as_millis() >= 1500 && !wb_stall_recreated {
+                                log::warn!("Continuous WouldBlock for 1.5s while user input active, attempting DXGI duplication recreate");
+                                if c.recreate_duplication() {
+                                    wb_stall_recreated = true;
+                                    log::info!("DXGI duplication recreated successfully");
+                                }
+                            }
+                            if elapsed.as_millis() >= 3000 {
+                                log::warn!("Continuous WouldBlock for 3s while user input active, falling back to GDI to unfreeze screen");
+                                c.set_gdi();
+                                wb_stall_start = None;
+                                wb_stall_recreated = false;
+                            }
+                        } else {
+                            if elapsed.as_secs() >= 10 {
+                                wb_stall_start = None;
+                                wb_stall_recreated = false;
+                            }
+                        }
                     }
                 }
                 #[cfg(target_os = "linux")]
