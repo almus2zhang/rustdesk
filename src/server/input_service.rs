@@ -22,12 +22,13 @@ use std::sync::mpsc;
 use std::{
     convert::TryFrom,
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+        Once,
+    },
     thread,
     time::{self, Duration, Instant},
 };
-#[cfg(windows)]
-use std::sync::{atomic::{AtomicI64, AtomicU64, Ordering}, Once};
 
 static LAST_INPUT_TIME: AtomicI64 = AtomicI64::new(0);
 
