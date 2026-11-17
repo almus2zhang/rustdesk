@@ -130,19 +130,227 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   double _actionScrollAccY = 0.0;
 
   Rect _getLeftAnchorZoneRect(Size size) {
-    const double width = 300.0;
-    const double height = 300.0;
-    const double bottomDist = 300.0;
-    if (size.height < 650) {
-      final h = (height < size.height * 0.45) ? height : size.height * 0.45;
-      final b = (bottomDist < (size.height - h) / 2) ? bottomDist : (size.height - h) / 2;
-      final t = (size.height - b - h) > 0.0 ? size.height - b - h : 0.0;
-      final w = (width < size.width * 0.45) ? width : size.width * 0.45;
-      return Rect.fromLTWH(0, t, w, h);
-    }
-    final top = size.height - bottomDist - height;
-    final w = (width < size.width * 0.5) ? width : size.width * 0.5;
-    return Rect.fromLTWH(0, top, w, height);
+    final bottom = gFFI.ffiModel.anchorZoneBottom.value;
+    final height = gFFI.ffiModel.anchorZoneHeight.value;
+    final width = gFFI.ffiModel.anchorZoneWidth.value;
+
+    final clampedHeight = height.clamp(40.0, size.height * 0.6);
+    final clampedWidth = width.clamp(40.0, size.width * 0.5);
+    final clampedBottom = bottom.clamp(0.0, size.height - clampedHeight);
+    final top = size.height - clampedBottom - clampedHeight;
+
+    return Rect.fromLTWH(0, top, clampedWidth, clampedHeight);
+  }
+
+  Widget _buildAnchorZoneAdjustOverlay(Size size) {
+    return Obx(() {
+      if (!gFFI.ffiModel.isAdjustingAnchorZone.value) {
+        return const SizedBox.shrink();
+      }
+      final anchorRect = _getLeftAnchorZoneRect(size);
+      final bottom = gFFI.ffiModel.anchorZoneBottom.value;
+      final height = gFFI.ffiModel.anchorZoneHeight.value;
+      final width = gFFI.ffiModel.anchorZoneWidth.value;
+
+      return Positioned.fill(
+        child: Stack(
+          children: [
+            // Dark dim background to highlight the adjustment zone
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {},
+                child: Container(
+                  color: const Color(0x33000000),
+                ),
+              ),
+            ),
+
+            // Top control bar
+            Positioned(
+              top: 40,
+              left: 20,
+              right: 20,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xE6212121),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x4D000000),
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                    border: Border.all(color: const Color(0x40FFFFFF), width: 1),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.tune, color: Colors.amberAccent, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        localeName.startsWith('zh')
+                            ? '拖动手势区调整 (距底: ${bottom.toInt()} 宽: ${width.toInt()} 高: ${height.toInt()})'
+                            : 'Adjust Zone (Bottom: ${bottom.toInt()} W: ${width.toInt()} H: ${height.toInt()})',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          backgroundColor: const Color(0x33FFFFFF),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.restore, size: 16),
+                        label: Text(
+                          localeName.startsWith('zh') ? '重置(80-180)' : 'Reset(80-180)',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () {
+                          gFFI.ffiModel.resetAnchorZoneOptions();
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '已重置为默认值 (距底80-180, 宽100)'
+                                : 'Reset to default (80-180, W:100)',
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00C853),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.check, size: 16),
+                        label: Text(
+                          localeName.startsWith('zh') ? '完成保存' : 'Save & Done',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () {
+                          gFFI.ffiModel.saveAnchorZoneOptions();
+                          gFFI.ffiModel.isAdjustingAnchorZone.value = false;
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '手势区位置已保存'
+                                : 'Zone position saved',
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // The draggable & resizable anchor box
+            Positioned(
+              left: anchorRect.left,
+              top: anchorRect.top,
+              width: anchorRect.width,
+              height: anchorRect.height,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragUpdate: (details) {
+                  final newBottom = (gFFI.ffiModel.anchorZoneBottom.value - details.delta.dy)
+                      .clamp(0.0, size.height - height);
+                  gFFI.ffiModel.anchorZoneBottom.value = newBottom;
+                },
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0x660071FF),
+                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
+                    border: Border.all(color: Colors.amberAccent, width: 2.5),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x66000000),
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      // Center drag label
+                      Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.open_with, color: Colors.white, size: 22),
+                            const SizedBox(height: 2),
+                            Text(
+                              localeName.startsWith('zh') ? '按住上下拖动' : 'Drag Vertically',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              '距底: ${bottom.toInt()}px',
+                              style: const TextStyle(
+                                color: Colors.amberAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Top-Right resize handle
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onPanUpdate: (details) {
+                            final newWidth = (gFFI.ffiModel.anchorZoneWidth.value + details.delta.dx)
+                                .clamp(50.0, 300.0);
+                            final newHeight = (gFFI.ffiModel.anchorZoneHeight.value - details.delta.dy)
+                                .clamp(50.0, 300.0);
+                            gFFI.ffiModel.anchorZoneWidth.value = newWidth;
+                            gFFI.ffiModel.anchorZoneHeight.value = newHeight;
+                          },
+                          child: Container(
+                            width: 28,
+                            height: 28,
+                            decoration: const BoxDecoration(
+                              color: Colors.amberAccent,
+                              borderRadius: BorderRadius.only(
+                                topRight: Radius.circular(10),
+                                bottomLeft: Radius.circular(8),
+                              ),
+                            ),
+                            child: const Icon(
+                              Icons.aspect_ratio,
+                              color: Colors.black87,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   void _resetLeftAnchorState() {
@@ -1674,7 +1882,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           decoration: BoxDecoration(
                             color: const Color(0x4D808080),
                             borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(16),
+                              right: Radius.circular(12),
                             ),
                             border: Border.all(
                               color: const Color(0x40FFFFFF),
@@ -1688,9 +1896,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 const Icon(
                                   Icons.touch_app,
                                   color: Color(0x99FFFFFF),
-                                  size: 28,
+                                  size: 20,
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 2),
                                 Text(
                                   localeName.startsWith('zh')
                                       ? '滑动: 滚轮\n点击: 原位左键'
@@ -1698,9 +1906,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: Color(0xCCFFFFFF),
-                                    fontSize: 12,
+                                    fontSize: 10,
                                     fontWeight: FontWeight.w500,
-                                    height: 1.3,
+                                    height: 1.15,
                                   ),
                                 ),
                               ],
@@ -1710,9 +1918,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       )
                     : const SizedBox.shrink(),
               ),
-            ),
-          ];
+            )];
         }(),
+        _buildAnchorZoneAdjustOverlay(size),
         Positioned(
           top: 10,
           right: 10,

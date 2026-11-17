@@ -429,6 +429,63 @@ class _GestureHelpState extends State<GestureHelp> {
                             ),
                           ),
                         ),
+                      if (!_touchMode && gFFI.ffiModel.leftAnchorZone.value)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 24.0, bottom: 8.0),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              ElevatedButton.icon(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF0071FF),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                icon: const Icon(Icons.open_with, size: 14),
+                                label: Text(
+                                  localeName.startsWith('zh')
+                                      ? '在屏幕上拖动调整区域 (距底: ${gFFI.ffiModel.anchorZoneBottom.value.toInt()})'
+                                      : 'Drag on Screen to Adjust (Bottom: ${gFFI.ffiModel.anchorZoneBottom.value.toInt()})',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                onPressed: () {
+                                  widget.onClose?.call();
+                                  gFFI.ffiModel.isAdjustingAnchorZone.value = true;
+                                },
+                              ),
+                              OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white70,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                icon: const Icon(Icons.restore, size: 14),
+                                label: Text(
+                                  localeName.startsWith('zh')
+                                      ? '恢复默认(80-180, 宽100)'
+                                      : 'Reset Default (80-180, W:100)',
+                                  style: const TextStyle(fontSize: 11),
+                                ),
+                                onPressed: () {
+                                  gFFI.ffiModel.resetAnchorZoneOptions();
+                                  setState(() {});
+                                  BotToast.showText(
+                                    text: localeName.startsWith('zh')
+                                        ? '已恢复为默认值 (距底80-180, 宽100)'
+                                        : 'Reset to default (80-180, W:100)',
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
                       if (!_touchMode)
                         Transform.translate(
                           offset: const Offset(-10.0, -12.0),

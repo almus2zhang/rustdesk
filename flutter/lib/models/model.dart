@@ -213,6 +213,53 @@ class FfiModel with ChangeNotifier {
   final RxBool showTouchPanInToolbar = false.obs;
   final RxBool showTouchZoomInToolbar = false.obs;
   final RxBool leftAnchorZone = true.obs;
+  final RxDouble anchorZoneBottom = 80.0.obs;
+  final RxDouble anchorZoneHeight = 100.0.obs;
+  final RxDouble anchorZoneWidth = 100.0.obs;
+  final RxBool isAdjustingAnchorZone = false.obs;
+
+  void loadAnchorZoneOptions() {
+    final b = bind.mainGetLocalOption(key: 'anchor_zone_bottom');
+    if (b.isNotEmpty) {
+      anchorZoneBottom.value = double.tryParse(b) ?? 80.0;
+    } else {
+      anchorZoneBottom.value = 80.0;
+    }
+
+    final h = bind.mainGetLocalOption(key: 'anchor_zone_height');
+    if (h.isNotEmpty) {
+      anchorZoneHeight.value = double.tryParse(h) ?? 100.0;
+    } else {
+      anchorZoneHeight.value = 100.0;
+    }
+
+    final w = bind.mainGetLocalOption(key: 'anchor_zone_width');
+    if (w.isNotEmpty) {
+      anchorZoneWidth.value = double.tryParse(w) ?? 100.0;
+    } else {
+      anchorZoneWidth.value = 100.0;
+    }
+  }
+
+  void saveAnchorZoneOptions() {
+    bind.mainSetLocalOption(
+        key: 'anchor_zone_bottom',
+        value: anchorZoneBottom.value.toStringAsFixed(1));
+    bind.mainSetLocalOption(
+        key: 'anchor_zone_height',
+        value: anchorZoneHeight.value.toStringAsFixed(1));
+    bind.mainSetLocalOption(
+        key: 'anchor_zone_width',
+        value: anchorZoneWidth.value.toStringAsFixed(1));
+    notifyListeners();
+  }
+
+  void resetAnchorZoneOptions() {
+    anchorZoneBottom.value = 80.0;
+    anchorZoneHeight.value = 100.0;
+    anchorZoneWidth.value = 100.0;
+    saveAnchorZoneOptions();
+  }
 
   void toggleLeftAnchorZone() {
     leftAnchorZone.value = !leftAnchorZone.value;
@@ -1578,6 +1625,7 @@ class FfiModel with ChangeNotifier {
       leftAnchorZone.value = true;
       bind.mainSetLocalOption(key: 'left_anchor_zone', value: 'Y');
     }
+    loadAnchorZoneOptions();
     if (isMobile) {
       virtualMouseMode.loadOptions();
     }
