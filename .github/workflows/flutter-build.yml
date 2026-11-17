@@ -203,6 +203,50 @@ jobs:
               Write-Error "VirtualDisplayDriver MttVDD.inf not found after extraction!"
               exit 1
             }
+            # Add tablet and custom resolutions to vdd_settings.xml
+            $xmlFile = "./rustdesk/VirtualDisplayDriver/vdd_settings.xml"
+            if (Test-Path $xmlFile) {
+              $xmlContent = Get-Content -Raw $xmlFile
+              $extraRes = @"
+    <resolution>
+      <width>1920</width>
+      <height>1200</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2000</width>
+      <height>1920</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1920</width>
+      <height>2000</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2560</width>
+      <height>1600</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2880</width>
+      <height>1800</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1200</width>
+      <height>1920</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1600</width>
+      <height>2560</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+"@
+              $xmlContent = $xmlContent.Replace("</resolutions>", "$extraRes`n  </resolutions>")
+              Set-Content -Path $xmlFile -Value $xmlContent -Encoding utf8
+            }
             # Also mirror to ./rustdesk/drivers/VirtualDisplayDriver so it is visible in both places
             mkdir ./rustdesk/drivers/VirtualDisplayDriver -Force
             Copy-Item ./rustdesk/VirtualDisplayDriver/* ./rustdesk/drivers/VirtualDisplayDriver/ -Force -Recurse

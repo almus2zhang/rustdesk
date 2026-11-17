@@ -268,6 +268,7 @@ pub fn send_vdd_pipe_command(cmd: &str) -> ResultType<()> {
     let pipe_path = r"\\.\pipe\MTTVirtualDisplayPipe";
     let mut file = OpenOptions::new().write(true).open(pipe_path)?;
     file.write_all(cmd.as_bytes())?;
+    file.write_all(b"\0")?;
     file.flush()?;
     log::info!("Dispatched VDD pipe command: {}", cmd);
     Ok(())
@@ -296,7 +297,16 @@ pub fn ensure_vdd_resolution(w: u32, h: u32) -> ResultType<bool> {
 
     let w_str = format!("<width>{}</width>", w);
     let h_str = format!("<height>{}</height>", h);
-    if content.contains(&w_str) && content.contains(&h_str) {
+    let mut exists = false;
+    for block in content.split("<resolution>") {
+        if let Some(res_block) = block.split("</resolution>").next() {
+            if res_block.contains(&w_str) && res_block.contains(&h_str) {
+                exists = true;
+                break;
+            }
+        }
+    }
+    if exists {
         return Ok(false);
     }
 

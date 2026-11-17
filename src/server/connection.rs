@@ -4411,9 +4411,12 @@ impl Connection {
                         );
                     }
                     #[cfg(windows)]
-                    if (virtual_display_manager::amyuni_idd::is_my_display(&name)
+                    if virtual_display_manager::is_vdd_display(&name) {
+                        if crate::usb_display::ensure_vdd_resolution(r.width as _, r.height as _).unwrap_or(false) {
+                            std::thread::sleep(std::time::Duration::from_millis(200));
+                        }
+                    } else if (virtual_display_manager::amyuni_idd::is_my_display(&name)
                         || crate::usb_display::is_this_usb_display(&name))
-                        && !virtual_display_manager::is_vdd_display(&name)
                     {
                         virtual_display_manager::amyuni_idd::ensure_custom_resolutions(r.width as _, r.height as _).ok();
                     }
