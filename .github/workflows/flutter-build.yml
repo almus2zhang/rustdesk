@@ -207,44 +207,13 @@ jobs:
             $xmlFile = "./rustdesk/VirtualDisplayDriver/vdd_settings.xml"
             if (Test-Path $xmlFile) {
               $xmlContent = Get-Content -Raw $xmlFile
-              $extraRes = @"
-    <resolution>
-      <width>1920</width>
-      <height>1200</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>2000</width>
-      <height>1920</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>1920</width>
-      <height>2000</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>2560</width>
-      <height>1600</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>2880</width>
-      <height>1800</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>1200</width>
-      <height>1920</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-    <resolution>
-      <width>1600</width>
-      <height>2560</height>
-      <refresh_rate>120</refresh_rate>
-    </resolution>
-"@
-              $xmlContent = $xmlContent.Replace("</resolutions>", "$extraRes`n  </resolutions>")
+              $resList = @('1920,1200', '2000,1280', '2560,1600', '2880,1800', '1280,2000', '1200,1920')
+              $extra = ''
+              foreach ($r in $resList) {
+                $p = $r.Split(',')
+                $extra += '    <resolution>`n      <width>' + $p[0] + '</width>`n      <height>' + $p[1] + '</height>`n      <refresh_rate>120</refresh_rate>`n    </resolution>`n'
+              }
+              $xmlContent = $xmlContent.Replace('</resolutions>', ($extra + '  </resolutions>'))
               Set-Content -Path $xmlFile -Value $xmlContent -Encoding utf8
             }
             # Also mirror to ./rustdesk/drivers/VirtualDisplayDriver so it is visible in both places
