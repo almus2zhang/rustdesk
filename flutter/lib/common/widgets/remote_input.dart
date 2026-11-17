@@ -126,6 +126,7 @@ class _RawTouchGestureDetectorRegionState
   double _oneFingerScrollX = 0;
   double _oneFingerScrollY = 0;
   Timer? _oneFingerInertiaTimer;
+  Timer? _twoFingerInertiaTimer;
   TwoFingerModeState _twoFingerState = TwoFingerModeState.undecided;
   Offset _twoFingerTotalFocalDelta = Offset.zero;
   Timer? _twoFingerHoldTimer;
@@ -144,6 +145,7 @@ class _RawTouchGestureDetectorRegionState
   @override
   void dispose() {
     _oneFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer?.cancel();
     _twoFingerHoldTimer?.cancel();
     super.dispose();
   }
@@ -171,6 +173,8 @@ class _RawTouchGestureDetectorRegionState
 
   onTapDown(TapDownDetails d) async {
     _oneFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     lastDeviceKind = d.kind;
     _lastTapDownGlobalPosition = d.globalPosition;
     if (isNotTouchBasedDevice()) {
@@ -237,6 +241,8 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onDoubleTapDown(TapDownDetails d) async {
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     lastDeviceKind = d.kind;
     if (isNotTouchBasedDevice()) {
       return;
@@ -271,6 +277,8 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onLongPressDown(LongPressDownDetails d) async {
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     lastDeviceKind = d.kind;
     if (isNotTouchBasedDevice()) {
       return;
@@ -398,6 +406,9 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onOneFingerPanStart(BuildContext context, DragStartDetails d) async {
+    _oneFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     final TapDownDetails? lastTapDownDetails = _lastTapDownDetails;
     _lastTapDownDetails = null;
     lastDeviceKind = d.kind ?? lastDeviceKind;
@@ -567,6 +578,8 @@ class _RawTouchGestureDetectorRegionState
     final wasPanStarted = _touchModePanStarted;
     _touchModePanStarted = false;
     _oneFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     _oneFingerScrollX = 0;
     _oneFingerScrollY = 0;
     // Android can cancel the pointer at the physical screen edge. Then
@@ -584,6 +597,8 @@ class _RawTouchGestureDetectorRegionState
   // scale + pan event
   onTwoFingerScaleStart(ScaleStartDetails d) async {
     _lastTapDownDetails = null;
+    _twoFingerInertiaTimer?.cancel();
+    _twoFingerInertiaTimer = null;
     if (isNotTouchBasedDevice()) {
       return;
     }
@@ -736,8 +751,8 @@ class _RawTouchGestureDetectorRegionState
             _twoFingerHoldTimer?.cancel();
             _twoFingerHoldTimer = null;
             // 将初始判定过程中的位移无缝计入，起步不丢帧
-            _twoFingerScrollX += _twoFingerTotalFocalDelta.dx * 1.35;
-            _twoFingerScrollY += _twoFingerTotalFocalDelta.dy * 1.35;
+            _twoFingerScrollX += _twoFingerTotalFocalDelta.dx;
+            _twoFingerScrollY += _twoFingerTotalFocalDelta.dy;
           }
           // 3. 双指先轻微收/开（>= 6%）且按着不动（停留超过 250ms）-> 判定为触发画面拖动
           else if (scaleDiff >= 0.06 && _twoFingerHoldTimer == null) {
@@ -761,11 +776,11 @@ class _RawTouchGestureDetectorRegionState
           }
         } else if (_twoFingerState == TwoFingerModeState.scrolling) {
           // 滚轮模式：严格只滚动远程内容，画面绝对不动！
-          // 稍比手指走的快一些：引入 1.35x 敏捷度与降低累积阈值 (6.0)
-          _twoFingerScrollX += d.focalPointDelta.dx * 1.35;
-          _twoFingerScrollY += d.focalPointDelta.dy * 1.35;
+          // 基础速度温和稳定，快速划过时由惯量接管
+          _twoFingerScrollX += d.focalPointDelta.dx;
+          _twoFingerScrollY += d.focalPointDelta.dy;
 
-          const double threshold = 6.0;
+          const double threshold = 10.0;
           int scrollX = 0;
           int scrollY = 0;
 
@@ -815,6 +830,7 @@ class _RawTouchGestureDetectorRegionState
                     .toJson()));
       }
     }
+    final bool wasScrolling = _twoFingerState == TwoFingerModeState.scrolling;
     _scale = 1;
     _twoFingerState = TwoFingerModeState.undecided;
     _twoFingerTotalFocalDelta = Offset.zero;
@@ -825,6 +841,61 @@ class _RawTouchGestureDetectorRegionState
     _remoteScaleDirection = 0;
     if (!isSpecialHoldDragActive) {
       await inputModel.sendMouse('up', MouseButtons.left);
+    }
+
+    if (wasScrolling) {
+      final vx = d.velocity.pixelsPerSecond.dx;
+      final vy = d.velocity.pixelsPerSecond.dy;
+      if (vx.abs() > 120 || vy.abs() > 120) {
+        double curVx = vx * 0.016;
+        double curVy = vy * 0.016;
+        _twoFingerInertiaTimer =
+            Timer.periodic(const Duration(milliseconds: 16), (timer) {
+          curVx *= 0.94;
+          curVy *= 0.94;
+          _twoFingerScrollX += curVx;
+          _twoFingerScrollY += curVy;
+
+          const double threshold = 10.0;
+          int scrollX = 0;
+          int scrollY = 0;
+
+          if (_twoFingerScrollX.abs() >= threshold) {
+            scrollX = (_twoFingerScrollX / threshold).truncate();
+            _twoFingerScrollX -= scrollX * threshold;
+          }
+          if (_twoFingerScrollY.abs() >= threshold) {
+            scrollY = (_twoFingerScrollY / threshold).truncate();
+            _twoFingerScrollY -= scrollY * threshold;
+          }
+
+          if (scrollX != 0 || scrollY != 0) {
+            if (!widget.isCamera) {
+              bind.sessionSendMouse(
+                  sessionId: sessionId,
+                  msg: json.encode(inputModel.modify({
+                    'id': inputModel.id,
+                    'type': 'wheel',
+                    'x': scrollX.toString(),
+                    'y': scrollY.toString(),
+                  })));
+            }
+          }
+
+          if (curVx.abs() < 0.2 && curVy.abs() < 0.2) {
+            timer.cancel();
+            _twoFingerInertiaTimer = null;
+            _twoFingerScrollX = 0;
+            _twoFingerScrollY = 0;
+          }
+        });
+      } else {
+        _twoFingerScrollX = 0;
+        _twoFingerScrollY = 0;
+      }
+    } else {
+      _twoFingerScrollX = 0;
+      _twoFingerScrollY = 0;
     }
   }
 
