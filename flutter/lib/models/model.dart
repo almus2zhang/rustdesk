@@ -212,6 +212,15 @@ class FfiModel with ChangeNotifier {
   final RxString touchZoomMode = 'canvas'.obs;
   final RxBool showTouchPanInToolbar = false.obs;
   final RxBool showTouchZoomInToolbar = false.obs;
+  final RxBool leftAnchorZone = true.obs;
+
+  void toggleLeftAnchorZone() {
+    leftAnchorZone.value = !leftAnchorZone.value;
+    bind.mainSetLocalOption(
+        key: 'left_anchor_zone',
+        value: leftAnchorZone.value ? 'Y' : 'N');
+    notifyListeners();
+  }
 
   void toggleShowTouchPanInToolbar() {
     showTouchPanInToolbar.value = !showTouchPanInToolbar.value;
@@ -1562,6 +1571,13 @@ class FfiModel with ChangeNotifier {
         bind.mainGetLocalOption(key: 'show_touch_pan_in_toolbar') == 'Y';
     showTouchZoomInToolbar.value =
         bind.mainGetLocalOption(key: 'show_touch_zoom_in_toolbar') == 'Y';
+    final savedLeftAnchor = bind.mainGetLocalOption(key: 'left_anchor_zone');
+    if (savedLeftAnchor.isNotEmpty) {
+      leftAnchorZone.value = savedLeftAnchor != 'N';
+    } else {
+      leftAnchorZone.value = true;
+      bind.mainSetLocalOption(key: 'left_anchor_zone', value: 'Y');
+    }
     if (isMobile) {
       virtualMouseMode.loadOptions();
     }

@@ -118,6 +118,41 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Timer? _collapseLongPressTimer;
   bool _isCollapseLongPressed = false;
   bool _showGestureHelp = false;
+
+  int? _anchorPointerId;
+  final RxBool _isAnchorActive = false.obs;
+  int? _actionPointerId;
+  Offset _actionDownPos = Offset.zero;
+  DateTime _actionDownTime = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset _actionLastPos = Offset.zero;
+  bool _actionHasMoved = false;
+  double _actionScrollAccX = 0.0;
+  double _actionScrollAccY = 0.0;
+
+  Rect _getLeftAnchorZoneRect(Size size) {
+    const double width = 300.0;
+    const double height = 300.0;
+    const double bottomDist = 300.0;
+    if (size.height < 650) {
+      final h = (height < size.height * 0.45) ? height : size.height * 0.45;
+      final b = (bottomDist < (size.height - h) / 2) ? bottomDist : (size.height - h) / 2;
+      final t = (size.height - b - h) > 0.0 ? size.height - b - h : 0.0;
+      final w = (width < size.width * 0.45) ? width : size.width * 0.45;
+      return Rect.fromLTWH(0, t, w, h);
+    }
+    final top = size.height - bottomDist - height;
+    final w = (width < size.width * 0.5) ? width : size.width * 0.5;
+    return Rect.fromLTWH(0, top, w, height);
+  }
+
+  void _resetLeftAnchorState() {
+    _anchorPointerId = null;
+    _actionPointerId = null;
+    _isAnchorActive.value = false;
+    _actionHasMoved = false;
+    _actionScrollAccX = 0.0;
+    _actionScrollAccY = 0.0;
+  }
   Offset? _pointerDownPos;
   DateTime? _pointerDownTime;
   bool _pointerMoved = false;
@@ -399,6 +434,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   @override
   Future<void> dispose() async {
+    _resetLeftAnchorState();
     _displaysSubscription?.cancel();
     _textCursorSubscription?.cancel();
     _textCursorPopupTimer?.cancel();
@@ -944,13 +980,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             size: 20,
           ),
           backgroundColor: !ffiModel.touchMode
-              ? const Color(0xFF0071FF) // 选中底色为蓝色
-              : const Color(0x604A5568), // 未选中底色为灰色
+              ? const Color(0xFF0071FF)
+              : const Color(0x604A5568),
           borderRadius: BorderRadius.circular(19),
           tooltip: !ffiModel.touchMode
               ? (localeName.startsWith('zh')
-                  ? '鼠标模式 (已选中，点击打开说明与设置)'
-                  : 'Mouse Mode (Selected, tap for menu)')
+                  ? '鼠标模式 (点击打开菜单，长按开关左侧手势区)'
+                  : 'Mouse Mode (Tap for menu, long press to toggle left zone)')
               : (localeName.startsWith('zh')
                   ? '鼠标模式 (点击切换)'
                   : 'Mouse Mode (Tap to select)'),
@@ -960,13 +996,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               bind.mainSetLocalOption(key: kOptionTouchMode, value: 'N');
               BotToast.showText(
                 text: localeName.startsWith('zh')
-                    ? '已切换至鼠标模式'
+                    ? '已切换到鼠标模式'
                     : 'Switched to Mouse Mode',
               );
               if (mounted) setState(() {});
             } else {
               setState(() => _showGestureHelp = !_showGestureHelp);
             }
+          },
+          onLongPress: () {
+            ffiModel.toggleLeftAnchorZone();
+            BotToast.showText(
+              text: ffiModel.leftAnchorZone.value
+                  ? (localeName.startsWith('zh')
+                      ? '左侧手势区: 已开启'
+                      : 'Left Gesture Zone: Enabled')
+                  : (localeName.startsWith('zh')
+                      ? '左侧手势区: 已关闭'
+                      : 'Left Gesture Zone: Disabled'),
+            );
+            if (mounted) setState(() {});
           },
         ),
       // 6. Touch Mode button (selected: blue, unselected: grey)
@@ -1414,6 +1463,256 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
           ),
         ),
+        ...() {
+          final anchorRect = _getLeftAnchorZoneRect(size);
+          final isAnchorEnabled =
+              !gFFI.ffiModel.touchMode && gFFI.ffiModel.leftAnchorZone.value;
+
+          if (!isAnchorEnabled && _isAnchorActive.value) {
+            _resetLeftAnchorState();
+          }
+
+          if (!isAnchorEnabled) return <Widget>[];
+
+          return <Widget>[
+            // 1. Full-screen Action Interceptor Layer (only active when anchor finger is held down)
+            Positioned.fill(
+              child: Obx(
+                () => _isAnchorActive.value
+                    ? Listener(
+                        behavior: HitTestBehavior.opaque,
+                        onPointerDown: (event) {
+                          if (event.pointer == _anchorPointerId) return;
+                          _actionPointerId = event.pointer;
+                          _actionDownPos = event.position;
+                          _actionDownTime = DateTime.now();
+                          _actionLastPos = event.position;
+                          _actionHasMoved = false;
+                          _actionScrollAccX = 0.0;
+                          _actionScrollAccY = 0.0;
+                        },
+                        onPointerMove: (event) async {
+                          if (event.pointer != _actionPointerId) return;
+                          final dist =
+                              (event.position - _actionDownPos).distance;
+                          if (!_actionHasMoved && dist > 6.0) {
+                            _actionHasMoved = true;
+                          }
+                          if (_actionHasMoved) {
+                            final delta = event.position - _actionLastPos;
+                            _actionLastPos = event.position;
+                            _actionScrollAccX += delta.dx;
+                            _actionScrollAccY += delta.dy;
+
+                            const double threshold = 8.0;
+                            int scrollX = 0;
+                            int scrollY = 0;
+
+                            if (_actionScrollAccX.abs() >= threshold) {
+                              scrollX =
+                                  (_actionScrollAccX / threshold).truncate();
+                              _actionScrollAccX -= scrollX * threshold;
+                            }
+                            if (_actionScrollAccY.abs() >= threshold) {
+                              scrollY =
+                                  (_actionScrollAccY / threshold).truncate();
+                              _actionScrollAccY -= scrollY * threshold;
+                            }
+
+                            if (scrollX != 0 || scrollY != 0) {
+                              await bind.sessionSendMouse(
+                                sessionId: gFFI.sessionId,
+                                msg: json.encode(gFFI.inputModel.modify({
+                                  'id': gFFI.inputModel.id,
+                                  'type': 'wheel',
+                                  'x': scrollX.toString(),
+                                  'y': scrollY.toString(),
+                                })),
+                              );
+                            }
+                          }
+                        },
+                        onPointerUp: (event) async {
+                          if (event.pointer == _actionPointerId) {
+                            final duration = DateTime.now()
+                                .difference(_actionDownTime)
+                                .inMilliseconds;
+                            final dist =
+                                (event.position - _actionDownPos).distance;
+                            final bool isTap =
+                                !_actionHasMoved && dist < 8.0 && duration < 500;
+                            _actionPointerId = null;
+
+                            if (isTap && _isAnchorActive.value) {
+                              // Direct left click at tapped position
+                              await gFFI.cursorModel
+                                  .move(event.position.dx, event.position.dy);
+                              await gFFI.inputModel.tap(MouseButtons.left);
+                            }
+                          }
+                        },
+                        onPointerCancel: (event) {
+                          if (event.pointer == _actionPointerId) {
+                            _actionPointerId = null;
+                          }
+                        },
+                        child: const SizedBox.expand(),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
+
+            // 2. Anchor Zone Touch Receiver (bottom-left area)
+            Positioned(
+              left: anchorRect.left,
+              top: anchorRect.top,
+              width: anchorRect.width,
+              height: anchorRect.height,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (event) {
+                  if (_anchorPointerId == null) {
+                    _anchorPointerId = event.pointer;
+                    _isAnchorActive.value = true;
+                  } else if (_actionPointerId == null &&
+                      event.pointer != _anchorPointerId) {
+                    _actionPointerId = event.pointer;
+                    _actionDownPos = event.position;
+                    _actionDownTime = DateTime.now();
+                    _actionLastPos = event.position;
+                    _actionHasMoved = false;
+                    _actionScrollAccX = 0.0;
+                    _actionScrollAccY = 0.0;
+                  }
+                },
+                onPointerMove: (event) async {
+                  if (event.pointer == _actionPointerId) {
+                    final dist =
+                        (event.position - _actionDownPos).distance;
+                    if (!_actionHasMoved && dist > 6.0) {
+                      _actionHasMoved = true;
+                    }
+                    if (_actionHasMoved) {
+                      final delta = event.position - _actionLastPos;
+                      _actionLastPos = event.position;
+                      _actionScrollAccX += delta.dx;
+                      _actionScrollAccY += delta.dy;
+
+                      const double threshold = 8.0;
+                      int scrollX = 0;
+                      int scrollY = 0;
+
+                      if (_actionScrollAccX.abs() >= threshold) {
+                        scrollX =
+                            (_actionScrollAccX / threshold).truncate();
+                        _actionScrollAccX -= scrollX * threshold;
+                      }
+                      if (_actionScrollAccY.abs() >= threshold) {
+                        scrollY =
+                            (_actionScrollAccY / threshold).truncate();
+                        _actionScrollAccY -= scrollY * threshold;
+                      }
+
+                      if (scrollX != 0 || scrollY != 0) {
+                        await bind.sessionSendMouse(
+                          sessionId: gFFI.sessionId,
+                          msg: json.encode(gFFI.inputModel.modify({
+                            'id': gFFI.inputModel.id,
+                            'type': 'wheel',
+                            'x': scrollX.toString(),
+                            'y': scrollY.toString(),
+                          })),
+                        );
+                      }
+                    }
+                  }
+                },
+                onPointerUp: (event) async {
+                  if (event.pointer == _anchorPointerId) {
+                    _anchorPointerId = null;
+                    _actionPointerId = null;
+                    _isAnchorActive.value = false;
+                  } else if (event.pointer == _actionPointerId) {
+                    final duration = DateTime.now()
+                        .difference(_actionDownTime)
+                        .inMilliseconds;
+                    final dist =
+                        (event.position - _actionDownPos).distance;
+                    final bool isTap =
+                        !_actionHasMoved && dist < 8.0 && duration < 500;
+                    _actionPointerId = null;
+                    if (isTap && _isAnchorActive.value) {
+                      await gFFI.cursorModel
+                          .move(event.position.dx, event.position.dy);
+                      await gFFI.inputModel.tap(MouseButtons.left);
+                    }
+                  }
+                },
+                onPointerCancel: (event) {
+                  if (event.pointer == _anchorPointerId) {
+                    _anchorPointerId = null;
+                    _actionPointerId = null;
+                    _isAnchorActive.value = false;
+                  } else if (event.pointer == _actionPointerId) {
+                    _actionPointerId = null;
+                  }
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
+
+            // 3. Visual 30% translucent grey mask
+            Positioned(
+              left: anchorRect.left,
+              top: anchorRect.top,
+              width: anchorRect.width,
+              height: anchorRect.height,
+              child: Obx(
+                () => _isAnchorActive.value
+                    ? IgnorePointer(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0x4D808080),
+                            borderRadius: const BorderRadius.horizontal(
+                              right: Radius.circular(16),
+                            ),
+                            border: Border.all(
+                              color: const Color(0x40FFFFFF),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.touch_app,
+                                  color: Color(0x99FFFFFF),
+                                  size: 28,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  localeName.startsWith('zh')
+                                      ? '滑动: 滚轮\n点击: 原位左键'
+                                      : 'Pan: Scroll\nTap: Left Click',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xCCFFFFFF),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ),
+          ];
+        }(),
         Positioned(
           top: 10,
           right: 10,

@@ -406,6 +406,33 @@ class _GestureHelpState extends State<GestureHelp> {
                         Transform.translate(
                           offset: const Offset(-10.0, -12.0),
                           child: InkWell(
+                            onTap: () {
+                              gFFI.ffiModel.toggleLeftAnchorZone();
+                              setState(() {});
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Checkbox(
+                                  value: gFFI.ffiModel.leftAnchorZone.value,
+                                  onChanged: (_) {
+                                    gFFI.ffiModel.toggleLeftAnchorZone();
+                                    setState(() {});
+                                  },
+                                ),
+                                Text(
+                                  localeName.startsWith('zh')
+                                      ? '左侧快捷手势区 (长按滚轮/直接点击)'
+                                      : 'Left Gesture Zone (Hold for 4-way scroll/direct click)',
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (!_touchMode)
+                        Transform.translate(
+                          offset: const Offset(-10.0, -12.0),
+                          child: InkWell(
                             onTap: _toggleTwoFingerMode,
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -517,6 +544,16 @@ class _GestureHelpState extends State<GestureHelp> {
                               GestureIcons.iconGesturePinch,
                               translate("Pinch to Zoom"),
                               translate("Canvas Zoom")),
+                          if (gFFI.ffiModel.leftAnchorZone.value)
+                            GestureInfo(
+                                width,
+                                Icons.touch_app,
+                                localeName.startsWith('zh')
+                                    ? '左侧按住 + 滑动/点击'
+                                    : 'Left Hold + Pan/Tap',
+                                localeName.startsWith('zh')
+                                    ? '四向滚轮 / 原位左键'
+                                    : '4-Way Scroll / Direct Click'),
                         ],
                 )),
               ],
