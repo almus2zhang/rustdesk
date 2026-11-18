@@ -30,6 +30,13 @@ This modified edition integrates several core productivity enhancements based on
 - **Smart Soft Keyboard & Cursor Text Auto-Popup**: Automatically pops up the mobile soft keyboard when the remote cursor turns into a text editing cursor. Features customizable popup delay (0~1000ms), safe margin distance, dismiss options (gesture/touch vs tap-only), zero canvas shift for floating keyboards (e.g. Doubao/Gboard small floating IME), and automatic canvas restoration to the exact pre-keyboard position on dismiss.
 - **Redesigned Floating Mobile Control Bar**: Collapsible floating toolbar with long-press horizontal/vertical orientation toggle, independent ⌘ shortcut key tools toggle, and high-contrast touch vs mouse modes with direct tap configuration.
 - **Single App Window Remote Control (Single App Mode)**: Allows capturing and controlling only a single specified application window instead of the entire desktop, delivering an immersive, borderless native-like experience on mobile devices.
+- **Left Anchor Gesture Zone (4-Way Scroll, Direct Tap & Live Drag Adjustment)**: Specially designed for mobile/tablet mouse mode. Holding the anchor zone on the lower-left edge (default bottom 80-180px, width 100px) displays a 30% translucent grey mask. While holding:
+  - Sliding another finger anywhere triggers continuous 4-way remote mouse wheel scrolling (horizontal & vertical).
+  - Tapping another finger anywhere immediately moves the remote cursor to that position and sends a left click.
+  - Releasing the anchor thumb instantly returns to standard trackpad mouse mode without interfering with other gestures.
+  - Features an interactive on-screen drag adjustment overlay (live vertical repositioning along screen edge, corner resize handle, front-placed save button, and pinned quick-done button), plus one-click reset to default (80-180px, W:100px) and toggleable in gesture settings or via long-press on the Mouse Mode toolbar icon.
+- **Pre-populated Tablet Resolutions for VDD (1920x1200, 2000x1280, 2560x1600)**: Automatically injects popular 16:10 and tablet-native resolutions up to 244Hz into VDD settings (`vdd_settings.xml`) with instant named pipe hot-reload (`RELOAD_DRIVER`), eliminating black bars on mobile tablets.
+- **DXGI Screen Duplication Robustness & UAC Elevation**: Completely resolves frame freeze caused by spurious `DXGI_ERROR_INVALID_CALL` / `Kind(InvalidData)`, with frame state tracking and auto-recreation of output duplication. Resolves VDD driver install permission error via automatic UAC elevation.
 
 ### Ultra-Low Latency Secondary Display with VDD (Virtual Display Driver)
 
