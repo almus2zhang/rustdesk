@@ -166,14 +166,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               ),
             ),
 
-            // Top control bar
+            // Top control bar - [完成保存] is placed FIRST so it's always visible even on narrow screens
             Positioned(
               top: 40,
-              left: 20,
-              right: 20,
+              left: 10,
+              right: 10,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xE6212121),
                     borderRadius: BorderRadius.circular(12),
@@ -186,57 +186,27 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     ],
                     border: Border.all(color: const Color(0x40FFFFFF), width: 1),
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      const Icon(Icons.tune, color: Colors.amberAccent, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        localeName.startsWith('zh')
-                            ? '拖动手势区调整 (距底: ${bottom.toInt()} 宽: ${width.toInt()} 高: ${height.toInt()})'
-                            : 'Adjust Zone (Bottom: ${bottom.toInt()} W: ${width.toInt()} H: ${height.toInt()})',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      TextButton.icon(
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white70,
-                          backgroundColor: const Color(0x33FFFFFF),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.restore, size: 16),
-                        label: Text(
-                          localeName.startsWith('zh') ? '重置(80-180)' : 'Reset(80-180)',
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                        onPressed: () {
-                          gFFI.ffiModel.resetAnchorZoneOptions();
-                          BotToast.showText(
-                            text: localeName.startsWith('zh')
-                                ? '已重置为默认值 (距底80-180, 宽100)'
-                                : 'Reset to default (80-180, W:100)',
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 10),
+                      // 1. Save & Done button placed first!
                       ElevatedButton.icon(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00C853),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
                           minimumSize: Size.zero,
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        icon: const Icon(Icons.check, size: 16),
+                        icon: const Icon(Icons.check, size: 18),
                         label: Text(
                           localeName.startsWith('zh') ? '完成保存' : 'Save & Done',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                         onPressed: () {
                           gFFI.ffiModel.saveAnchorZoneOptions();
@@ -248,9 +218,98 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           );
                         },
                       ),
+
+                      // 2. Reset button
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white70,
+                          backgroundColor: const Color(0x33FFFFFF),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 7),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: const Icon(Icons.restore, size: 16),
+                        label: Text(
+                          localeName.startsWith('zh')
+                              ? '重置(80-180)'
+                              : 'Reset(80-180)',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        onPressed: () {
+                          gFFI.ffiModel.resetAnchorZoneOptions();
+                          BotToast.showText(
+                            text: localeName.startsWith('zh')
+                                ? '已重置为默认值 (距底80-180, 宽100)'
+                                : 'Reset to default (80-180, W:100)',
+                          );
+                        },
+                      ),
+
+                      // 3. Status text info
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0x22FFFFFF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.tune,
+                                color: Colors.amberAccent, size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              localeName.startsWith('zh')
+                                  ? '距底: ${bottom.toInt()}  ${width.toInt()}x${height.toInt()}'
+                                  : 'Bottom: ${bottom.toInt()}  ${width.toInt()}x${height.toInt()}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
+              ),
+            ),
+
+            // Quick Done floating button pinned right above the anchor box
+            Positioned(
+              left: anchorRect.left,
+              top: (anchorRect.top - 36.0 > 10.0)
+                  ? (anchorRect.top - 36.0)
+                  : (anchorRect.bottom + 8.0),
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00C853),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  elevation: 4,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                icon: const Icon(Icons.check, size: 16),
+                label: Text(
+                  localeName.startsWith('zh') ? '完成' : 'Done',
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+                onPressed: () {
+                  gFFI.ffiModel.saveAnchorZoneOptions();
+                  gFFI.ffiModel.isAdjustingAnchorZone.value = false;
+                  BotToast.showText(
+                    text: localeName.startsWith('zh')
+                        ? '手势区位置已保存'
+                        : 'Zone position saved',
+                  );
+                },
               ),
             ),
 
