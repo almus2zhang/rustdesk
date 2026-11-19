@@ -203,25 +203,126 @@ jobs:
               Write-Error "VirtualDisplayDriver MttVDD.inf not found after extraction!"
               exit 1
             }
-            # Add tablet, phone, and custom scaled resolutions to vdd_settings.xml
+            # Configure clean vdd_settings.xml with <= 18 resolutions and 60/120Hz to prevent IddCx buffer overflow (Code 43)
             $xmlFile = "./rustdesk/VirtualDisplayDriver/vdd_settings.xml"
-            if (Test-Path $xmlFile) {
-              $xmlContent = Get-Content -Raw $xmlFile
-              $resList = @(
-                '1920,1200', '1200,1920', '2000,1280', '1280,2000', '2000,1920', '1920,2000', '2560,1600', '1600,2560', '2880,1800', '1800,2880',
-                '1264,2800', '2800,1264', '842,1866', '1866,842', '632,1400', '1400,632',
-                '1080,2400', '2400,1080', '720,1600', '1600,720', '540,1200', '1200,540',
-                '1080,2340', '2340,1080', '720,1560', '1560,720', '540,1170', '1170,540',
-                '1080,1920', '1920,1080', '720,1280', '1280,720', '540,960', '960,540'
-              )
-              $extra = ''
-              foreach ($r in $resList) {
-                $p = $r.Split(',')
-                $extra += '    <resolution>`n      <width>' + $p[0] + '</width>`n      <height>' + $p[1] + '</height>`n      <refresh_rate>120</refresh_rate>`n    </resolution>`n'
-              }
-              $xmlContent = $xmlContent.Replace('</resolutions>', ($extra + '  </resolutions>'))
-              Set-Content -Path $xmlFile -Value $xmlContent -Encoding utf8
-            }
+            $cleanXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<vdd_settings>
+  <monitors>
+    <count>1</count>
+  </monitors>
+  <gpu>
+    <friendlyname>default</friendlyname>
+  </gpu>
+  <global>
+    <g_refresh_rate>60</g_refresh_rate>
+    <g_refresh_rate>120</g_refresh_rate>
+  </global>
+  <resolutions>
+    <resolution>
+      <width>1920</width>
+      <height>1080</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2560</width>
+      <height>1440</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1920</width>
+      <height>1200</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1200</width>
+      <height>1920</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2000</width>
+      <height>1280</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1280</width>
+      <height>2000</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2560</width>
+      <height>1600</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1600</width>
+      <height>2560</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1264</width>
+      <height>2800</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2800</width>
+      <height>1264</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>842</width>
+      <height>1866</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>632</width>
+      <height>1400</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1080</width>
+      <height>2400</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>2400</width>
+      <height>1080</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>720</width>
+      <height>1600</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>540</width>
+      <height>1200</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>1080</width>
+      <height>2340</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+    <resolution>
+      <width>720</width>
+      <height>1560</height>
+      <refresh_rate>120</refresh_rate>
+    </resolution>
+  </resolutions>
+  <options>
+    <CustomEdid>false</CustomEdid>
+    <PreventSpoof>false</PreventSpoof>
+    <EdidCeaOverride>false</EdidCeaOverride>
+    <HardwareCursor>true</HardwareCursor>
+    <SDR10bit>false</SDR10bit>
+    <HDRPlus>false</HDRPlus>
+    <logging>false</logging>
+    <debuglogging>false</debuglogging>
+  </options>
+</vdd_settings>
+"@
+            Set-Content -Path $xmlFile -Value $cleanXml -Encoding utf8
             # Also mirror to ./rustdesk/drivers/VirtualDisplayDriver so it is visible in both places
             mkdir ./rustdesk/drivers/VirtualDisplayDriver -Force
             Copy-Item ./rustdesk/VirtualDisplayDriver/* ./rustdesk/drivers/VirtualDisplayDriver/ -Force -Recurse

@@ -276,6 +276,7 @@ pub fn send_vdd_pipe_command(cmd: &str) -> ResultType<()> {
 
 /// Ensure the requested resolution exists in `vdd_settings.xml`.
 /// If missing, dynamically appends it and asks the driver to reload.
+/// Also sanitizes global refresh rates to prevent IddCx buffer overflow (Code 43).
 #[cfg(windows)]
 pub fn ensure_vdd_resolution(w: u32, h: u32) -> ResultType<bool> {
     if w == 0 || h == 0 {
@@ -298,34 +299,64 @@ pub fn ensure_vdd_resolution(w: u32, h: u32) -> ResultType<bool> {
     let w_str = format!("<width>{}</width>", w);
     let h_str = format!("<height>{}</height>", h);
     let mut exists = false;
+    let mut resolutions_count = 0;
     for block in content.split("<resolution>") {
         if let Some(res_block) = block.split("</resolution>").next() {
-            if res_block.contains(&w_str) && res_block.contains(&h_str) {
-                exists = true;
-                break;
+            if res_block.contains("<width>") && res_block.contains("<height>") {
+                resolutions_count += 1;
+                if res_block.contains(&w_str) && res_block.contains(&h_str) {
+                    exists = true;
+                }
             }
         }
     }
-    if exists {
+
+    // Windows IddCx has a mode buffer limit (~32-40 modes).
+    // Ensure <global> has only 60 & 120 Hz, and total resolutions <= 18 (18*2 = 36 modes <= 40).
+    let has_excess_global = content.contains("<g_refresh_rate>90</g_refresh_rate>")
+        || content.contains("<g_refresh_rate>144</g_refresh_rate>");
+
+    if exists && !has_excess_global {
         return Ok(false);
     }
 
-    let closing_tag = "</resolutions>";
-    let Some(idx) = content.find(closing_tag) else {
-        return Ok(false);
-    };
+    let mut sanitized = content;
+    if has_excess_global {
+        if let Some(g_start) = sanitized.find("<global>") {
+            if let Some(g_end) = sanitized.find("</global>") {
+                let clean_global = "<global>\n    <g_refresh_rate>60</g_refresh_rate>\n    <g_refresh_rate>120</g_refresh_rate>\n  </global>";
+                sanitized.replace_range(g_start..g_end + "</global>".len(), clean_global);
+            }
+        }
+    }
 
-    let new_res = format!(
-        "    <resolution>\n      <width>{}</width>\n      <height>{}</height>\n      <refresh_rate>120</refresh_rate>\n    </resolution>\n  ",
-        w, h
-    );
-    let mut new_content = content;
-    new_content.insert_str(idx, &new_res);
-    if let Err(e) = std::fs::write(&xml_path, new_content) {
+    if !exists {
+        // If resolution list is at capacity (>= 18), drop the last resolution before adding
+        if resolutions_count >= 18 {
+            if let Some(last_res_pos) = sanitized.rfind("<resolution>") {
+                if let Some(last_res_end) = sanitized[last_res_pos..].find("</resolution>") {
+                    sanitized.replace_range(last_res_pos..last_res_pos + last_res_end + "</resolution>".len(), "");
+                }
+            }
+        }
+
+        let closing_tag = "</resolutions>";
+        let Some(idx) = sanitized.find(closing_tag) else {
+            return Ok(false);
+        };
+
+        let new_res = format!(
+            "    <resolution>\n      <width>{}</width>\n      <height>{}</height>\n      <refresh_rate>120</refresh_rate>\n    </resolution>\n  ",
+            w, h
+        );
+        sanitized.insert_str(idx, &new_res);
+        log::info!("Added resolution {}x{} to {}", w, h, xml_path.display());
+    }
+
+    if let Err(e) = std::fs::write(&xml_path, sanitized) {
         log::warn!("Failed to update {}: {}", xml_path.display(), e);
         return Ok(false);
     }
-    log::info!("Added resolution {}x{} to {}", w, h, xml_path.display());
 
     send_vdd_pipe_command("RELOAD_DRIVER").ok();
     std::thread::sleep(Duration::from_millis(300));
