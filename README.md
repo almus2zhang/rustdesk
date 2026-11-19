@@ -35,7 +35,14 @@ This modified edition integrates several core productivity enhancements based on
   - Tapping another finger anywhere immediately moves the remote cursor to that position and sends a left click.
   - Releasing the anchor thumb instantly returns to standard trackpad mouse mode without interfering with other gestures.
   - Features an interactive on-screen drag adjustment overlay (live vertical repositioning along screen edge, corner resize handle, front-placed save button, and pinned quick-done button), plus one-click reset to default (80-180px, W:100px) and toggleable in gesture settings or via long-press on the Mouse Mode toolbar icon.
-- **Pre-populated Tablet Resolutions for VDD (1920x1200, 2000x1280, 2560x1600)**: Automatically injects popular 16:10 and tablet-native resolutions up to 244Hz into VDD settings (`vdd_settings.xml`) with instant named pipe hot-reload (`RELOAD_DRIVER`), eliminating black bars on mobile tablets.
+- **VDD Phone & Tablet Resolutions with Native Aspect-Ratio Auto-Matching & Multi-Ratio Scaling (1:1 / 1.5:1 / 2:1)**:
+  - Pre-populated common mobile resolutions into `vdd_settings.xml`: `1264x2800` (1.5K flagships), `1080x2400` (20:9 FHD+), `1080x2340` (19.5:9), `1080x1920` (16:9), along with tablet 16:10 resolutions (`1920x1200`, `2000x1280`, `2560x1600`), in both portrait and landscape up to 120Hz.
+  - Automatic aspect-ratio matching: Automatically calculates exact hardware-aligned (even dimensions) resolutions directly from the connecting client's physical display.
+  - Three convenient scaling presets available in Display Settings and Resolution menus:
+    - **1:1 Native**: Pixel-perfect dot-to-dot display (${W}x${H}) for absolute sharpness.
+    - **1.5:1 Comfortable**: Balanced scaling (e.g. 842x1866 / 720x1600) for ideal desktop readability on high-DPI screens.
+    - **2:1 Large UI**: Scaled up UI (e.g. 632x1400 / 540x1200) for comfortable touch targets on smaller mobile displays.
+  - Supports automatic orientation following (switching seamlessly between landscape and portrait while preserving the selected scale ratio) and dynamic runtime driver hot-reload via named pipe (`RELOAD_DRIVER`).
 - **DXGI Screen Duplication Robustness & UAC Elevation**: Completely resolves frame freeze caused by spurious `DXGI_ERROR_INVALID_CALL` / `Kind(InvalidData)`, with frame state tracking and auto-recreation of output duplication. Resolves VDD driver install permission error via automatic UAC elevation.
 
 ### Ultra-Low Latency Secondary Display with VDD (Virtual Display Driver)

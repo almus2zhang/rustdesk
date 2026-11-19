@@ -203,11 +203,17 @@ jobs:
               Write-Error "VirtualDisplayDriver MttVDD.inf not found after extraction!"
               exit 1
             }
-            # Add tablet and custom resolutions to vdd_settings.xml
+            # Add tablet, phone, and custom scaled resolutions to vdd_settings.xml
             $xmlFile = "./rustdesk/VirtualDisplayDriver/vdd_settings.xml"
             if (Test-Path $xmlFile) {
               $xmlContent = Get-Content -Raw $xmlFile
-              $resList = @('1920,1200', '2000,1280', '2560,1600', '2880,1800', '1280,2000', '1200,1920')
+              $resList = @(
+                '1920,1200', '1200,1920', '2000,1280', '1280,2000', '2000,1920', '1920,2000', '2560,1600', '1600,2560', '2880,1800', '1800,2880',
+                '1264,2800', '2800,1264', '842,1866', '1866,842', '632,1400', '1400,632',
+                '1080,2400', '2400,1080', '720,1600', '1600,720', '540,1200', '1200,540',
+                '1080,2340', '2340,1080', '720,1560', '1560,720', '540,1170', '1170,540',
+                '1080,1920', '1920,1080', '720,1280', '1280,720', '540,960', '960,540'
+              )
               $extra = ''
               foreach ($r in $resList) {
                 $p = $r.Split(',')

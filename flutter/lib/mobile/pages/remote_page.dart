@@ -3836,6 +3836,93 @@ void showOptions(
           )),
     ];
 
+    final savedScale =
+        bind.mainGetPeerOptionSync(id: id, key: 'custom-vdd-scale');
+    final currentScale =
+        (savedScale.isNotEmpty ? savedScale : '1.0').obs;
+
+    final vddScaleButtons = [
+      buildSectionTitle(localeName.startsWith('zh')
+          ? 'VDD 比例缩放 (自动匹配屏幕)'
+          : 'VDD Scaling (Auto Match Screen)'),
+      Obx(() => Row(
+            children: [
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '1:1 原生' : '1:1 Native',
+                  selected: currentScale.value == '1.0' ||
+                      currentScale.value.isEmpty,
+                  onTap: () async {
+                    currentScale.value = '1.0';
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '1.0');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-resolution', value: '');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcePhysical: true,
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已切换为 1:1 原生比例点对点'
+                          : 'Set to 1:1 native scale',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '1.5:1 舒适' : '1.5:1 Comfy',
+                  selected: currentScale.value == '1.5',
+                  onTap: () async {
+                    currentScale.value = '1.5';
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '1.5');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-resolution', value: '');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcePhysical: true,
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已切换为 1.5:1 舒适缩放'
+                          : 'Set to 1.5:1 scale',
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: buildSegmentButton(
+                  text: localeName.startsWith('zh') ? '2:1 大图标' : '2:1 Big UI',
+                  selected: currentScale.value == '2.0',
+                  onTap: () async {
+                    currentScale.value = '2.0';
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '2.0');
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-resolution', value: '');
+                    sendPhysicalResolutionToServer(
+                      peerId: id,
+                      sessionId: gFFI.sessionId,
+                      forcePhysical: true,
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已切换为 2:1 大图标缩放'
+                          : 'Set to 2:1 scale',
+                    );
+                  },
+                ),
+              ),
+            ],
+          )),
+    ];
+
     final isSingleApp = gFFI.canvasModel.isSingleAppMode.obs;
     final appModeButtons = [
       buildSectionTitle(translate('Program selection')),
@@ -4002,6 +4089,8 @@ void showOptions(
           ...resolutionButtons,
           const SizedBox(height: 4),
           ...orientationButtons,
+          const SizedBox(height: 4),
+          ...vddScaleButtons,
           const SizedBox(height: 4),
           ...appModeButtons,
           const SizedBox(height: 4),
@@ -4345,25 +4434,37 @@ void showOptions(
   });
 }
 
-Resolution _getPhonePortraitDimensions(BuildContext context) {
+Resolution _getClientResolution(BuildContext context,
+    {double scale = 1.0, bool? forcePortrait}) {
   try {
     final media = MediaQuery.of(context);
     var rawW = (media.size.width * media.devicePixelRatio).round();
     var rawH = (media.size.height * media.devicePixelRatio).round();
-    if (rawW > rawH) {
+    if (forcePortrait == true && rawW > rawH) {
+      final tmp = rawW;
+      rawW = rawH;
+      rawH = tmp;
+    } else if (forcePortrait == false && rawW < rawH) {
       final tmp = rawW;
       rawW = rawH;
       rawH = tmp;
     }
-    final w = (rawW ~/ 2) * 2;
-    final h = (rawH ~/ 2) * 2;
+    final s = scale > 0 ? scale : 1.0;
+    final w = ((rawW / s).round() ~/ 2) * 2;
+    final h = ((rawH / s).round() ~/ 2) * 2;
     if (w > 0 && h > 0) {
       return Resolution(w, h);
     }
   } catch (e) {
-    debugPrint('Failed to get phone portrait dimensions: $e');
+    debugPrint('Failed to get client resolution: $e');
   }
-  return Resolution(1080, 2400);
+  final s = scale > 0 ? scale : 1.0;
+  return Resolution((1080 / s).round() ~/ 2 * 2, (2400 / s).round() ~/ 2 * 2);
+}
+
+Resolution _getPhonePortraitDimensions(BuildContext context,
+    [double scale = 1.0]) {
+  return _getClientResolution(context, scale: scale, forcePortrait: true);
 }
 
 void sendPhysicalResolutionToServer({
@@ -4375,6 +4476,11 @@ void sendPhysicalResolutionToServer({
   try {
     int targetW = 0;
     int targetH = 0;
+    final scaleStr =
+        bind.mainGetPeerOptionSync(id: peerId, key: 'custom-vdd-scale');
+    final scale = double.tryParse(scaleStr) ?? 1.0;
+    final s = scale > 0 ? scale : 1.0;
+
     if (!forcePhysical) {
       final savedRes =
           bind.mainGetPeerOptionSync(id: peerId, key: 'custom-resolution');
@@ -4389,8 +4495,8 @@ void sendPhysicalResolutionToServer({
         final view = WidgetsBinding.instance.platformDispatcher.views.first;
         final pSize = view.physicalSize;
         if (pSize.width > 0 && pSize.height > 0) {
-          targetW = pSize.width.round() & ~1;
-          targetH = pSize.height.round() & ~1;
+          targetW = ((pSize.width / s).round() ~/ 2) * 2;
+          targetH = ((pSize.height / s).round() ~/ 2) * 2;
         }
       }
     }
@@ -4424,7 +4530,7 @@ void sendPhysicalResolutionToServer({
     }
 
     debugPrint(
-        "Sending secondary display resolution to server: ${targetW}x$targetH (orientation: $orientationMode)");
+        "Sending secondary display resolution to server: ${targetW}x$targetH (scale: $s, orientation: $orientationMode)");
     bind.sessionPeerOption(
       sessionId: sessionId,
       name: 'secondary_display',
@@ -4617,7 +4723,9 @@ TTextMenu? getPhonePortraitVirtualDisplayMenu(
     return null;
   }
   final isZh = localeName.startsWith('zh');
-  final phoneRes = _getPhonePortraitDimensions(context);
+  final res1x = _getPhonePortraitDimensions(context, 1.0);
+  final res15x = _getPhonePortraitDimensions(context, 1.5);
+  final res2x = _getPhonePortraitDimensions(context, 2.0);
 
   return TTextMenu(
     child: Text(isZh ? '手机专属竖屏 (虚拟屏)' : 'Phone Portrait Display'),
@@ -4639,16 +4747,79 @@ TTextMenu? getPhonePortraitVirtualDisplayMenu(
                   leading: const Icon(Icons.stay_current_portrait),
                   title: Text(
                     isZh
-                        ? '📱 匹配本机屏幕 (${phoneRes.width}x${phoneRes.height})'
-                        : '📱 Match phone screen (${phoneRes.width}x${phoneRes.height})',
+                        ? '📱 匹配本机 1:1 原生 (${res1x.width}x${res1x.height})'
+                        : '📱 Match phone 1:1 (${res1x.width}x${res1x.height})',
+                  ),
+                  onTap: () {
+                    close();
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '1.0');
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: res1x.width,
+                      targetHeight: res1x.height,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  leading: const Icon(Icons.zoom_in),
+                  title: Text(
+                    isZh
+                        ? '📱 匹配本机 1.5:1 舒适 (${res15x.width}x${res15x.height})'
+                        : '📱 Match phone 1.5:1 (${res15x.width}x${res15x.height})',
+                  ),
+                  onTap: () {
+                    close();
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '1.5');
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: res15x.width,
+                      targetHeight: res15x.height,
+                    );
+                  },
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  leading: const Icon(Icons.touch_app),
+                  title: Text(
+                    isZh
+                        ? '📱 匹配本机 2:1 大图标 (${res2x.width}x${res2x.height})'
+                        : '📱 Match phone 2:1 (${res2x.width}x${res2x.height})',
+                  ),
+                  onTap: () {
+                    close();
+                    bind.mainSetPeerOptionSync(
+                        id: id, key: 'custom-vdd-scale', value: '2.0');
+                    setupPhonePortraitVirtualDisplay(
+                      context: context,
+                      ffi: ffi,
+                      targetWidth: res2x.width,
+                      targetHeight: res2x.height,
+                    );
+                  },
+                ),
+                const Divider(color: MyTheme.border),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: Text(
+                    isZh
+                        ? '📐 1264 x 2800 (新型超清全面屏)'
+                        : '📐 1264 x 2800 (1.5K Flagship)',
                   ),
                   onTap: () {
                     close();
                     setupPhonePortraitVirtualDisplay(
                       context: context,
                       ffi: ffi,
-                      targetWidth: phoneRes.width,
-                      targetHeight: phoneRes.height,
+                      targetWidth: 1264,
+                      targetHeight: 2800,
                     );
                   },
                 ),
@@ -4720,8 +4891,8 @@ TTextMenu? getPhonePortraitVirtualDisplayMenu(
                     showCustomResolutionInputDialog(
                       context: context,
                       ffi: ffi,
-                      initialWidth: phoneRes.width,
-                      initialHeight: phoneRes.height,
+                      initialWidth: res1x.width,
+                      initialHeight: res1x.height,
                       onConfirm: (w, h) {
                         setupPhonePortraitVirtualDisplay(
                           context: context,
@@ -4805,7 +4976,13 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
   if (!visible) return null;
 
   final isZh = localeName.startsWith('zh');
-  final phoneRes = _getPhonePortraitDimensions(context);
+  final isPortrait = display.height > display.width;
+  final res1x =
+      _getClientResolution(context, scale: 1.0, forcePortrait: isPortrait);
+  final res15x =
+      _getClientResolution(context, scale: 1.5, forcePortrait: isPortrait);
+  final res2x =
+      _getClientResolution(context, scale: 2.0, forcePortrait: isPortrait);
 
   return TTextMenu(
     child: Text(translate("Resolution")),
@@ -4839,21 +5016,134 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
             leading: const Icon(Icons.stay_current_portrait),
             title: Text(
               isZh
-                  ? '📱 匹配手机屏幕 (${phoneRes.width}x${phoneRes.height})'
-                  : '📱 Match phone screen (${phoneRes.width}x${phoneRes.height})',
+                  ? '📱 匹配本机 1:1 原生 (${res1x.width}x${res1x.height})'
+                  : '📱 Match device 1:1 (${res1x.width}x${res1x.height})',
             ),
             onTap: () {
               close();
               bind.sessionChangeResolution(
                 sessionId: ffi.sessionId,
                 display: pi.currentDisplay,
-                width: phoneRes.width,
-                height: phoneRes.height,
+                width: res1x.width,
+                height: res1x.height,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-vdd-scale',
+                value: '1.0',
               );
               bind.mainSetPeerOptionSync(
                 id: id,
                 key: 'custom-resolution',
-                value: '${phoneRes.width}x${phoneRes.height}',
+                value: '${res1x.width}x${res1x.height}',
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.zoom_in),
+            title: Text(
+              isZh
+                  ? '📱 匹配本机 1.5:1 舒适 (${res15x.width}x${res15x.height})'
+                  : '📱 Match device 1.5:1 (${res15x.width}x${res15x.height})',
+            ),
+            onTap: () {
+              close();
+              bind.sessionChangeResolution(
+                sessionId: ffi.sessionId,
+                display: pi.currentDisplay,
+                width: res15x.width,
+                height: res15x.height,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-vdd-scale',
+                value: '1.5',
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-resolution',
+                value: '${res15x.width}x${res15x.height}',
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.touch_app),
+            title: Text(
+              isZh
+                  ? '📱 匹配本机 2:1 大图标 (${res2x.width}x${res2x.height})'
+                  : '📱 Match device 2:1 (${res2x.width}x${res2x.height})',
+            ),
+            onTap: () {
+              close();
+              bind.sessionChangeResolution(
+                sessionId: ffi.sessionId,
+                display: pi.currentDisplay,
+                width: res2x.width,
+                height: res2x.height,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-vdd-scale',
+                value: '2.0',
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-resolution',
+                value: '${res2x.width}x${res2x.height}',
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            title: Text(
+              isPortrait
+                  ? '📐 1264 x 2800 (新型全面屏)'
+                  : '📐 2800 x 1264 (新型全面屏)',
+            ),
+            onTap: () {
+              close();
+              final w = isPortrait ? 1264 : 2800;
+              final h = isPortrait ? 2800 : 1264;
+              bind.sessionChangeResolution(
+                sessionId: ffi.sessionId,
+                display: pi.currentDisplay,
+                width: w,
+                height: h,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-resolution',
+                value: '${w}x$h',
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            title: Text(
+              isPortrait
+                  ? '📐 1080 x 2400 (20:9 全面屏)'
+                  : '📐 2400 x 1080 (20:9 全面屏)',
+            ),
+            onTap: () {
+              close();
+              final w = isPortrait ? 1080 : 2400;
+              final h = isPortrait ? 2400 : 1080;
+              bind.sessionChangeResolution(
+                sessionId: ffi.sessionId,
+                display: pi.currentDisplay,
+                width: w,
+                height: h,
+              );
+              bind.mainSetPeerOptionSync(
+                id: id,
+                key: 'custom-resolution',
+                value: '${w}x$h',
               );
             },
           ),
@@ -4869,8 +5159,8 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
               showCustomResolutionInputDialog(
                 context: context,
                 ffi: ffi,
-                initialWidth: phoneRes.width,
-                initialHeight: phoneRes.height,
+                initialWidth: res1x.width,
+                initialHeight: res1x.height,
                 onConfirm: (w, h) {
                   bind.sessionChangeResolution(
                     sessionId: ffi.sessionId,
