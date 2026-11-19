@@ -4061,12 +4061,15 @@ impl Connection {
             if let Ok(displays) = crate::server::display_service::try_get_displays() {
                 if let Some(d) = displays.get(self.display_idx) {
                     if self.is_secondary_session || crate::virtual_display_manager::is_any_virtual_display(&d.name()) {
+                        let (ox, oy) = d.origin();
+                        let w = d.width() as i32;
+                        let h = d.height() as i32;
                         log::info!(
                             "Moving window {} to virtual display {} at ({}, {}) {}x{} and maximizing",
-                            hwnd, self.display_idx, d.x, d.y, d.width, d.height
+                            hwnd, self.display_idx, ox, oy, w, h
                         );
                         crate::platform::move_window_to_rect_and_maximize(
-                            hwnd, d.x, d.y, d.width, d.height
+                            hwnd, ox, oy, w, h
                         );
                     }
                 }
