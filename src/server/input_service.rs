@@ -1222,6 +1222,9 @@ pub fn handle_mouse_simulation_(evt: &MouseEvent, conn: i32) {
             if !is_track_pad {
                 x *= WHEEL_DELTA as i32;
                 y *= WHEEL_DELTA as i32;
+            } else {
+                x *= 5;
+                y *= 5;
             }
 
             #[cfg(not(target_os = "macos"))]

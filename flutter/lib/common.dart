@@ -2556,7 +2556,8 @@ connect(BuildContext context, String id,
     String? password,
     String? connToken,
     bool? isSharedPassword,
-    bool isSecondaryDisplay = false}) async {
+    bool isSecondaryDisplay = false,
+    bool isMobileMode = false}) async {
   if (id == '') return;
   if (!isDesktop || desktopType == DesktopType.main) {
     try {
@@ -2707,7 +2708,8 @@ connect(BuildContext context, String id,
                 password: password,
                 isSharedPassword: isSharedPassword,
                 forceRelay: forceRelay,
-                isSecondaryDisplay: isSecondaryDisplay),
+                isSecondaryDisplay: isSecondaryDisplay,
+                isMobileMode: isMobileMode),
           ),
         );
       }

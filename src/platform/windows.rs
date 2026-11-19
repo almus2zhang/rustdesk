@@ -5046,6 +5046,31 @@ pub fn focus_app_window(hwnd: usize) {
     }
 }
 
+pub fn move_window_to_rect_and_maximize(hwnd: usize, x: i32, y: i32, w: i32, h: i32) -> bool {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) == 0 {
+            return false;
+        }
+        // First restore window if minimized or already maximized on another monitor
+        ShowWindow(hwnd, SW_RESTORE);
+        // Position window within target monitor rect
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            x,
+            y,
+            w.max(200),
+            h.max(200),
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+        // Maximize window on this monitor
+        ShowWindow(hwnd, SW_MAXIMIZE);
+        focus_app_window(hwnd as usize);
+        true
+    }
+}
+
 pub fn get_window_rect(hwnd: usize) -> Option<(i32, i32, i32, i32)> {
     unsafe {
         let hwnd = hwnd as HWND;

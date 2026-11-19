@@ -776,6 +776,11 @@ class FfiModel with ChangeNotifier {
                                   value: (hwnd != '0') ? 'Y' : 'N');
                               await parent.target?.canvasModel
                                   .updateViewStyle();
+                              BotToast.showText(
+                                text: localeName.startsWith('zh')
+                                    ? '已将应用移动并全屏至手机专属虚拟屏'
+                                    : 'Application moved and maximized on mobile screen',
+                              );
                             },
                           );
                         },

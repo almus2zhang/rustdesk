@@ -4057,6 +4057,20 @@ impl Connection {
         crate::server::video_service::set_selected_window(hwnd);
         if hwnd != 0 {
             crate::platform::focus_app_window(hwnd);
+            #[cfg(windows)]
+            if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                if let Some(d) = displays.get(self.display_idx) {
+                    if self.is_secondary_session || crate::virtual_display_manager::is_any_virtual_display(&d.name()) {
+                        log::info!(
+                            "Moving window {} to virtual display {} at ({}, {}) {}x{} and maximizing",
+                            hwnd, self.display_idx, d.x, d.y, d.width, d.height
+                        );
+                        crate::platform::move_window_to_rect_and_maximize(
+                            hwnd, d.x, d.y, d.width, d.height
+                        );
+                    }
+                }
+            }
         }
         if let Some(msg_out) =
             video_service::make_display_changed_msg(self.display_idx, None, self.video_source())

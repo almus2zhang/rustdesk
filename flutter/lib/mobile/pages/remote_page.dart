@@ -57,7 +57,8 @@ class RemotePage extends StatefulWidget {
       this.isSharedPassword,
       this.forceRelay,
       this.isUsbDisplay = false,
-      this.isSecondaryDisplay = false})
+      this.isSecondaryDisplay = false,
+      this.isMobileMode = false})
       : super(key: key);
 
   final String id;
@@ -66,6 +67,7 @@ class RemotePage extends StatefulWidget {
   final bool? forceRelay;
   final bool isUsbDisplay;
   final bool isSecondaryDisplay;
+  final bool isMobileMode;
 
   @override
   State<RemotePage> createState() => _RemotePageState(id);
@@ -74,7 +76,8 @@ class RemotePage extends StatefulWidget {
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   bool get isSecondary =>
       widget.isUsbDisplay ||
-      widget.isSecondaryDisplay;
+      widget.isSecondaryDisplay ||
+      widget.isMobileMode;
 
   void _sendPhysicalResolutionToServer(
       {bool forcePhysical = false, String? forcedOrientation}) {
@@ -551,7 +554,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   void initState() {
     _showBar.value = false;
-    if (isSecondary && !gFFI.ffiModel.touchMode) {
+    if (widget.isMobileMode) {
+      if (!gFFI.ffiModel.touchMode) {
+        gFFI.ffiModel.toggleTouchMode();
+      }
+      gFFI.ffiModel.touchPanMode.value = 'scroll';
+      bind.mainSetLocalOption(key: 'touch_pan_mode', value: 'scroll');
+      bind.mainSetPeerOptionSync(
+          id: widget.id, key: 'custom-display-orientation', value: 'portrait');
+    } else if (isSecondary && !gFFI.ffiModel.touchMode) {
       gFFI.ffiModel.toggleTouchMode();
     }
     // Set 120 FPS for USB secondary display to minimize sampling/VSync latency, 60 FPS for others
@@ -1317,6 +1328,27 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             } else {
               setState(() => _showGestureHelp = !_showGestureHelp);
             }
+          },
+        ),
+      // 5.0 Mobile Mode quick app switcher
+      if (widget.isMobileMode &&
+          !isWebDesktop &&
+          !ffiModel.viewOnly &&
+          ffiModel.keyboard)
+        buildBtn(
+          icon: const Icon(
+            Icons.dashboard_customize,
+            color: Colors.greenAccent,
+            size: 20,
+          ),
+          tooltip: localeName.startsWith('zh')
+              ? '手机模式: 选择程序并在虚拟屏全屏'
+              : 'Mobile Mode: Select App & Maximize',
+          onPressed: () async {
+            await bind.sessionPeerOption(
+                sessionId: gFFI.sessionId,
+                name: 'get_window_list',
+                value: '');
           },
         ),
       // 5.1 One-Finger Move quick toggle (when enabled in gesture settings)
