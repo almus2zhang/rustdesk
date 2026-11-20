@@ -264,8 +264,7 @@ class FfiModel with ChangeNotifier {
   void toggleLeftAnchorZone() {
     leftAnchorZone.value = !leftAnchorZone.value;
     bind.mainSetLocalOption(
-        key: 'left_anchor_zone',
-        value: leftAnchorZone.value ? 'Y' : 'N');
+        key: 'left_anchor_zone', value: leftAnchorZone.value ? 'Y' : 'N');
     notifyListeners();
   }
 
@@ -768,10 +767,12 @@ class FfiModel with ChangeNotifier {
                               final modeStr = directMode ? 'direct' : 'crop';
                               parent.target?.canvasModel.currentSelectedHwnd =
                                   int.tryParse(hwnd) ?? 0;
-                              parent.target?.canvasModel.currentSelectedAppName = name;
+                              parent.target?.canvasModel
+                                  .currentSelectedAppName = name;
                               parent.target?.canvasModel.loadAppCrop(name);
 
-                              final dims = parent.target?.canvasModel.calculateRemoteWindowTargetSize();
+                              final dims = parent.target?.canvasModel
+                                  .calculateRemoteWindowTargetSize();
                               final targetW = dims?['targetW'] ?? 1000;
                               final targetH = dims?['targetH'] ?? 600;
 
@@ -2647,7 +2648,8 @@ class CanvasModel with ChangeNotifier {
 
   updateSize() => _size = getSize();
 
-  updateViewStyle({bool force = false, refreshMousePos = true, notify = true}) async {
+  updateViewStyle(
+      {bool force = false, refreshMousePos = true, notify = true}) async {
     final style = await bind.sessionGetViewStyle(sessionId: sessionId);
     if (style == null) {
       return;
@@ -2669,7 +2671,9 @@ class CanvasModel with ChangeNotifier {
     // ViewStyle fields and is not captured by the equality check. Therefore, we must
     // allow updates to proceed when style == kRemoteViewStyleCustom, even if the
     // rest of the ViewStyle fields are unchanged.
-    if (!force && _lastViewStyle == viewStyle && style != kRemoteViewStyleCustom) {
+    if (!force &&
+        _lastViewStyle == viewStyle &&
+        style != kRemoteViewStyleCustom) {
       return;
     }
     if (_lastViewStyle.style != viewStyle.style || force) {
@@ -2699,9 +2703,11 @@ class CanvasModel with ChangeNotifier {
       }
     }
     if (isSingleAppMode) {
-      final visibleW = max(1, displayWidth - appCropLeft - appCropRight);
-      if (size.width > 0 && visibleW > 0) {
-        _scale = size.width / visibleW;
+      final dims = calculateRemoteWindowTargetSize();
+      final baseW =
+          dims['baseW'] ?? max(1, displayWidth - appCropLeft - appCropRight);
+      if (size.width > 0 && baseW > 0) {
+        _scale = size.width / baseW;
       }
     }
     _resetCanvasOffset(displayWidth, displayHeight);
@@ -2743,7 +2749,19 @@ class CanvasModel with ChangeNotifier {
   int appCropTop = 0;
   int appCropRight = 0;
   int appCropBottom = 0;
-  double singleAppDockHeight = 66.0;
+  double get singleAppDockHeight {
+    final dpr =
+        ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
+    return 200.0 / dpr;
+  }
+
+  int get currentHwnd {
+    if (currentSelectedHwnd != 0) return currentSelectedHwnd;
+    final sel = parent.target?.ffiModel.pi.platformAdditions['selected_window'];
+    if (sel is int && sel != 0) return sel;
+    if (sel is String) return int.tryParse(sel) ?? 0;
+    return 0;
+  }
 
   double get singleAppScaleOverride {
     final v = double.tryParse(bind.mainGetLocalOption(key: 'single_app_scale'));
@@ -2757,6 +2775,8 @@ class CanvasModel with ChangeNotifier {
 
   Map<String, int> calculateRemoteWindowTargetSize({
     double? scaleOverride,
+    int? phoneWOverride,
+    int? phoneHOverride,
     int? customCropL,
     int? customCropT,
     int? customCropR,
@@ -2766,28 +2786,45 @@ class CanvasModel with ChangeNotifier {
     double screenW = ui.window.physicalSize.width / pixelRatio;
     double screenH = ui.window.physicalSize.height / pixelRatio;
 
-    final savedPhoneW = int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_w'));
-    final savedPhoneH = int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_h'));
+    final savedPhoneW =
+        int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_w'));
+    final savedPhoneH =
+        int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_h'));
 
-    int phoneW = (savedPhoneW != null && savedPhoneW > 0) ? savedPhoneW : (screenW * pixelRatio).round();
-    int phoneH = (savedPhoneH != null && savedPhoneH > 0) ? savedPhoneH : (screenH * pixelRatio).round();
-    if (phoneW <= 0) phoneW = 2600;
-    if (phoneH <= 0) phoneH = 1264;
+    int phoneW = (phoneWOverride != null && phoneWOverride > 0)
+        ? phoneWOverride
+        : ((savedPhoneW != null && savedPhoneW > 0)
+            ? savedPhoneW
+            : (screenW * pixelRatio).round());
 
-    final dockPx = (singleAppDockHeight * pixelRatio).round();
+    int phoneH = (phoneHOverride != null && phoneHOverride > 0)
+        ? phoneHOverride
+        : ((savedPhoneH != null && savedPhoneH > 0)
+            ? savedPhoneH
+            : (screenH * pixelRatio).round());
+
+    if (phoneW <= 0) phoneW = 1264;
+    if (phoneH <= 0) phoneH = 2600;
+
+    // 手机端底部Dock栏固定预留200物理像素，不随放大倍率改变
+    const int dockPx = 200;
     final appH = max(100, phoneH - dockPx);
+
     final s = (scaleOverride != null && scaleOverride > 0)
         ? scaleOverride
         : (singleAppScaleOverride > 0 ? singleAppScaleOverride : 2.0);
 
-    final baseW = (phoneW / s).round();
-    final baseH = (appH / s).round();
+    // 远端基准有效窗口尺寸：例如手机1264宽，倍率2，基准宽632
+    int baseW = (phoneW / s).round();
+    int baseH = (appH / s).round();
 
     final cL = customCropL ?? appCropLeft;
     final cT = customCropT ?? appCropTop;
     final cR = customCropR ?? appCropRight;
     final cB = customCropB ?? appCropBottom;
 
+    // 裁剪补边：裁切多少，远端窗口尺寸就增加多少！
+    // 例如左裁32，远端窗口变为 632 + 32 = 664，使裁剪后仍有632像素填满手机全宽，右侧绝不留黑
     int targetW = baseW + cL + cR;
     int targetH = baseH + cT + cB;
 
@@ -2801,22 +2838,27 @@ class CanvasModel with ChangeNotifier {
       'baseH': max(100, baseH),
       'phoneW': phoneW,
       'phoneH': phoneH,
+      'dockPx': dockPx,
     };
   }
 
   Future<void> syncCurrentAppWindowSize({
     double? scaleOverride,
+    int? phoneWOverride,
+    int? phoneHOverride,
     int? customCropL,
     int? customCropT,
     int? customCropR,
     int? customCropB,
     int? hwndOverride,
   }) async {
-    final hwnd = hwndOverride ?? currentSelectedHwnd;
+    final hwnd = hwndOverride ?? currentHwnd;
     if (hwnd == 0) return;
 
     final dims = calculateRemoteWindowTargetSize(
       scaleOverride: scaleOverride,
+      phoneWOverride: phoneWOverride,
+      phoneHOverride: phoneHOverride,
       customCropL: customCropL,
       customCropT: customCropT,
       customCropR: customCropR,
@@ -3261,7 +3303,8 @@ class CanvasModel with ChangeNotifier {
     }
   }
 
-  void adjustForKeyboardAboveCursor({required double keyboardTop, required double margin}) {
+  void adjustForKeyboardAboveCursor(
+      {required double keyboardTop, required double margin}) {
     final cursorModel = parent.target?.cursorModel;
     if (cursorModel == null) return;
     final cursorImg = cursorModel.image;
@@ -3561,7 +3604,8 @@ class CursorModel with ChangeNotifier {
     final activeH = maxY - minY + 1;
     final midX = (minX + maxX) / 2.0;
     final midY = (minY + maxY) / 2.0;
-    if ((data.hotxOrigin - midX).abs() > 6 || (data.hotyOrigin - midY).abs() > 8) {
+    if ((data.hotxOrigin - midX).abs() > 6 ||
+        (data.hotyOrigin - midY).abs() > 8) {
       return false;
     }
     return activeH >= 10 && activeW <= 16 && (activeH / activeW) >= 1.2;
@@ -4022,7 +4066,8 @@ class CursorModel with ChangeNotifier {
       return;
     }
     final isTextHint = evt['is_text'] == 'true';
-    if (await _updateCache(rgba, image, id, hotx, hoty, width, height, isTextHint: isTextHint)) {
+    if (await _updateCache(rgba, image, id, hotx, hoty, width, height,
+        isTextHint: isTextHint)) {
       _images[id]?.item1.dispose();
       _images[id] = Tuple3(image, hotx, hoty);
     }
@@ -4253,17 +4298,20 @@ class QualityMonitorModel with ChangeNotifier {
       if (evt.containsKey('chroma') && (evt['chroma'] as String).isNotEmpty) {
         _data.chroma = evt['chroma'];
       }
-      if (evt.containsKey('server_perf') && (evt['server_perf'] as String).isNotEmpty) {
+      if (evt.containsKey('server_perf') &&
+          (evt['server_perf'] as String).isNotEmpty) {
         _data.serverPerf = evt['server_perf'];
         final parts = (evt['server_perf'] as String).split('/');
         if (parts.isNotEmpty) {
           _data.capMs = double.tryParse(parts[0]);
         }
       }
-      if (evt.containsKey('display_driver') && (evt['display_driver'] as String).isNotEmpty) {
+      if (evt.containsKey('display_driver') &&
+          (evt['display_driver'] as String).isNotEmpty) {
         _data.displayDriver = evt['display_driver'];
       }
-      isFastCap.value = (_data.capMs != null && _data.capMs! > 0 && _data.capMs! < 10.0);
+      isFastCap.value =
+          (_data.capMs != null && _data.capMs! > 0 && _data.capMs! < 10.0);
       notifyListeners();
     } catch (e) {
       //

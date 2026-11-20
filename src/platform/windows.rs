@@ -5080,11 +5080,21 @@ pub fn resize_app_window(hwnd: usize, w: i32, h: i32) -> bool {
         ShowWindow(hwnd, SW_RESTORE);
         let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
         GetWindowRect(hwnd, &mut rect);
+        let screen_w = winapi::um::winuser::GetSystemMetrics(winapi::um::winuser::SM_CXSCREEN);
+        let screen_h = winapi::um::winuser::GetSystemMetrics(winapi::um::winuser::SM_CYSCREEN);
+        let mut new_x = rect.left;
+        let mut new_y = rect.top;
+        if screen_w > 0 && new_x + w > screen_w {
+            new_x = (screen_w - w).max(0);
+        }
+        if screen_h > 0 && new_y + h > screen_h {
+            new_y = (screen_h - h).max(0);
+        }
         SetWindowPos(
             hwnd,
             std::ptr::null_mut(),
-            rect.left,
-            rect.top,
+            new_x,
+            new_y,
             w.max(100),
             h.max(100),
             SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW,

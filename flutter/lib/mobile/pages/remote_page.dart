@@ -75,9 +75,7 @@ class RemotePage extends StatefulWidget {
 
 class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   bool get isSecondary =>
-      widget.isUsbDisplay ||
-      widget.isSecondaryDisplay ||
-      widget.isMobileMode;
+      widget.isUsbDisplay || widget.isSecondaryDisplay || widget.isMobileMode;
 
   void _sendPhysicalResolutionToServer(
       {bool forcePhysical = false, String? forcedOrientation}) {
@@ -176,7 +174,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               right: 10,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xE6212121),
                     borderRadius: BorderRadius.circular(12),
@@ -187,7 +186,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         offset: Offset(0, 4),
                       ),
                     ],
-                    border: Border.all(color: const Color(0x40FFFFFF), width: 1),
+                    border:
+                        Border.all(color: const Color(0x40FFFFFF), width: 1),
                   ),
                   child: Wrap(
                     spacing: 10,
@@ -292,8 +292,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00C853),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   elevation: 4,
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -325,14 +325,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onVerticalDragUpdate: (details) {
-                  final newBottom = (gFFI.ffiModel.anchorZoneBottom.value - details.delta.dy)
-                      .clamp(0.0, size.height - height);
+                  final newBottom =
+                      (gFFI.ffiModel.anchorZoneBottom.value - details.delta.dy)
+                          .clamp(0.0, size.height - height);
                   gFFI.ffiModel.anchorZoneBottom.value = newBottom;
                 },
                 child: Container(
                   decoration: BoxDecoration(
                     color: const Color(0x660071FF),
-                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
+                    borderRadius: const BorderRadius.horizontal(
+                        right: Radius.circular(12)),
                     border: Border.all(color: Colors.amberAccent, width: 2.5),
                     boxShadow: const [
                       BoxShadow(
@@ -349,10 +351,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.open_with, color: Colors.white, size: 22),
+                            const Icon(Icons.open_with,
+                                color: Colors.white, size: 22),
                             const SizedBox(height: 2),
                             Text(
-                              localeName.startsWith('zh') ? '按住上下拖动' : 'Drag Vertically',
+                              localeName.startsWith('zh')
+                                  ? '按住上下拖动'
+                                  : 'Drag Vertically',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 color: Colors.white,
@@ -379,10 +384,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onPanUpdate: (details) {
-                            final newWidth = (gFFI.ffiModel.anchorZoneWidth.value + details.delta.dx)
-                                .clamp(50.0, 300.0);
-                            final newHeight = (gFFI.ffiModel.anchorZoneHeight.value - details.delta.dy)
-                                .clamp(50.0, 300.0);
+                            final newWidth =
+                                (gFFI.ffiModel.anchorZoneWidth.value +
+                                        details.delta.dx)
+                                    .clamp(50.0, 300.0);
+                            final newHeight =
+                                (gFFI.ffiModel.anchorZoneHeight.value -
+                                        details.delta.dy)
+                                    .clamp(50.0, 300.0);
                             gFFI.ffiModel.anchorZoneWidth.value = newWidth;
                             gFFI.ffiModel.anchorZoneHeight.value = newHeight;
                           },
@@ -423,6 +432,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _actionScrollAccX = 0.0;
     _actionScrollAccY = 0.0;
   }
+
   Offset? _pointerDownPos;
   DateTime? _pointerDownTime;
   bool _pointerMoved = false;
@@ -441,6 +451,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     );
     if (mounted) setState(() {});
   }
+
   String _value = '';
   Orientation? _currentOrientation;
   final _uniqueKey = UniqueKey();
@@ -570,9 +581,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final savedFps =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'custom-fps');
     final defaultFps = isSecondary ? '120' : '60';
-    final fpsVal = int.tryParse(savedFps.isNotEmpty ? savedFps : defaultFps) ?? (isSecondary ? 120 : 60);
+    final fpsVal = int.tryParse(savedFps.isNotEmpty ? savedFps : defaultFps) ??
+        (isSecondary ? 120 : 60);
     if (savedFps.isEmpty) {
-      bind.mainSetPeerOptionSync(id: widget.id, key: 'custom-fps', value: defaultFps);
+      bind.mainSetPeerOptionSync(
+          id: widget.id, key: 'custom-fps', value: defaultFps);
     }
     bind.sessionSetCustomFps(sessionId: sessionId, fps: fpsVal);
     final savedQuality =
@@ -1185,19 +1198,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ),
       // 2. Display / Monitor
       Obx(() => buildBtn(
-        icon: Icon(
-          Icons.tv,
-          color: gFFI.qualityMonitorModel.isFastCap.value
-              ? const Color(0xFF00E676)
-              : Colors.white,
-          size: 20,
-        ),
-        tooltip: translate('Display'),
-        onPressed: () {
-          setState(() => _showEdit = false);
-          showOptions(context, widget.id, gFFI.dialogManager);
-        },
-      )),
+            icon: Icon(
+              Icons.tv,
+              color: gFFI.qualityMonitorModel.isFastCap.value
+                  ? const Color(0xFF00E676)
+                  : Colors.white,
+              size: 20,
+            ),
+            tooltip: translate('Display'),
+            onPressed: () {
+              setState(() => _showEdit = false);
+              showOptions(context, widget.id, gFFI.dialogManager);
+            },
+          )),
       // 3. Soft Keyboard
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
@@ -1214,34 +1227,40 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             BotToast.showText(
               text: localeName.startsWith('zh')
                   ? (cur ? '已开启光标变为文本时自动弹出软键盘' : '已关闭文本光标自动弹出软键盘')
-                  : (cur ? 'Auto keyboard on text cursor enabled' : 'Auto keyboard on text cursor disabled'),
+                  : (cur
+                      ? 'Auto keyboard on text cursor enabled'
+                      : 'Auto keyboard on text cursor disabled'),
             );
           },
         ),
       // 3.1 Shortcut Keys (Key Help Tools) toggle
       if (!isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         Obx(() => buildBtn(
-          icon: Icon(
-            Icons.keyboard_command_key,
-            color: !_keyHelpCollapsed.value ? Colors.white : Colors.white70,
-            size: 20,
-          ),
-          backgroundColor: !_keyHelpCollapsed.value
-              ? const Color(0xFF0071FF) // 展开时高亮蓝色底色
-              : const Color(0x604A5568), // 收起时暗灰色底色
-          borderRadius: BorderRadius.circular(19),
-          tooltip: localeName.startsWith('zh')
-              ? (!_keyHelpCollapsed.value ? '快捷按键 (已展开，点击收起)' : '快捷按键 (点击展开)')
-              : (!_keyHelpCollapsed.value ? 'Shortcut Keys (Active)' : 'Shortcut Keys'),
-          onPressed: () {
-            _keyHelpCollapsed.value = !_keyHelpCollapsed.value;
-            bind.mainSetLocalOption(
-              key: 'key_help_tools_collapsed',
-              value: _keyHelpCollapsed.value ? 'Y' : 'N',
-            );
-            if (mounted) setState(() {});
-          },
-        )),
+              icon: Icon(
+                Icons.keyboard_command_key,
+                color: !_keyHelpCollapsed.value ? Colors.white : Colors.white70,
+                size: 20,
+              ),
+              backgroundColor: !_keyHelpCollapsed.value
+                  ? const Color(0xFF0071FF) // 展开时高亮蓝色底色
+                  : const Color(0x604A5568), // 收起时暗灰色底色
+              borderRadius: BorderRadius.circular(19),
+              tooltip: localeName.startsWith('zh')
+                  ? (!_keyHelpCollapsed.value
+                      ? '快捷按键 (已展开，点击收起)'
+                      : '快捷按键 (点击展开)')
+                  : (!_keyHelpCollapsed.value
+                      ? 'Shortcut Keys (Active)'
+                      : 'Shortcut Keys'),
+              onPressed: () {
+                _keyHelpCollapsed.value = !_keyHelpCollapsed.value;
+                bind.mainSetLocalOption(
+                  key: 'key_help_tools_collapsed',
+                  value: _keyHelpCollapsed.value ? 'Y' : 'N',
+                );
+                if (mounted) setState(() {});
+              },
+            )),
       // 4. Input Method Picker (Android)
       if (isAndroid && !isWebDesktop && !ffiModel.viewOnly && ffiModel.keyboard)
         buildBtn(
@@ -1357,9 +1376,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               : 'Mobile Mode: Select App & Maximize',
           onPressed: () async {
             await bind.sessionPeerOption(
-                sessionId: gFFI.sessionId,
-                name: 'get_window_list',
-                value: '');
+                sessionId: gFFI.sessionId, name: 'get_window_list', value: '');
           },
         ),
       // 5.1 One-Finger Move quick toggle (when enabled in gesture settings)
@@ -1543,7 +1560,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       },
       child: Tooltip(
         message: translate('Collapse') +
-            (localeName.startsWith('zh') ? ' (长按切换控制栏横竖方向)' : ' (Long press to toggle toolbar orientation)'),
+            (localeName.startsWith('zh')
+                ? ' (长按切换控制栏横竖方向)'
+                : ' (Long press to toggle toolbar orientation)'),
         child: Container(
           width: 38,
           height: 38,
@@ -1700,10 +1719,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 }
               },
               onPointerUp: (event) {
-                final durationMs = DateTime.now().difference(_pointerDownTime ?? DateTime.now()).inMilliseconds;
-                final dist = _pointerDownPos != null ? (event.position - _pointerDownPos!).distance : 999.0;
+                final durationMs = DateTime.now()
+                    .difference(_pointerDownTime ?? DateTime.now())
+                    .inMilliseconds;
+                final dist = _pointerDownPos != null
+                    ? (event.position - _pointerDownPos!).distance
+                    : 999.0;
                 // 严格点击判定：位移小于 8px 且触摸时长小于 350ms，划过时绝不误判
-                final bool isTap = !_pointerMoved && dist < 8.0 && durationMs < 350;
+                final bool isTap =
+                    !_pointerMoved && dist < 8.0 && durationMs < 350;
                 _pointerIsDown = false;
 
                 if (isTap) {
@@ -1723,7 +1747,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       // 光标尚不是文本光标，用户点击输入框后等待远端光标切换为文本（400ms窗口）
                       _pendingTapForText = true;
                       _pendingTapTimer?.cancel();
-                      _pendingTapTimer = Timer(const Duration(milliseconds: 400), () {
+                      _pendingTapTimer =
+                          Timer(const Duration(milliseconds: 400), () {
                         _pendingTapForText = false;
                       });
                     }
@@ -1849,8 +1874,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 .inMilliseconds;
                             final dist =
                                 (event.position - _actionDownPos).distance;
-                            final bool isTap =
-                                !_actionHasMoved && dist < 8.0 && duration < 500;
+                            final bool isTap = !_actionHasMoved &&
+                                dist < 8.0 &&
+                                duration < 500;
                             _actionPointerId = null;
 
                             if (isTap && _isAnchorActive.value) {
@@ -1897,8 +1923,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 },
                 onPointerMove: (event) async {
                   if (event.pointer == _actionPointerId) {
-                    final dist =
-                        (event.position - _actionDownPos).distance;
+                    final dist = (event.position - _actionDownPos).distance;
                     if (!_actionHasMoved && dist > 6.0) {
                       _actionHasMoved = true;
                     }
@@ -1913,13 +1938,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       int scrollY = 0;
 
                       if (_actionScrollAccX.abs() >= threshold) {
-                        scrollX =
-                            (_actionScrollAccX / threshold).truncate();
+                        scrollX = (_actionScrollAccX / threshold).truncate();
                         _actionScrollAccX -= scrollX * threshold;
                       }
                       if (_actionScrollAccY.abs() >= threshold) {
-                        scrollY =
-                            (_actionScrollAccY / threshold).truncate();
+                        scrollY = (_actionScrollAccY / threshold).truncate();
                         _actionScrollAccY -= scrollY * threshold;
                       }
 
@@ -1946,8 +1969,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     final duration = DateTime.now()
                         .difference(_actionDownTime)
                         .inMilliseconds;
-                    final dist =
-                        (event.position - _actionDownPos).distance;
+                    final dist = (event.position - _actionDownPos).distance;
                     final bool isTap =
                         !_actionHasMoved && dist < 8.0 && duration < 500;
                     _actionPointerId = null;
@@ -2020,7 +2042,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       )
                     : const SizedBox.shrink(),
               ),
-            )];
+            )
+          ];
         }(),
         _buildAnchorZoneAdjustOverlay(size),
         Positioned(
@@ -2074,7 +2097,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ? _buildFloatingEscKeyContent()
             : const SizedBox.shrink()),
       ));
-      final isSingleApp = gFFI.canvasModel.isSingleAppMode || widget.isMobileMode;
+      final isSingleApp =
+          gFFI.canvasModel.isSingleAppMode || widget.isMobileMode;
       if (isSingleApp && !keyboardIsVisible) {
         paints.add(Positioned(
           left: 0,
@@ -2160,7 +2184,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? const Icon(Icons.expand_more, color: Colors.white, size: 24)
                   : (_showBar.value
                       ? const Icon(Icons.close, color: Colors.white, size: 24)
-                      : _buildHamburgerIcon(gFFI.qualityMonitorModel.isFastCap.value)),
+                      : _buildHamburgerIcon(
+                          gFFI.qualityMonitorModel.isFastCap.value)),
             ),
           ),
         ));
@@ -2207,10 +2232,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               child: list.isEmpty
                   ? Center(
                       child: TextButton.icon(
-                        icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+                        icon: const Icon(Icons.refresh,
+                            size: 16, color: Colors.white70),
                         label: Text(
-                          localeName.startsWith('zh') ? '点击刷新程序列表' : 'Refresh App List',
-                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          localeName.startsWith('zh')
+                              ? '点击刷新程序列表'
+                              : 'Refresh App List',
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
                         ),
                         onPressed: () {
                           bind.sessionPeerOption(
@@ -2228,10 +2257,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         final item = list[idx];
                         final title = item['title']?.toString() ?? '';
                         final name = item['name']?.toString() ?? '';
-                        final hwnd = int.tryParse(item['hwnd']?.toString() ?? '0') ?? 0;
+                        final hwnd =
+                            int.tryParse(item['hwnd']?.toString() ?? '0') ?? 0;
                         final isSelected = currentHwnd == hwnd;
 
-                        final displayName = name.replaceAll(RegExp(r'\.exe$', caseSensitive: false), '');
+                        final displayName = name.replaceAll(
+                            RegExp(r'\.exe$', caseSensitive: false), '');
                         final iconData = _resolveAppIcon(name, title);
                         final iconColor = _resolveAppColor(name);
 
@@ -2247,7 +2278,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 'N';
                             final modeStr = directMode ? 'direct' : 'crop';
 
-                            final dims = gFFI.canvasModel.calculateRemoteWindowTargetSize();
+                            final dims = gFFI.canvasModel
+                                .calculateRemoteWindowTargetSize();
                             final targetW = dims['targetW'] ?? 1000;
                             final targetH = dims['targetH'] ?? 600;
 
@@ -2262,8 +2294,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               value: '$hwnd:$targetW:$targetH',
                             );
                             gFFI.ffiModel.pi
-                                    .platformAdditions['selected_window'] =
-                                hwnd;
+                                .platformAdditions['selected_window'] = hwnd;
                             gFFI.canvasModel.isSingleAppMode = true;
                             await bind.sessionPeerOption(
                               sessionId: gFFI.sessionId,
@@ -2279,13 +2310,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            margin: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: isSelected ? const Color(0x3300E5FF) : const Color(0x22FFFFFF),
+                              color: isSelected
+                                  ? const Color(0x3300E5FF)
+                                  : const Color(0x22FFFFFF),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                color: isSelected
+                                    ? Colors.cyanAccent
+                                    : const Color(0x22FFFFFF),
                                 width: isSelected ? 1.5 : 0.8,
                               ),
                             ),
@@ -2293,10 +2330,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               mainAxisAlignment: MainAxisAlignment.center,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(iconData, color: isSelected ? Colors.cyanAccent : iconColor, size: 22),
+                                Icon(iconData,
+                                    color: isSelected
+                                        ? Colors.cyanAccent
+                                        : iconColor,
+                                    size: 22),
                                 const SizedBox(height: 2),
                                 ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 64),
+                                  constraints:
+                                      const BoxConstraints(maxWidth: 64),
                                   child: Text(
                                     displayName,
                                     maxLines: 1,
@@ -2304,8 +2346,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       fontSize: 10,
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                      color: isSelected ? Colors.cyanAccent : Colors.white,
+                                      fontWeight: isSelected
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      color: isSelected
+                                          ? Colors.cyanAccent
+                                          : Colors.white,
                                     ),
                                   ),
                                 ),
@@ -2321,8 +2367,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
-                  tooltip: localeName.startsWith('zh') ? '刷新程序列表' : 'Refresh App List',
+                  icon: const Icon(Icons.refresh,
+                      color: Colors.white70, size: 20),
+                  tooltip: localeName.startsWith('zh')
+                      ? '刷新程序列表'
+                      : 'Refresh App List',
                   onPressed: () {
                     bind.sessionPeerOption(
                       sessionId: gFFI.sessionId,
@@ -2330,20 +2379,28 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       value: '',
                     );
                     BotToast.showText(
-                      text: localeName.startsWith('zh') ? '正在刷新程序列表...' : 'Refreshing apps...',
+                      text: localeName.startsWith('zh')
+                          ? '正在刷新程序列表...'
+                          : 'Refreshing apps...',
                     );
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.tune, color: Colors.amberAccent, size: 20),
-                  tooltip: localeName.startsWith('zh') ? '视口与四边微调' : 'Edge Crop & Viewport',
+                  icon: const Icon(Icons.tune,
+                      color: Colors.amberAccent, size: 20),
+                  tooltip: localeName.startsWith('zh')
+                      ? '视口与四边微调'
+                      : 'Edge Crop & Viewport',
                   onPressed: () {
                     _showSingleAppAdjustSheet(context);
                   },
                 ),
                 IconButton(
-                  icon: const Icon(Icons.fullscreen, color: Colors.white70, size: 20),
-                  tooltip: localeName.startsWith('zh') ? '退出单程序 (全屏桌面)' : 'Exit Single App (Desktop)',
+                  icon: const Icon(Icons.fullscreen,
+                      color: Colors.white70, size: 20),
+                  tooltip: localeName.startsWith('zh')
+                      ? '退出单程序 (全屏桌面)'
+                      : 'Exit Single App (Desktop)',
                   onPressed: () async {
                     await bind.sessionPeerOption(
                       sessionId: gFFI.sessionId,
@@ -2359,7 +2416,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     );
                     await gFFI.canvasModel.updateViewStyle();
                     BotToast.showText(
-                      text: localeName.startsWith('zh') ? '已退出单程序模式' : 'Exited Single App Mode',
+                      text: localeName.startsWith('zh')
+                          ? '已退出单程序模式'
+                          : 'Exited Single App Mode',
                     );
                   },
                 ),
@@ -2376,25 +2435,39 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (lower.contains('wechat') || lower.contains('weixin')) {
       return Icons.chat_bubble_rounded;
     }
-    if (lower.contains('code') || lower.contains('studio') || lower.contains('idea') || lower.contains('pycharm')) {
+    if (lower.contains('code') ||
+        lower.contains('studio') ||
+        lower.contains('idea') ||
+        lower.contains('pycharm')) {
       return Icons.code_rounded;
     }
-    if (lower.contains('chrome') || lower.contains('edge') || lower.contains('firefox') || lower.contains('browser')) {
+    if (lower.contains('chrome') ||
+        lower.contains('edge') ||
+        lower.contains('firefox') ||
+        lower.contains('browser')) {
       return Icons.public_rounded;
     }
     if (lower.contains('explorer') || lower.contains('file')) {
       return Icons.folder_rounded;
     }
-    if (lower.contains('term') || lower.contains('cmd') || lower.contains('powershell') || lower.contains('wt')) {
+    if (lower.contains('term') ||
+        lower.contains('cmd') ||
+        lower.contains('powershell') ||
+        lower.contains('wt')) {
       return Icons.terminal_rounded;
     }
     if (lower.contains('qq')) {
       return Icons.forum_rounded;
     }
-    if (lower.contains('music') || lower.contains('spotify') || lower.contains('cloudmusic')) {
+    if (lower.contains('music') ||
+        lower.contains('spotify') ||
+        lower.contains('cloudmusic')) {
       return Icons.music_note_rounded;
     }
-    if (lower.contains('word') || lower.contains('excel') || lower.contains('powerpnt') || lower.contains('wps')) {
+    if (lower.contains('word') ||
+        lower.contains('excel') ||
+        lower.contains('powerpnt') ||
+        lower.contains('wps')) {
       return Icons.description_rounded;
     }
     return Icons.laptop_chromebook_rounded;
@@ -2459,7 +2532,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             final cropR = cm.appCropRight;
             final cropB = cm.appCropBottom;
 
-            Widget buildCropRow(String label, IconData icon, int val, ValueChanged<int> onChanged) {
+            Widget buildCropRow(String label, IconData icon, int val,
+                ValueChanged<int> onChanged) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
@@ -2470,11 +2544,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       width: 72,
                       child: Text(
                         label,
-                        style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.white70),
+                      icon: const Icon(Icons.remove_circle_outline,
+                          size: 20, color: Colors.white70),
                       onPressed: () {
                         final n = max(0, val - 1);
                         onChanged(n);
@@ -2485,11 +2563,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       child: Text(
                         '$val px',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 13, color: Colors.cyanAccent, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.cyanAccent,
+                            fontWeight: FontWeight.bold),
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.add_circle_outline, size: 20, color: Colors.white70),
+                      icon: const Icon(Icons.add_circle_outline,
+                          size: 20, color: Colors.white70),
                       onPressed: () {
                         final n = min(300, val + 1);
                         onChanged(n);
@@ -2528,21 +2610,32 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     // Header
                     Row(
                       children: [
-                        const Icon(Icons.tune, color: Colors.amberAccent, size: 22),
+                        const Icon(Icons.tune,
+                            color: Colors.amberAccent, size: 22),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                localeName.startsWith('zh') ? '单程序四边微调与尺寸' : 'Single App Edge Crop & Size',
-                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                                localeName.startsWith('zh')
+                                    ? '单程序四边微调与尺寸'
+                                    : 'Single App Edge Crop & Size',
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white),
                               ),
                               Text(
                                 appName.isEmpty
-                                    ? (localeName.startsWith('zh') ? '全局/默认' : 'Global Default')
-                                    : (localeName.startsWith('zh') ? '程序: $appName (独立记忆)' : 'App: $appName (Per-App Memory)'),
-                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                    ? (localeName.startsWith('zh')
+                                        ? '全局/默认'
+                                        : 'Global Default')
+                                    : (localeName.startsWith('zh')
+                                        ? '程序: $appName (独立记忆)'
+                                        : 'App: $appName (Per-App Memory)'),
+                                style: const TextStyle(
+                                    fontSize: 12, color: Colors.white70),
                               ),
                             ],
                           ),
@@ -2557,8 +2650,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
                     // Phone resolution & remote window size calculation
                     Text(
-                      localeName.startsWith('zh') ? '手机目标分辨率与放大倍率' : 'Target Mobile Resolution & Scale',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                      localeName.startsWith('zh')
+                          ? '手机目标分辨率与放大倍率'
+                          : 'Target Mobile Resolution & Scale',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent),
                     ),
                     const SizedBox(height: 6),
                     // Quick resolution presets
@@ -2567,11 +2665,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       runSpacing: 6,
                       children: [
                         for (final preset in [
-                          {'label': localeName.startsWith('zh') ? '当前手机 (${defaultPhoneW}x$defaultPhoneH)' : 'Current (${defaultPhoneW}x$defaultPhoneH)', 'w': defaultPhoneW, 'h': defaultPhoneH},
+                          {
+                            'label': localeName.startsWith('zh')
+                                ? '当前手机 (${defaultPhoneW}x$defaultPhoneH)'
+                                : 'Current (${defaultPhoneW}x$defaultPhoneH)',
+                            'w': defaultPhoneW,
+                            'h': defaultPhoneH
+                          },
+                          {'label': '1264x2600', 'w': 1264, 'h': 2600},
                           {'label': '2600x1264', 'w': 2600, 'h': 1264},
+                          {'label': '1080x2400', 'w': 1080, 'h': 2400},
                           {'label': '2400x1080', 'w': 2400, 'h': 1080},
+                          {'label': '1080x1920', 'w': 1080, 'h': 1920},
                           {'label': '1920x1080', 'w': 1920, 'h': 1080},
-                          {'label': '1600x720', 'w': 1600, 'h': 720},
                         ]) ...[
                           InkWell(
                             onTap: () async {
@@ -2579,22 +2685,28 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               final ph = preset['h'] as int;
                               widthController.text = '$pw';
                               heightController.text = '$ph';
-                              await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$pw');
-                              await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$ph');
-                              await cm.syncCurrentAppWindowSize();
+                              await bind.mainSetLocalOption(
+                                  key: 'single_app_phone_w', value: '$pw');
+                              await bind.mainSetLocalOption(
+                                  key: 'single_app_phone_h', value: '$ph');
+                              await cm.syncCurrentAppWindowSize(
+                                  phoneWOverride: pw, phoneHOverride: ph);
                               await cm.updateViewStyle(force: true);
                               setSheetState(() {});
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: const Color(0x33FFFFFF),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0x3300E5FF), width: 0.8),
+                                border: Border.all(
+                                    color: const Color(0x3300E5FF), width: 0.8),
                               ),
                               child: Text(
                                 preset['label'] as String,
-                                style: const TextStyle(fontSize: 11, color: Colors.cyanAccent),
+                                style: const TextStyle(
+                                    fontSize: 11, color: Colors.cyanAccent),
                               ),
                             ),
                           ),
@@ -2617,44 +2729,69 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             },
                             onSubmitted: (val) async {
                               final tw = int.tryParse(val) ?? defaultPhoneW;
-                              await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$tw');
-                              await cm.syncCurrentAppWindowSize();
+                              final th = int.tryParse(heightController.text) ??
+                                  defaultPhoneH;
+                              await bind.mainSetLocalOption(
+                                  key: 'single_app_phone_w', value: '$tw');
+                              await cm.syncCurrentAppWindowSize(
+                                  phoneWOverride: tw, phoneHOverride: th);
                               await cm.updateViewStyle(force: true);
                             },
                             decoration: InputDecoration(
-                              labelText: localeName.startsWith('zh') ? '宽 (像素)' : 'Width (px)',
-                              labelStyle: const TextStyle(fontSize: 12, color: Colors.white70),
+                              labelText: localeName.startsWith('zh')
+                                  ? '宽 (像素)'
+                                  : 'Width (px)',
+                              labelStyle: const TextStyle(
+                                  fontSize: 12, color: Colors.white70),
                               isDense: true,
                               border: const OutlineInputBorder(),
                               prefixIcon: IconButton(
-                                icon: const Icon(Icons.remove, size: 16, color: Colors.white70),
+                                icon: const Icon(Icons.remove,
+                                    size: 16, color: Colors.white70),
                                 onPressed: () async {
-                                  int w = (int.tryParse(widthController.text) ?? defaultPhoneW) - 100;
+                                  int w = (int.tryParse(widthController.text) ??
+                                          defaultPhoneW) -
+                                      100;
                                   if (w < 400) w = 400;
                                   widthController.text = '$w';
-                                  await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$w');
-                                  await cm.syncCurrentAppWindowSize();
+                                  final th =
+                                      int.tryParse(heightController.text) ??
+                                          defaultPhoneH;
+                                  await bind.mainSetLocalOption(
+                                      key: 'single_app_phone_w', value: '$w');
+                                  await cm.syncCurrentAppWindowSize(
+                                      phoneWOverride: w, phoneHOverride: th);
                                   await cm.updateViewStyle(force: true);
                                   setSheetState(() {});
                                 },
                               ),
                               suffixIcon: IconButton(
-                                icon: const Icon(Icons.add, size: 16, color: Colors.white70),
+                                icon: const Icon(Icons.add,
+                                    size: 16, color: Colors.white70),
                                 onPressed: () async {
-                                  int w = (int.tryParse(widthController.text) ?? defaultPhoneW) + 100;
+                                  int w = (int.tryParse(widthController.text) ??
+                                          defaultPhoneW) +
+                                      100;
                                   widthController.text = '$w';
-                                  await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$w');
-                                  await cm.syncCurrentAppWindowSize();
+                                  final th =
+                                      int.tryParse(heightController.text) ??
+                                          defaultPhoneH;
+                                  await bind.mainSetLocalOption(
+                                      key: 'single_app_phone_w', value: '$w');
+                                  await cm.syncCurrentAppWindowSize(
+                                      phoneWOverride: w, phoneHOverride: th);
                                   await cm.updateViewStyle(force: true);
                                   setSheetState(() {});
                                 },
                               ),
                             ),
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        const Text('x', style: TextStyle(color: Colors.white70)),
+                        const Text('x',
+                            style: TextStyle(color: Colors.white70)),
                         const SizedBox(width: 8),
                         Expanded(
                           child: TextField(
@@ -2667,41 +2804,67 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               }
                             },
                             onSubmitted: (val) async {
+                              final tw = int.tryParse(widthController.text) ??
+                                  defaultPhoneW;
                               final th = int.tryParse(val) ?? defaultPhoneH;
-                              await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$th');
-                              await cm.syncCurrentAppWindowSize();
+                              await bind.mainSetLocalOption(
+                                  key: 'single_app_phone_h', value: '$th');
+                              await cm.syncCurrentAppWindowSize(
+                                  phoneWOverride: tw, phoneHOverride: th);
                               await cm.updateViewStyle(force: true);
                             },
                             decoration: InputDecoration(
-                              labelText: localeName.startsWith('zh') ? '高 (像素)' : 'Height (px)',
-                              labelStyle: const TextStyle(fontSize: 12, color: Colors.white70),
+                              labelText: localeName.startsWith('zh')
+                                  ? '高 (像素)'
+                                  : 'Height (px)',
+                              labelStyle: const TextStyle(
+                                  fontSize: 12, color: Colors.white70),
                               isDense: true,
                               border: const OutlineInputBorder(),
                               prefixIcon: IconButton(
-                                icon: const Icon(Icons.remove, size: 16, color: Colors.white70),
+                                icon: const Icon(Icons.remove,
+                                    size: 16, color: Colors.white70),
                                 onPressed: () async {
-                                  int h = (int.tryParse(heightController.text) ?? defaultPhoneH) - 100;
+                                  int h =
+                                      (int.tryParse(heightController.text) ??
+                                              defaultPhoneH) -
+                                          100;
                                   if (h < 400) h = 400;
                                   heightController.text = '$h';
-                                  await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$h');
-                                  await cm.syncCurrentAppWindowSize();
+                                  final tw =
+                                      int.tryParse(widthController.text) ??
+                                          defaultPhoneW;
+                                  await bind.mainSetLocalOption(
+                                      key: 'single_app_phone_h', value: '$h');
+                                  await cm.syncCurrentAppWindowSize(
+                                      phoneWOverride: tw, phoneHOverride: h);
                                   await cm.updateViewStyle(force: true);
                                   setSheetState(() {});
                                 },
                               ),
                               suffixIcon: IconButton(
-                                icon: const Icon(Icons.add, size: 16, color: Colors.white70),
+                                icon: const Icon(Icons.add,
+                                    size: 16, color: Colors.white70),
                                 onPressed: () async {
-                                  int h = (int.tryParse(heightController.text) ?? defaultPhoneH) + 100;
+                                  int h =
+                                      (int.tryParse(heightController.text) ??
+                                              defaultPhoneH) +
+                                          100;
                                   heightController.text = '$h';
-                                  await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$h');
-                                  await cm.syncCurrentAppWindowSize();
+                                  final tw =
+                                      int.tryParse(widthController.text) ??
+                                          defaultPhoneW;
+                                  await bind.mainSetLocalOption(
+                                      key: 'single_app_phone_h', value: '$h');
+                                  await cm.syncCurrentAppWindowSize(
+                                      phoneWOverride: tw, phoneHOverride: h);
                                   await cm.updateViewStyle(force: true);
                                   setSheetState(() {});
                                 },
                               ),
                             ),
-                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13),
                           ),
                         ),
                       ],
@@ -2712,25 +2875,35 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       children: [
                         Text(
                           localeName.startsWith('zh') ? '放大倍率:' : 'Scale:',
-                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.white70),
                         ),
                         const SizedBox(width: 8),
                         for (final s in [1.0, 1.5, 2.0, 2.5, 3.0]) ...[
                           InkWell(
                             onTap: () async {
+                              final tw = int.tryParse(widthController.text) ??
+                                  defaultPhoneW;
+                              final th = int.tryParse(heightController.text) ??
+                                  defaultPhoneH;
                               setSheetState(() {
                                 cm.singleAppScaleOverride = s;
                               });
-                              await cm.syncCurrentAppWindowSize(scaleOverride: s);
+                              await cm.syncCurrentAppWindowSize(
+                                  scaleOverride: s,
+                                  phoneWOverride: tw,
+                                  phoneHOverride: th);
                               await cm.updateViewStyle(force: true);
                             },
                             child: Container(
                               margin: const EdgeInsets.symmetric(horizontal: 3),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
-                                color: (cm.singleAppScaleOverride - s).abs() < 0.05
-                                    ? Colors.cyanAccent
-                                    : const Color(0x33FFFFFF),
+                                color:
+                                    (cm.singleAppScaleOverride - s).abs() < 0.05
+                                        ? Colors.cyanAccent
+                                        : const Color(0x33FFFFFF),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
@@ -2738,7 +2911,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
-                                  color: (cm.singleAppScaleOverride - s).abs() < 0.05
+                                  color: (cm.singleAppScaleOverride - s).abs() <
+                                          0.05
                                       ? Colors.black
                                       : Colors.white,
                                 ),
@@ -2756,23 +2930,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0071FF),
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
                         ),
                         icon: const Icon(Icons.aspect_ratio, size: 18),
                         label: Text(
-                          localeName.startsWith('zh') ? '🚀 同步调整远端窗口尺寸' : 'Sync & Resize Remote Window',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                          localeName.startsWith('zh')
+                              ? '🚀 同步调整远端窗口尺寸'
+                              : 'Sync & Resize Remote Window',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold),
                         ),
                         onPressed: () async {
-                          final tw = int.tryParse(widthController.text) ?? defaultPhoneW;
-                          final th = int.tryParse(heightController.text) ?? defaultPhoneH;
-                          await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$tw');
-                          await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$th');
+                          final tw = int.tryParse(widthController.text) ??
+                              defaultPhoneW;
+                          final th = int.tryParse(heightController.text) ??
+                              defaultPhoneH;
+                          await bind.mainSetLocalOption(
+                              key: 'single_app_phone_w', value: '$tw');
+                          await bind.mainSetLocalOption(
+                              key: 'single_app_phone_h', value: '$th');
 
-                          await cm.syncCurrentAppWindowSize();
+                          await cm.syncCurrentAppWindowSize(
+                              phoneWOverride: tw, phoneHOverride: th);
                           await cm.updateViewStyle(force: true);
 
-                          final dims = cm.calculateRemoteWindowTargetSize();
+                          final dims = cm.calculateRemoteWindowTargetSize(
+                              phoneWOverride: tw, phoneHOverride: th);
                           final winW = dims['targetW'];
                           final winH = dims['targetH'];
 
@@ -2788,8 +2972,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
                     // Edge crop sliders
                     Text(
-                      localeName.startsWith('zh') ? '四边微调裁剪 (实时生效并按程序记忆)' : '4-Edge Crop (Live Preview & Per-App Memory)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                      localeName.startsWith('zh')
+                          ? '四边微调裁剪 (实时生效并按程序记忆)'
+                          : '4-Edge Crop (Live Preview & Per-App Memory)',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent),
                     ),
                     const SizedBox(height: 4),
                     buildCropRow(
@@ -2797,9 +2986,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_left,
                       cropL,
                       (n) async {
+                        final tw =
+                            int.tryParse(widthController.text) ?? defaultPhoneW;
+                        final th = int.tryParse(heightController.text) ??
+                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, n, cropT, cropR, cropB);
-                        await cm.syncCurrentAppWindowSize(customCropL: n);
+                        await cm.syncCurrentAppWindowSize(
+                            customCropL: n,
+                            phoneWOverride: tw,
+                            phoneHOverride: th);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -2808,9 +3004,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_top,
                       cropT,
                       (n) async {
+                        final tw =
+                            int.tryParse(widthController.text) ?? defaultPhoneW;
+                        final th = int.tryParse(heightController.text) ??
+                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, n, cropR, cropB);
-                        await cm.syncCurrentAppWindowSize(customCropT: n);
+                        await cm.syncCurrentAppWindowSize(
+                            customCropT: n,
+                            phoneWOverride: tw,
+                            phoneHOverride: th);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -2819,9 +3022,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_right,
                       cropR,
                       (n) async {
+                        final tw =
+                            int.tryParse(widthController.text) ?? defaultPhoneW;
+                        final th = int.tryParse(heightController.text) ??
+                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, cropT, n, cropB);
-                        await cm.syncCurrentAppWindowSize(customCropR: n);
+                        await cm.syncCurrentAppWindowSize(
+                            customCropR: n,
+                            phoneWOverride: tw,
+                            phoneHOverride: th);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -2830,9 +3040,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_bottom,
                       cropB,
                       (n) async {
+                        final tw =
+                            int.tryParse(widthController.text) ?? defaultPhoneW;
+                        final th = int.tryParse(heightController.text) ??
+                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, cropT, cropR, n);
-                        await cm.syncCurrentAppWindowSize(customCropB: n);
+                        await cm.syncCurrentAppWindowSize(
+                            customCropB: n,
+                            phoneWOverride: tw,
+                            phoneHOverride: th);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -2841,18 +3058,26 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
                         TextButton.icon(
-                          icon: const Icon(Icons.restart_alt, size: 16, color: Colors.white70),
+                          icon: const Icon(Icons.restart_alt,
+                              size: 16, color: Colors.white70),
                           label: Text(
                             localeName.startsWith('zh') ? '重置微调' : 'Reset Crop',
-                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                            style: const TextStyle(
+                                color: Colors.white70, fontSize: 12),
                           ),
                           onPressed: () async {
+                            final tw = int.tryParse(widthController.text) ??
+                                defaultPhoneW;
+                            final th = int.tryParse(heightController.text) ??
+                                defaultPhoneH;
                             cm.saveAppCrop(appName, 0, 0, 0, 0);
                             await cm.syncCurrentAppWindowSize(
                               customCropL: 0,
                               customCropT: 0,
                               customCropR: 0,
                               customCropB: 0,
+                              phoneWOverride: tw,
+                              phoneHOverride: th,
                             );
                             await cm.updateViewStyle(force: true);
                             setSheetState(() {});
@@ -3427,9 +3652,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       width: width,
       height: height,
       decoration: BoxDecoration(
-        color: active
-            ? const Color(0xFF1976D2)
-            : const Color(0x38FFFFFF),
+        color: active ? const Color(0xFF1976D2) : const Color(0x38FFFFFF),
         borderRadius: BorderRadius.circular(4.0),
         border: Border.all(
           color: active ? Colors.lightBlueAccent : Colors.white24,
@@ -3536,7 +3759,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
     final isNarrow = size.width < (14 * 36.0 + 13 * gap + 24.0);
     final cols = isNarrow ? 7 : 14;
     final itemW = isNarrow
-        ? ((min(size.width - 20.0, 420.0) - (cols - 1) * gap) / cols).clamp(34.0, 48.0)
+        ? ((min(size.width - 20.0, 420.0) - (cols - 1) * gap) / cols)
+            .clamp(34.0, 48.0)
         : 36.0;
     const itemH = 34.0;
     final totalGridW = cols * itemW + (cols - 1) * gap;
@@ -3588,36 +3812,110 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
 
     // Key definitions
     final kEsc = k(label: 'Esc', onTap: () => inputModel.inputKey('VK_ESCAPE'));
-    final kHome = k(icon: Icons.first_page, tooltip: 'Home', onTap: () => inputModel.inputKey('VK_HOME'));
-    final kUp = k(icon: Icons.arrow_upward, tooltip: 'Up', onTap: () => inputModel.inputKey('VK_UP'));
-    final kEnd = k(icon: Icons.last_page, tooltip: 'End', onTap: () => inputModel.inputKey('VK_END'));
-    final kCtrlS = k(customChild: _comboKeyChild(Icons.save_outlined, '$ctrlLabel+S'), tooltip: '$ctrlLabel+S', onTap: () => sendPrompt(isMac, 'VK_S'));
-    final kCtrlC = k(customChild: _comboKeyChild(Icons.copy_all, '$ctrlLabel+C'), tooltip: '$ctrlLabel+C', onTap: () => sendPrompt(isMac, 'VK_C'));
-    final kCtrlX = k(customChild: _comboKeyChild(Icons.content_cut, '$ctrlLabel+X'), tooltip: '$ctrlLabel+X', onTap: () => sendPrompt(isMac, 'VK_X'));
+    final kHome = k(
+        icon: Icons.first_page,
+        tooltip: 'Home',
+        onTap: () => inputModel.inputKey('VK_HOME'));
+    final kUp = k(
+        icon: Icons.arrow_upward,
+        tooltip: 'Up',
+        onTap: () => inputModel.inputKey('VK_UP'));
+    final kEnd = k(
+        icon: Icons.last_page,
+        tooltip: 'End',
+        onTap: () => inputModel.inputKey('VK_END'));
+    final kCtrlS = k(
+        customChild: _comboKeyChild(Icons.save_outlined, '$ctrlLabel+S'),
+        tooltip: '$ctrlLabel+S',
+        onTap: () => sendPrompt(isMac, 'VK_S'));
+    final kCtrlC = k(
+        customChild: _comboKeyChild(Icons.copy_all, '$ctrlLabel+C'),
+        tooltip: '$ctrlLabel+C',
+        onTap: () => sendPrompt(isMac, 'VK_C'));
+    final kCtrlX = k(
+        customChild: _comboKeyChild(Icons.content_cut, '$ctrlLabel+X'),
+        tooltip: '$ctrlLabel+X',
+        onTap: () => sendPrompt(isMac, 'VK_X'));
 
-    final kTab = k(icon: Icons.keyboard_tab, tooltip: 'Tab', onTap: () => inputModel.inputKey('VK_TAB'));
-    final kLeft = k(icon: Icons.arrow_back, tooltip: 'Left', onTap: () => inputModel.inputKey('VK_LEFT'));
-    final kDown = k(icon: Icons.arrow_downward, tooltip: 'Down', onTap: () => inputModel.inputKey('VK_DOWN'));
-    final kRight = k(icon: Icons.arrow_forward, tooltip: 'Right', onTap: () => inputModel.inputKey('VK_RIGHT'));
-    final kEnter = k(icon: Icons.keyboard_return, tooltip: 'Enter', onTap: () => inputModel.inputKey('VK_ENTER'));
-    final kCtrlEnter = k(customChild: _comboKeyChild(Icons.keyboard_return, '^Enter'), tooltip: '$ctrlLabel+Enter', onTap: () => sendPrompt(isMac, 'VK_ENTER'));
-    final kCtrlV = k(customChild: _comboKeyChild(Icons.content_paste, '$ctrlLabel+V'), tooltip: '$ctrlLabel+V', onTap: () => sendPrompt(isMac, 'VK_V'));
+    final kTab = k(
+        icon: Icons.keyboard_tab,
+        tooltip: 'Tab',
+        onTap: () => inputModel.inputKey('VK_TAB'));
+    final kLeft = k(
+        icon: Icons.arrow_back,
+        tooltip: 'Left',
+        onTap: () => inputModel.inputKey('VK_LEFT'));
+    final kDown = k(
+        icon: Icons.arrow_downward,
+        tooltip: 'Down',
+        onTap: () => inputModel.inputKey('VK_DOWN'));
+    final kRight = k(
+        icon: Icons.arrow_forward,
+        tooltip: 'Right',
+        onTap: () => inputModel.inputKey('VK_RIGHT'));
+    final kEnter = k(
+        icon: Icons.keyboard_return,
+        tooltip: 'Enter',
+        onTap: () => inputModel.inputKey('VK_ENTER'));
+    final kCtrlEnter = k(
+        customChild: _comboKeyChild(Icons.keyboard_return, '^Enter'),
+        tooltip: '$ctrlLabel+Enter',
+        onTap: () => sendPrompt(isMac, 'VK_ENTER'));
+    final kCtrlV = k(
+        customChild: _comboKeyChild(Icons.content_paste, '$ctrlLabel+V'),
+        tooltip: '$ctrlLabel+V',
+        onTap: () => sendPrompt(isMac, 'VK_V'));
 
-    final kPgUp = k(icon: Icons.keyboard_double_arrow_up, tooltip: 'Page up', onTap: () => inputModel.inputKey('VK_PRIOR'));
-    final kAlt = k(label: 'Alt', active: inputModel.alt, onTap: () => setState(() => inputModel.alt = !inputModel.alt));
-    final kShift = k(label: 'Shift', active: inputModel.shift, onTap: () => setState(() => inputModel.shift = !inputModel.shift));
-    final kIns = k(label: 'Ins', tooltip: 'Insert', onTap: () => inputModel.inputKey('VK_INSERT'));
-    final kDel = k(icon: Icons.delete_outline, tooltip: 'Delete', onTap: () => inputModel.inputKey('VK_DELETE'));
-    final kPrint = k(customChild: _comboKeyChild(Icons.camera_alt_outlined, 'Print'), tooltip: 'PrintScreen', onTap: () => inputModel.inputKey('VK_SNAPSHOT'));
+    final kPgUp = k(
+        icon: Icons.keyboard_double_arrow_up,
+        tooltip: 'Page up',
+        onTap: () => inputModel.inputKey('VK_PRIOR'));
+    final kAlt = k(
+        label: 'Alt',
+        active: inputModel.alt,
+        onTap: () => setState(() => inputModel.alt = !inputModel.alt));
+    final kShift = k(
+        label: 'Shift',
+        active: inputModel.shift,
+        onTap: () => setState(() => inputModel.shift = !inputModel.shift));
+    final kIns = k(
+        label: 'Ins',
+        tooltip: 'Insert',
+        onTap: () => inputModel.inputKey('VK_INSERT'));
+    final kDel = k(
+        icon: Icons.delete_outline,
+        tooltip: 'Delete',
+        onTap: () => inputModel.inputKey('VK_DELETE'));
+    final kPrint = k(
+        customChild: _comboKeyChild(Icons.camera_alt_outlined, 'Print'),
+        tooltip: 'PrintScreen',
+        onTap: () => inputModel.inputKey('VK_SNAPSHOT'));
 
-    final kPgDn = k(icon: Icons.keyboard_double_arrow_down, tooltip: 'Page down', onTap: () => inputModel.inputKey('VK_NEXT'));
-    final kCtrl = k(label: 'Ctrl', active: inputModel.ctrl, onTap: () => setState(() => inputModel.ctrl = !inputModel.ctrl));
-    final kWin = k(icon: Icons.window, active: inputModel.command, tooltip: 'Win', onTap: () => setState(() => inputModel.command = !inputModel.command));
-    final kFn = k(label: 'Fn', active: _fn, tooltip: 'Fn (F1-F12)', onTap: () => setState(() {
-      _fn = !_fn;
-      widget.onExpandToggle?.call(_fn);
-    }));
-    final kBack = k(icon: Icons.backspace_outlined, tooltip: 'Backspace', onTap: () => inputModel.inputKey('VK_BACK'));
+    final kPgDn = k(
+        icon: Icons.keyboard_double_arrow_down,
+        tooltip: 'Page down',
+        onTap: () => inputModel.inputKey('VK_NEXT'));
+    final kCtrl = k(
+        label: 'Ctrl',
+        active: inputModel.ctrl,
+        onTap: () => setState(() => inputModel.ctrl = !inputModel.ctrl));
+    final kWin = k(
+        icon: Icons.window,
+        active: inputModel.command,
+        tooltip: 'Win',
+        onTap: () => setState(() => inputModel.command = !inputModel.command));
+    final kFn = k(
+        label: 'Fn',
+        active: _fn,
+        tooltip: 'Fn (F1-F12)',
+        onTap: () => setState(() {
+              _fn = !_fn;
+              widget.onExpandToggle?.call(_fn);
+            }));
+    final kBack = k(
+        icon: Icons.backspace_outlined,
+        tooltip: 'Backspace',
+        onTap: () => inputModel.inputKey('VK_BACK'));
 
     final kMoveScreenLeft = k(
       customChild: _moveToScreenIcon(true),
@@ -3653,8 +3951,38 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
       ];
     } else {
       gridRows = [
-        [kEsc, kHome, kUp, kEnd, kCtrlS, kCtrlC, kCtrlX, kPgUp, kAlt, kShift, kIns, kDel, kPrint, kMoveScreenLeft],
-        [kTab, kLeft, kDown, kRight, kEnter, kCtrlEnter, kCtrlV, kPgDn, kCtrl, kWin, kFn, kBack, kMoveScreenRight, kHide],
+        [
+          kEsc,
+          kHome,
+          kUp,
+          kEnd,
+          kCtrlS,
+          kCtrlC,
+          kCtrlX,
+          kPgUp,
+          kAlt,
+          kShift,
+          kIns,
+          kDel,
+          kPrint,
+          kMoveScreenLeft
+        ],
+        [
+          kTab,
+          kLeft,
+          kDown,
+          kRight,
+          kEnter,
+          kCtrlEnter,
+          kCtrlV,
+          kPgDn,
+          kCtrl,
+          kWin,
+          kFn,
+          kBack,
+          kMoveScreenRight,
+          kHide
+        ],
       ];
     }
 
@@ -3663,9 +3991,8 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         k(label: 'F$i', onTap: () => inputModel.inputKey('VK_F$i')),
     ];
 
-    final qwertyKeyW = isNarrow
-        ? ((totalGridW - 9 * gap) / 10).clamp(24.0, itemW)
-        : itemW;
+    final qwertyKeyW =
+        isNarrow ? ((totalGridW - 9 * gap) / 10).clamp(24.0, itemW) : itemW;
     Widget qKey(String letter) {
       return _buildKeycap(
         width: qwertyKeyW,
@@ -3678,6 +4005,7 @@ class _KeyHelpToolsState extends State<KeyHelpTools> {
         panelH: totalPanelH,
       );
     }
+
     const qwertyRow1 = ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'];
     const qwertyRow2 = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'];
     const qwertyRow3 = ['Z', 'X', 'C', 'V', 'B', 'N', 'M'];
@@ -3933,9 +4261,9 @@ void showOptions(
   if (_keyboardDismissMode.value.isEmpty) {
     _keyboardDismissMode.value = 'any';
   }
-  _keyboardPopupDelayMs.value = (int.tryParse(
-          bind.mainGetLocalOption(key: 'keyboard_popup_delay_ms')) ??
-      200);
+  _keyboardPopupDelayMs.value =
+      (int.tryParse(bind.mainGetLocalOption(key: 'keyboard_popup_delay_ms')) ??
+          200);
   var displays = <Widget>[];
   final pi = gFFI.ffiModel.pi;
   final image = gFFI.ffiModel.getConnectionImageText();
@@ -4300,7 +4628,7 @@ void showOptions(
     final rH264 = findRadio(codecRadios, 'h264');
     final rH265 = findRadio(codecRadios, 'h265');
     final isCodecCompatible = (rH264 != null && rH264.onChanged != null) ||
-                              (rH265 != null && rH265.onChanged != null);
+        (rH265 != null && rH265.onChanged != null);
 
     final directSurfaceButtons = isAndroid
         ? [
@@ -4338,7 +4666,10 @@ void showOptions(
                         }
                         if (!isDirect) {
                           if (codec.value != 'h264' && codec.value != 'h265') {
-                            final targetCodec = (rH264 != null && rH264.onChanged != null) ? 'h264' : 'h265';
+                            final targetCodec =
+                                (rH264 != null && rH264.onChanged != null)
+                                    ? 'h264'
+                                    : 'h265';
                             final r = findRadio(codecRadios, targetCodec);
                             r?.onChanged?.call(targetCodec);
                             codec.value = targetCodec;
@@ -4348,8 +4679,8 @@ void showOptions(
                                   display: gFFI.ffiModel.pi.currentDisplay);
                           final w = display?.width ?? 1920;
                           final h = display?.height ?? 1080;
-                          await gFFI.invokeMethod(
-                              "start_direct_surface", {"width": w, "height": h});
+                          await gFFI.invokeMethod("start_direct_surface",
+                              {"width": w, "height": h});
                           gFFI.ffiModel.isDirectSurface.value = true;
                           close();
                           BotToast.showText(
@@ -4605,8 +4936,7 @@ void showOptions(
 
     final savedScale =
         bind.mainGetPeerOptionSync(id: id, key: 'custom-vdd-scale');
-    final currentScale =
-        (savedScale.isNotEmpty ? savedScale : '1.0').obs;
+    final currentScale = (savedScale.isNotEmpty ? savedScale : '1.0').obs;
 
     final vddScaleButtons = [
       buildSectionTitle(localeName.startsWith('zh')
@@ -4617,8 +4947,8 @@ void showOptions(
               Expanded(
                 child: buildSegmentButton(
                   text: localeName.startsWith('zh') ? '1:1 原生' : '1:1 Native',
-                  selected: currentScale.value == '1.0' ||
-                      currentScale.value.isEmpty,
+                  selected:
+                      currentScale.value == '1.0' || currentScale.value.isEmpty,
                   onTap: () async {
                     currentScale.value = '1.0';
                     bind.mainSetPeerOptionSync(
@@ -4641,7 +4971,8 @@ void showOptions(
               const SizedBox(width: 6),
               Expanded(
                 child: buildSegmentButton(
-                  text: localeName.startsWith('zh') ? '1.5:1 舒适' : '1.5:1 Comfy',
+                  text:
+                      localeName.startsWith('zh') ? '1.5:1 舒适' : '1.5:1 Comfy',
                   selected: currentScale.value == '1.5',
                   onTap: () async {
                     currentScale.value = '1.5';
@@ -4881,7 +5212,8 @@ void showOptions(
                 )),
           if (isAndroid)
             Obx(() {
-              if (!_autoPopupKeyboardOnText.value) return const SizedBox.shrink();
+              if (!_autoPopupKeyboardOnText.value)
+                return const SizedBox.shrink();
               final marginVal = _keyboardCursorMargin.value;
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -4911,14 +5243,16 @@ void showOptions(
                               );
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Radio<String>(
                                     value: 'tap',
                                     groupValue: _keyboardPopupMode.value,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
                                     onChanged: (val) async {
                                       if (val != null) {
@@ -4958,14 +5292,16 @@ void showOptions(
                               );
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Radio<String>(
                                     value: 'auto',
                                     groupValue: _keyboardPopupMode.value,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
                                     onChanged: (val) async {
                                       if (val != null) {
@@ -4983,9 +5319,10 @@ void showOptions(
                                       isZh ? '自动弹出' : 'Automatic',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: _keyboardPopupMode.value == 'auto'
-                                            ? Colors.blue
-                                            : null,
+                                        color:
+                                            _keyboardPopupMode.value == 'auto'
+                                                ? Colors.blue
+                                                : null,
                                       ),
                                     ),
                                   ),
@@ -4998,86 +5335,90 @@ void showOptions(
                     ),
                     const SizedBox(height: 4.0),
                     if (_keyboardPopupMode.value == 'auto') ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isZh ? '软键盘光标安全间距' : 'Keyboard cursor margin',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        Text(
-                          '${marginVal.round()} px',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isZh ? '软键盘光标安全间距' : 'Keyboard cursor margin',
+                            style: const TextStyle(fontSize: 14),
                           ),
-                        ),
-                      ],
-                    ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.0,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
-                      ),
-                      child: Slider(
-                        value: marginVal.clamp(0.0, 120.0),
-                        min: 0.0,
-                        max: 120.0,
-                        divisions: 24,
-                        label: '${marginVal.round()} px',
-                        onChanged: (val) {
-                          _keyboardCursorMargin.value = val;
-                        },
-                        onChangeEnd: (val) async {
-                          await bind.mainSetLocalOption(
-                            key: 'keyboard_cursor_margin',
-                            value: val.round().toString(),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 4.0),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          isZh ? '软键盘弹出延迟' : 'Popup delay',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                        Text(
-                          '${_keyboardPopupDelayMs.value} ms',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                          Text(
+                            '${marginVal.round()} px',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
                           ),
+                        ],
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3.0,
+                          thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7.0),
                         ),
-                      ],
-                    ),
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.0,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7.0),
+                        child: Slider(
+                          value: marginVal.clamp(0.0, 120.0),
+                          min: 0.0,
+                          max: 120.0,
+                          divisions: 24,
+                          label: '${marginVal.round()} px',
+                          onChanged: (val) {
+                            _keyboardCursorMargin.value = val;
+                          },
+                          onChangeEnd: (val) async {
+                            await bind.mainSetLocalOption(
+                              key: 'keyboard_cursor_margin',
+                              value: val.round().toString(),
+                            );
+                          },
+                        ),
                       ),
-                      child: Slider(
-                        value: _keyboardPopupDelayMs.value.toDouble().clamp(0.0, 1000.0),
-                        min: 0.0,
-                        max: 1000.0,
-                        divisions: 20,
-                        label: '${_keyboardPopupDelayMs.value} ms',
-                        onChanged: (val) {
-                          _keyboardPopupDelayMs.value = val.round();
-                        },
-                        onChangeEnd: (val) async {
-                          await bind.mainSetLocalOption(
-                            key: 'keyboard_popup_delay_ms',
-                            value: val.round().toString(),
-                          );
-                        },
+                      const SizedBox(height: 4.0),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isZh ? '软键盘弹出延迟' : 'Popup delay',
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          Text(
+                            '${_keyboardPopupDelayMs.value} ms',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 4.0),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3.0,
+                          thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 7.0),
+                        ),
+                        child: Slider(
+                          value: _keyboardPopupDelayMs.value
+                              .toDouble()
+                              .clamp(0.0, 1000.0),
+                          min: 0.0,
+                          max: 1000.0,
+                          divisions: 20,
+                          label: '${_keyboardPopupDelayMs.value} ms',
+                          onChanged: (val) {
+                            _keyboardPopupDelayMs.value = val.round();
+                          },
+                          onChangeEnd: (val) async {
+                            await bind.mainSetLocalOption(
+                              key: 'keyboard_popup_delay_ms',
+                              value: val.round().toString(),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 4.0),
                     ],
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -5102,14 +5443,16 @@ void showOptions(
                               );
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Radio<String>(
                                     value: 'any',
                                     groupValue: _keyboardDismissMode.value,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
                                     onChanged: (val) async {
                                       if (val != null) {
@@ -5127,9 +5470,10 @@ void showOptions(
                                       isZh ? '触摸/滑动收回' : 'Touch/Slide',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: _keyboardDismissMode.value == 'any'
-                                            ? Colors.blue
-                                            : null,
+                                        color:
+                                            _keyboardDismissMode.value == 'any'
+                                                ? Colors.blue
+                                                : null,
                                       ),
                                     ),
                                   ),
@@ -5149,14 +5493,16 @@ void showOptions(
                               );
                             },
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2.0),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2.0),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Radio<String>(
                                     value: 'tap',
                                     groupValue: _keyboardDismissMode.value,
-                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
                                     visualDensity: VisualDensity.compact,
                                     onChanged: (val) async {
                                       if (val != null) {
@@ -5174,9 +5520,10 @@ void showOptions(
                                       isZh ? '仅点击才收回' : 'Tap only',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: _keyboardDismissMode.value == 'tap'
-                                            ? Colors.blue
-                                            : null,
+                                        color:
+                                            _keyboardDismissMode.value == 'tap'
+                                                ? Colors.blue
+                                                : null,
                                       ),
                                     ),
                                   ),
@@ -5869,9 +6216,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
             contentPadding: EdgeInsets.zero,
             visualDensity: VisualDensity.compact,
             title: Text(
-              isPortrait
-                  ? '📐 1264 x 2800 (新型全面屏)'
-                  : '📐 2800 x 1264 (新型全面屏)',
+              isPortrait ? '📐 1264 x 2800 (新型全面屏)' : '📐 2800 x 1264 (新型全面屏)',
             ),
             onTap: () {
               close();
