@@ -1,0 +1,12 @@
+diff --git a/src/mfxparser.cpp b/src/mfxparser.cpp
+index 9d3823e..beea532 100644
+--- a/src/mfxparser.cpp
++++ b/src/mfxparser.cpp
+@@ -23,6 +23,7 @@
+ #include <stdlib.h>
+ #include <string.h>
+ 
++#include <cstdint>
+ #include <list>
+ 
+ #include "mfxloader.h"
