@@ -456,10 +456,30 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn select_app_window(&self, hwnd: u64, direct_mode: bool) {
+        self.select_app_window_with_size(hwnd, direct_mode, 0, 0);
+    }
+
+    pub fn select_app_window_with_size(&self, hwnd: u64, direct_mode: bool, target_w: i32, target_h: i32) {
         let mode_str = if direct_mode { "direct" } else { "crop" };
         let mut misc = Misc::new();
         misc.set_toggle_privacy_mode(TogglePrivacyMode {
-            impl_key: format!("app_window:select:{}:{}", hwnd, mode_str),
+            impl_key: if target_w > 0 && target_h > 0 {
+                format!("app_window:select:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h)
+            } else {
+                format!("app_window:select:{}:{}", hwnd, mode_str)
+            },
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
+    pub fn resize_app_window(&self, hwnd: u64, w: i32, h: i32) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: format!("app_window:resize:{}:{}:{}", hwnd, w, h),
             on: false,
             ..Default::default()
         });

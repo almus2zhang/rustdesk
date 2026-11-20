@@ -4052,8 +4052,8 @@ impl Connection {
         });
     }
 
-    async fn select_app_window(&mut self, hwnd: usize) {
-        log::info!("select_app_window: {}", hwnd);
+    async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32) {
+        log::info!("select_app_window: {} (target_size: {}x{})", hwnd, target_w, target_h);
         crate::server::video_service::set_selected_window(hwnd);
         if hwnd != 0 {
             crate::platform::focus_app_window(hwnd);
@@ -4064,13 +4064,25 @@ impl Connection {
                         let (ox, oy) = d.origin();
                         let w = d.width() as i32;
                         let h = d.height() as i32;
-                        log::info!(
-                            "Moving window {} to virtual display {} at ({}, {}) {}x{} and maximizing",
-                            hwnd, self.display_idx, ox, oy, w, h
-                        );
-                        crate::platform::move_window_to_rect_and_maximize(
-                            hwnd, ox, oy, w, h
-                        );
+                        if target_w > 0 && target_h > 0 {
+                            log::info!(
+                                "Moving window {} to virtual display {} at ({}, {}) with target size {}x{}",
+                                hwnd, self.display_idx, ox, oy, target_w, target_h
+                            );
+                            crate::platform::move_window_to_rect_and_size(
+                                hwnd, ox, oy, target_w, target_h
+                            );
+                        } else {
+                            log::info!(
+                                "Moving window {} to virtual display {} at ({}, {}) {}x{} and maximizing",
+                                hwnd, self.display_idx, ox, oy, w, h
+                            );
+                            crate::platform::move_window_to_rect_and_maximize(
+                                hwnd, ox, oy, w, h
+                            );
+                        }
+                    } else if target_w > 0 && target_h > 0 {
+                        crate::platform::resize_app_window(hwnd, target_w, target_h);
                     }
                 }
             }
@@ -4302,7 +4314,30 @@ impl Connection {
                 let direct = parts[1] != "crop" && parts[1] != "N" && parts[1] != "0";
                 crate::server::video_service::set_direct_window_capture(direct);
             }
-            self.select_app_window(hwnd).await;
+            let (target_w, target_h) = if parts.len() >= 4 {
+                (parts[2].parse::<i32>().unwrap_or(0), parts[3].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            self.select_app_window(hwnd, target_w, target_h).await;
+            return;
+        }
+        if t.impl_key.starts_with("app_window:resize:") {
+            let rest = &t.impl_key["app_window:resize:".len()..];
+            let parts: Vec<&str> = rest.split(':').collect();
+            if parts.len() >= 3 {
+                let hwnd = parts[0].parse::<usize>().unwrap_or(0);
+                let w = parts[1].parse::<i32>().unwrap_or(0);
+                let h = parts[2].parse::<i32>().unwrap_or(0);
+                if hwnd != 0 && w > 0 && h > 0 {
+                    #[cfg(windows)]
+                    crate::platform::resize_app_window(hwnd, w, h);
+                    if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
+                        self.send(msg_out).await;
+                    }
+                    self.refresh_video_display(Some(self.display_idx));
+                }
+            }
             return;
         }
         if t.impl_key.starts_with("secondary_display:") {

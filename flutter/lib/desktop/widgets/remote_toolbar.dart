@@ -1016,6 +1016,7 @@ class _DisplayMenuState extends State<_DisplayMenu> {
               MenuButton(
                 child: Text(translate('Single App')),
                 onPressed: () async {
+                  ffi.canvasModel.showWindowPickerModal = true;
                   await bind.sessionPeerOption(
                       sessionId: ffi.sessionId,
                       name: 'get_window_list',

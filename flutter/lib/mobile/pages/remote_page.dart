@@ -448,6 +448,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   final _blockableOverlayState = BlockableOverlayState();
   StreamSubscription? _displaysSubscription;
+  StreamSubscription? _piIsSetSubscription;
   bool _hasAutoSwitchedDisplay = false;
   bool _firstImageReceived = false;
   int _initialDisplayCount = 0;
@@ -602,6 +603,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         _checkAndAutoSwitchUsbDisplay(displays);
       });
     }
+    _piIsSetSubscription = gFFI.ffiModel.pi.isSet.listen((isSet) {
+      if (isSet) {
+        bind.sessionPeerOption(
+          sessionId: sessionId,
+          name: 'get_window_list',
+          value: '',
+        );
+      }
+    });
     super.initState();
     gFFI.ffiModel.updateEventListener(sessionId, widget.id);
     gFFI.start(
@@ -714,6 +724,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   Future<void> dispose() async {
     _resetLeftAnchorState();
     _displaysSubscription?.cancel();
+    _piIsSetSubscription?.cancel();
     _textCursorSubscription?.cancel();
     _textCursorPopupTimer?.cancel();
     _pendingTapTimer?.cancel();
@@ -2063,6 +2074,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ? _buildFloatingEscKeyContent()
             : const SizedBox.shrink()),
       ));
+      final isSingleApp = gFFI.canvasModel.isSingleAppMode || widget.isMobileMode;
+      if (isSingleApp && !keyboardIsVisible) {
+        paints.add(Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: gFFI.canvasModel.singleAppDockHeight,
+          child: _buildSingleAppDockBar(context),
+        ));
+      }
       if (_showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
         final fabPos = _getFabPosition(orientation, size, padding);
         paints
@@ -2149,6 +2170,602 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         child: Stack(children: paints),
       );
     });
+  }
+
+  Widget _buildSingleAppDockBar(BuildContext context) {
+    return Obx(() {
+      final list = gFFI.canvasModel.appWindowList.value;
+      final currentHwnd = gFFI.canvasModel.currentSelectedHwnd;
+
+      return Container(
+        decoration: BoxDecoration(
+          color: const Color(0xEE161D28),
+          border: const Border(
+            top: BorderSide(color: Color(0x33FFFFFF), width: 0.8),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Left quick indicator
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: const Icon(
+                Icons.dashboard_customize_rounded,
+                color: Colors.cyanAccent,
+                size: 20,
+              ),
+            ),
+            // Horizontal scrollable app list
+            Expanded(
+              child: list.isEmpty
+                  ? Center(
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.refresh, size: 16, color: Colors.white70),
+                        label: Text(
+                          localeName.startsWith('zh') ? '点击刷新程序列表' : 'Refresh App List',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        onPressed: () {
+                          bind.sessionPeerOption(
+                            sessionId: gFFI.sessionId,
+                            name: 'get_window_list',
+                            value: '',
+                          );
+                        },
+                      ),
+                    )
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: list.length,
+                      itemBuilder: (ctx, idx) {
+                        final item = list[idx];
+                        final title = item['title']?.toString() ?? '';
+                        final name = item['name']?.toString() ?? '';
+                        final hwnd = int.tryParse(item['hwnd']?.toString() ?? '0') ?? 0;
+                        final isSelected = currentHwnd == hwnd;
+
+                        final displayName = name.replaceAll(RegExp(r'\.exe$', caseSensitive: false), '');
+                        final iconData = _resolveAppIcon(name, title);
+                        final iconColor = _resolveAppColor(name);
+
+                        return GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () async {
+                            gFFI.canvasModel.currentSelectedHwnd = hwnd;
+                            gFFI.canvasModel.currentSelectedAppName = name;
+                            gFFI.canvasModel.loadAppCrop(name);
+
+                            final directMode = bind.mainGetLocalOption(
+                                    key: 'direct_window_capture') !=
+                                'N';
+                            final modeStr = directMode ? 'direct' : 'crop';
+                            await bind.sessionPeerOption(
+                              sessionId: gFFI.sessionId,
+                              name: 'select_window',
+                              value: '$hwnd:$modeStr',
+                            );
+                            gFFI.ffiModel.pi
+                                    .platformAdditions['selected_window'] =
+                                hwnd;
+                            gFFI.canvasModel.isSingleAppMode = true;
+                            await bind.sessionPeerOption(
+                              sessionId: gFFI.sessionId,
+                              name: 'is_single_app_mode',
+                              value: 'Y',
+                            );
+                            await gFFI.canvasModel.updateViewStyle(force: true);
+                            BotToast.showText(
+                              text: localeName.startsWith('zh')
+                                  ? '已切至: $displayName'
+                                  : 'Switched to $displayName',
+                            );
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0x3300E5FF) : const Color(0x22FFFFFF),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                width: isSelected ? 1.5 : 0.8,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(iconData, color: isSelected ? Colors.cyanAccent : iconColor, size: 22),
+                                const SizedBox(height: 2),
+                                ConstrainedBox(
+                                  constraints: const BoxConstraints(maxWidth: 64),
+                                  child: Text(
+                                    displayName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      color: isSelected ? Colors.cyanAccent : Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            // Right actions
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh, color: Colors.white70, size: 20),
+                  tooltip: localeName.startsWith('zh') ? '刷新程序列表' : 'Refresh App List',
+                  onPressed: () {
+                    bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId,
+                      name: 'get_window_list',
+                      value: '',
+                    );
+                    BotToast.showText(
+                      text: localeName.startsWith('zh') ? '正在刷新程序列表...' : 'Refreshing apps...',
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.tune, color: Colors.amberAccent, size: 20),
+                  tooltip: localeName.startsWith('zh') ? '视口与四边微调' : 'Edge Crop & Viewport',
+                  onPressed: () {
+                    _showSingleAppAdjustSheet(context);
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.fullscreen, color: Colors.white70, size: 20),
+                  tooltip: localeName.startsWith('zh') ? '退出单程序 (全屏桌面)' : 'Exit Single App (Desktop)',
+                  onPressed: () async {
+                    await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId,
+                      name: 'select_window',
+                      value: '0',
+                    );
+                    gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
+                    gFFI.canvasModel.isSingleAppMode = false;
+                    await bind.sessionPeerOption(
+                      sessionId: gFFI.sessionId,
+                      name: 'is_single_app_mode',
+                      value: 'N',
+                    );
+                    await gFFI.canvasModel.updateViewStyle();
+                    BotToast.showText(
+                      text: localeName.startsWith('zh') ? '已退出单程序模式' : 'Exited Single App Mode',
+                    );
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+  }
+
+  IconData _resolveAppIcon(String name, String title) {
+    final lower = (name + title).toLowerCase();
+    if (lower.contains('wechat') || lower.contains('weixin')) {
+      return Icons.chat_bubble_rounded;
+    }
+    if (lower.contains('code') || lower.contains('studio') || lower.contains('idea') || lower.contains('pycharm')) {
+      return Icons.code_rounded;
+    }
+    if (lower.contains('chrome') || lower.contains('edge') || lower.contains('firefox') || lower.contains('browser')) {
+      return Icons.public_rounded;
+    }
+    if (lower.contains('explorer') || lower.contains('file')) {
+      return Icons.folder_rounded;
+    }
+    if (lower.contains('term') || lower.contains('cmd') || lower.contains('powershell') || lower.contains('wt')) {
+      return Icons.terminal_rounded;
+    }
+    if (lower.contains('qq')) {
+      return Icons.forum_rounded;
+    }
+    if (lower.contains('music') || lower.contains('spotify') || lower.contains('cloudmusic')) {
+      return Icons.music_note_rounded;
+    }
+    if (lower.contains('word') || lower.contains('excel') || lower.contains('powerpnt') || lower.contains('wps')) {
+      return Icons.description_rounded;
+    }
+    return Icons.laptop_chromebook_rounded;
+  }
+
+  Color _resolveAppColor(String name) {
+    final lower = name.toLowerCase();
+    if (lower.contains('wechat') || lower.contains('weixin')) {
+      return const Color(0xFF07C160);
+    }
+    if (lower.contains('code')) {
+      return const Color(0xFF007ACC);
+    }
+    if (lower.contains('chrome') || lower.contains('edge')) {
+      return const Color(0xFF4285F4);
+    }
+    if (lower.contains('qq')) {
+      return const Color(0xFF12B7F5);
+    }
+    return Colors.white70;
+  }
+
+  void _showSingleAppAdjustSheet(BuildContext context) {
+    final cm = gFFI.canvasModel;
+    final appName = cm.currentSelectedAppName;
+    final media = MediaQuery.of(context);
+    final pixelRatio = media.devicePixelRatio;
+    final defaultPhoneW = (media.size.width * pixelRatio).round();
+    final defaultPhoneH = (media.size.height * pixelRatio).round();
+
+    final widthController = TextEditingController(
+      text: bind.mainGetLocalOption(key: 'single_app_phone_w').isNotEmpty
+          ? bind.mainGetLocalOption(key: 'single_app_phone_w')
+          : '$defaultPhoneW',
+    );
+    final heightController = TextEditingController(
+      text: bind.mainGetLocalOption(key: 'single_app_phone_h').isNotEmpty
+          ? bind.mainGetLocalOption(key: 'single_app_phone_h')
+          : '$defaultPhoneH',
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1E2430),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final cropL = cm.appCropLeft;
+            final cropT = cm.appCropTop;
+            final cropR = cm.appCropRight;
+            final cropB = cm.appCropBottom;
+
+            Widget buildCropRow(String label, IconData icon, int val, ValueChanged<int> onChanged) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(icon, size: 18, color: Colors.cyanAccent),
+                    const SizedBox(width: 6),
+                    SizedBox(
+                      width: 72,
+                      child: Text(
+                        label,
+                        style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.white70),
+                      onPressed: () {
+                        final n = max(0, val - 1);
+                        onChanged(n);
+                      },
+                    ),
+                    SizedBox(
+                      width: 52,
+                      child: Text(
+                        '$val px',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 13, color: Colors.cyanAccent, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add_circle_outline, size: 20, color: Colors.white70),
+                      onPressed: () {
+                        final n = min(300, val + 1);
+                        onChanged(n);
+                      },
+                    ),
+                    Expanded(
+                      child: Slider(
+                        value: val.toDouble().clamp(0.0, 300.0),
+                        min: 0,
+                        max: 300,
+                        divisions: 300,
+                        activeColor: Colors.cyanAccent,
+                        inactiveColor: Colors.white24,
+                        onChanged: (v) {
+                          onChanged(v.round());
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: media.viewInsets.bottom + 16,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Row(
+                      children: [
+                        const Icon(Icons.tune, color: Colors.amberAccent, size: 22),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                localeName.startsWith('zh') ? '单程序四边微调与尺寸' : 'Single App Edge Crop & Size',
+                                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              Text(
+                                appName.isEmpty
+                                    ? (localeName.startsWith('zh') ? '全局/默认' : 'Global Default')
+                                    : (localeName.startsWith('zh') ? '程序: $appName (独立记忆)' : 'App: $appName (Per-App Memory)'),
+                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                    const Divider(color: Colors.white24),
+
+                    // Phone resolution & remote window size calculation
+                    Text(
+                      localeName.startsWith('zh') ? '手机目标分辨率与放大倍率' : 'Target Mobile Resolution & Scale',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: widthController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: localeName.startsWith('zh') ? '宽 (像素)' : 'Width (px)',
+                              labelStyle: const TextStyle(fontSize: 12, color: Colors.white70),
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('x', style: TextStyle(color: Colors.white70)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: heightController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: localeName.startsWith('zh') ? '高 (像素)' : 'Height (px)',
+                              labelStyle: const TextStyle(fontSize: 12, color: Colors.white70),
+                              isDense: true,
+                              border: const OutlineInputBorder(),
+                            ),
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () {
+                            widthController.text = '$defaultPhoneW';
+                            heightController.text = '$defaultPhoneH';
+                            setSheetState(() {});
+                          },
+                          child: Text(
+                            localeName.startsWith('zh') ? '当前手机' : 'Current',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Scale factor row
+                    Row(
+                      children: [
+                        Text(
+                          localeName.startsWith('zh') ? '放大倍率:' : 'Scale:',
+                          style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        ),
+                        const SizedBox(width: 8),
+                        for (final s in [1.0, 1.5, 2.0, 2.5, 3.0]) ...[
+                          InkWell(
+                            onTap: () {
+                              setSheetState(() {
+                                cm.singleAppScaleOverride = s;
+                              });
+                              cm.updateViewStyle(force: true);
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 3),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: (cm.singleAppScaleOverride - s).abs() < 0.05
+                                    ? Colors.cyanAccent
+                                    : const Color(0x33FFFFFF),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${s}x',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: (cm.singleAppScaleOverride - s).abs() < 0.05
+                                      ? Colors.black
+                                      : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Action button to resize remote window
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0071FF),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.aspect_ratio, size: 18),
+                        label: Text(
+                          localeName.startsWith('zh') ? '🚀 同步调整远端窗口尺寸' : 'Sync & Resize Remote Window',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                        onPressed: () async {
+                          final tw = int.tryParse(widthController.text) ?? 2600;
+                          final th = int.tryParse(heightController.text) ?? 1264;
+                          await bind.mainSetLocalOption(key: 'single_app_phone_w', value: '$tw');
+                          await bind.mainSetLocalOption(key: 'single_app_phone_h', value: '$th');
+
+                          final dockPx = (cm.singleAppDockHeight * pixelRatio).round();
+                          final appH = max(100, th - dockPx);
+                          final s = cm.singleAppScaleOverride > 0 ? cm.singleAppScaleOverride : 2.0;
+                          final baseRemoteW = (tw / s).round();
+                          final baseRemoteH = (appH / s).round();
+                          final winW = baseRemoteW + cropL + cropR;
+                          final winH = baseRemoteH + cropT + cropB;
+
+                          final hwnd = cm.currentSelectedHwnd;
+                          if (hwnd != 0) {
+                            await bind.sessionPeerOption(
+                              sessionId: gFFI.sessionId,
+                              name: 'resize_app_window',
+                              value: '$hwnd:$winW:$winH',
+                            );
+                            BotToast.showText(
+                              text: localeName.startsWith('zh')
+                                  ? '已调整远端窗口为: ${winW}x$winH'
+                                  : 'Resized remote window to ${winW}x$winH',
+                            );
+                          } else {
+                            BotToast.showText(
+                              text: localeName.startsWith('zh')
+                                  ? '请先在下方程序栏选中一个程序'
+                                  : 'Please select an app first',
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                    const Divider(color: Colors.white24, height: 24),
+
+                    // Edge crop sliders
+                    Text(
+                      localeName.startsWith('zh') ? '四边微调裁剪 (实时生效并按程序记忆)' : '4-Edge Crop (Live Preview & Per-App Memory)',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                    ),
+                    const SizedBox(height: 4),
+                    buildCropRow(
+                      localeName.startsWith('zh') ? '左边裁剪' : 'Left',
+                      Icons.border_left,
+                      cropL,
+                      (n) {
+                        setSheetState(() {});
+                        cm.saveAppCrop(appName, n, cropT, cropR, cropB);
+                        cm.updateViewStyle(force: true);
+                      },
+                    ),
+                    buildCropRow(
+                      localeName.startsWith('zh') ? '上边裁剪' : 'Top',
+                      Icons.border_top,
+                      cropT,
+                      (n) {
+                        setSheetState(() {});
+                        cm.saveAppCrop(appName, cropL, n, cropR, cropB);
+                        cm.updateViewStyle(force: true);
+                      },
+                    ),
+                    buildCropRow(
+                      localeName.startsWith('zh') ? '右边裁剪' : 'Right',
+                      Icons.border_right,
+                      cropR,
+                      (n) {
+                        setSheetState(() {});
+                        cm.saveAppCrop(appName, cropL, cropT, n, cropB);
+                        cm.updateViewStyle(force: true);
+                      },
+                    ),
+                    buildCropRow(
+                      localeName.startsWith('zh') ? '下边裁剪' : 'Bottom',
+                      Icons.border_bottom,
+                      cropB,
+                      (n) {
+                        setSheetState(() {});
+                        cm.saveAppCrop(appName, cropL, cropT, cropR, n);
+                        cm.updateViewStyle(force: true);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton.icon(
+                          icon: const Icon(Icons.restart_alt, size: 16, color: Colors.white70),
+                          label: Text(
+                            localeName.startsWith('zh') ? '重置微调' : 'Reset Crop',
+                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          ),
+                          onPressed: () {
+                            setSheetState(() {});
+                            cm.saveAppCrop(appName, 0, 0, 0, 0);
+                            cm.updateViewStyle(force: true);
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.cyanAccent,
+                            foregroundColor: Colors.black,
+                          ),
+                          child: Text(
+                            localeName.startsWith('zh') ? '完成' : 'Done',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          onPressed: () => Navigator.pop(sheetContext),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   bool _isCurrentDisplayVdd() {
@@ -3989,6 +4606,7 @@ void showOptions(
                   selected: isSingleApp.value,
                   onTap: () async {
                     close();
+                    gFFI.canvasModel.showWindowPickerModal = true;
                     await bind.sessionPeerOption(
                         sessionId: gFFI.sessionId,
                         name: 'get_window_list',

@@ -708,7 +708,24 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             } else {
                 true
             };
-            session.select_app_window(hwnd, direct);
+            let (target_w, target_h) = if parts.len() >= 4 {
+                (parts[2].parse::<i32>().unwrap_or(0), parts[3].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            session.select_app_window_with_size(hwnd, direct, target_w, target_h);
+            return;
+        }
+        if name == "resize_app_window" {
+            let parts: Vec<&str> = value.split(':').collect();
+            if parts.len() >= 3 {
+                let hwnd = parts[0].parse::<u64>().unwrap_or(0);
+                let w = parts[1].parse::<i32>().unwrap_or(0);
+                let h = parts[2].parse::<i32>().unwrap_or(0);
+                if hwnd != 0 && w > 0 && h > 0 {
+                    session.resize_app_window(hwnd, w, h);
+                }
+            }
             return;
         }
         if name == "secondary_display" {

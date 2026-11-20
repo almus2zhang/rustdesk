@@ -654,6 +654,11 @@ class FfiModel with ChangeNotifier {
     try {
       final String raw = evt['data'] ?? '[]';
       final List<dynamic> list = jsonDecode(raw);
+      parent.target?.canvasModel.appWindowList.value = list;
+      if (parent.target?.canvasModel.showWindowPickerModal != true) {
+        return;
+      }
+      parent.target?.canvasModel.showWindowPickerModal = false;
       final dialogManager = parent.target?.dialogManager;
       if (dialogManager == null) return;
       dialogManager.dismissByTag('app-window-picker');
@@ -761,6 +766,10 @@ class FfiModel with ChangeNotifier {
                                       key: 'direct_window_capture') !=
                                   'N';
                               final modeStr = directMode ? 'direct' : 'crop';
+                              parent.target?.canvasModel.currentSelectedHwnd =
+                                  int.tryParse(hwnd) ?? 0;
+                              parent.target?.canvasModel.currentSelectedAppName = name;
+                              parent.target?.canvasModel.loadAppCrop(name);
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'select_window',
@@ -775,11 +784,11 @@ class FfiModel with ChangeNotifier {
                                   name: 'is_single_app_mode',
                                   value: (hwnd != '0') ? 'Y' : 'N');
                               await parent.target?.canvasModel
-                                  .updateViewStyle();
+                                  .updateViewStyle(force: true);
                               BotToast.showText(
                                 text: localeName.startsWith('zh')
-                                    ? '已将应用移动并全屏至手机专属虚拟屏'
-                                    : 'Application moved and maximized on mobile screen',
+                                    ? '已切换程序: $name'
+                                    : 'Switched app: $name',
                               );
                             },
                           );
@@ -2604,6 +2613,9 @@ class CanvasModel with ChangeNotifier {
           keyboardInset -
           (parent.target?.cursorModel.keyHelpToolsRectToAdjustCanvas?.bottom ??
               0);
+      if (isSingleAppMode) {
+        h = h - singleAppDockHeight;
+      }
       // Orientation-specific handling:
       //  - Portrait: additionally subtract top padding (e.g. status bar / notch)
       //  - Landscape: does not subtract mediaData.padding.top/bottom (home indicator auto-hides)
@@ -2675,6 +2687,13 @@ class CanvasModel with ChangeNotifier {
         _scale /= _devicePixelRatio;
       }
     }
+    if (isSingleAppMode) {
+      final visibleW = max(1, displayWidth - appCropLeft - appCropRight);
+      if (size.width > 0 && visibleW > 0) {
+        final mult = singleAppScaleOverride > 0 ? singleAppScaleOverride : 1.0;
+        _scale = (size.width / visibleW) * mult;
+      }
+    }
     _resetCanvasOffset(displayWidth, displayHeight);
     final overflow = _x < 0 || y < 0;
     if (_imageOverflow.value != overflow) {
@@ -2705,6 +2724,58 @@ class CanvasModel with ChangeNotifier {
     _isSingleAppMode = value;
   }
 
+  // Single App Mode & Dock state
+  final Rx<List<dynamic>> appWindowList = Rx<List<dynamic>>([]);
+  bool showWindowPickerModal = false;
+  String currentSelectedAppName = '';
+  int currentSelectedHwnd = 0;
+  int appCropLeft = 0;
+  int appCropTop = 0;
+  int appCropRight = 0;
+  int appCropBottom = 0;
+  double singleAppDockHeight = 66.0;
+  double singleAppScaleOverride = 1.0;
+
+  void loadAppCrop(String appName) {
+    currentSelectedAppName = appName;
+    if (appName.isEmpty) {
+      appCropLeft = 0;
+      appCropTop = 0;
+      appCropRight = 0;
+      appCropBottom = 0;
+      return;
+    }
+    final saved = bind.mainGetLocalOption(key: 'app_crop_$appName');
+    if (saved.isNotEmpty) {
+      final parts = saved.split(',');
+      if (parts.length >= 4) {
+        appCropLeft = int.tryParse(parts[0]) ?? 0;
+        appCropTop = int.tryParse(parts[1]) ?? 0;
+        appCropRight = int.tryParse(parts[2]) ?? 0;
+        appCropBottom = int.tryParse(parts[3]) ?? 0;
+        return;
+      }
+    }
+    appCropLeft = 0;
+    appCropTop = 0;
+    appCropRight = 0;
+    appCropBottom = 0;
+  }
+
+  void saveAppCrop(String appName, int l, int t, int r, int b) {
+    appCropLeft = l;
+    appCropTop = t;
+    appCropRight = r;
+    appCropBottom = b;
+    currentSelectedAppName = appName;
+    if (appName.isNotEmpty) {
+      bind.mainSetLocalOption(
+        key: 'app_crop_$appName',
+        value: '$l,$t,$r,$b',
+      );
+    }
+  }
+
   bool get isAlignToTopLeft =>
       bind.mainGetLocalOption(key: kOptionAlignToTopLeft) == 'Y' ||
       bind.mainGetLocalOption(key: kOptionAlignToTopRight) == 'Y' ||
@@ -2713,6 +2784,11 @@ class CanvasModel with ChangeNotifier {
   bool get isAlignToTopRight => isAlignToTopLeft;
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
+    if (isSingleAppMode) {
+      _x = -appCropLeft * _scale;
+      _y = -appCropTop * _scale;
+      return;
+    }
     final alignTopLeft = isSingleAppMode && isAlignToTopLeft;
     final alignToTop = bind.mainGetLocalOption(key: 'align_to_top') == 'Y' ||
         bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y';

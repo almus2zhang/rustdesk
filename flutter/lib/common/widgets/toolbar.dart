@@ -166,6 +166,7 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
     v.add(TTextMenu(
         child: Text(translate('Select Remote Window (Single App)')),
         onPressed: () async {
+          gFFI.canvasModel.showWindowPickerModal = true;
           await bind.sessionPeerOption(
               sessionId: sessionId, name: 'get_window_list', value: '');
         }));

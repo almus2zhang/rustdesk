@@ -241,6 +241,16 @@ pub fn move_window_to_rect_and_maximize(_hwnd: usize, _x: i32, _y: i32, _w: i32,
 }
 
 #[cfg(not(windows))]
+pub fn resize_app_window(_hwnd: usize, _w: i32, _h: i32) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn move_window_to_rect_and_size(_hwnd: usize, _x: i32, _y: i32, _w: i32, _h: i32) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
 pub fn get_window_rect(_hwnd: usize) -> Option<(i32, i32, i32, i32)> {
     None
 }

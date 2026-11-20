@@ -5071,6 +5071,50 @@ pub fn move_window_to_rect_and_maximize(hwnd: usize, x: i32, y: i32, w: i32, h: 
     }
 }
 
+pub fn resize_app_window(hwnd: usize, w: i32, h: i32) -> bool {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) == 0 {
+            return false;
+        }
+        ShowWindow(hwnd, SW_RESTORE);
+        let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        GetWindowRect(hwnd, &mut rect);
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            rect.left,
+            rect.top,
+            w.max(100),
+            h.max(100),
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+        focus_app_window(hwnd as usize);
+        true
+    }
+}
+
+pub fn move_window_to_rect_and_size(hwnd: usize, x: i32, y: i32, w: i32, h: i32) -> bool {
+    unsafe {
+        let hwnd = hwnd as HWND;
+        if IsWindow(hwnd) == 0 {
+            return false;
+        }
+        ShowWindow(hwnd, SW_RESTORE);
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            x,
+            y,
+            w.max(100),
+            h.max(100),
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        );
+        focus_app_window(hwnd as usize);
+        true
+    }
+}
+
 pub fn get_window_rect(hwnd: usize) -> Option<(i32, i32, i32, i32)> {
     unsafe {
         let hwnd = hwnd as HWND;
