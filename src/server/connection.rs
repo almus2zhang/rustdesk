@@ -4331,7 +4331,22 @@ impl Connection {
                 let h = parts[2].parse::<i32>().unwrap_or(0);
                 if hwnd != 0 && w > 0 && h > 0 {
                     #[cfg(windows)]
-                    crate::platform::resize_app_window(hwnd, w, h);
+                    {
+                        if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                            if let Some(d) = displays.get(self.display_idx) {
+                                if self.is_secondary_session || crate::virtual_display_manager::is_any_virtual_display(&d.name()) {
+                                    let (ox, oy) = d.origin();
+                                    crate::platform::move_window_to_rect_and_size(hwnd, ox, oy, w, h);
+                                } else {
+                                    crate::platform::resize_app_window(hwnd, w, h);
+                                }
+                            } else {
+                                crate::platform::resize_app_window(hwnd, w, h);
+                            }
+                        } else {
+                            crate::platform::resize_app_window(hwnd, w, h);
+                        }
+                    }
                     if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
                         self.send(msg_out).await;
                     }

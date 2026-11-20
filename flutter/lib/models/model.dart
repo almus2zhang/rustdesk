@@ -770,10 +770,21 @@ class FfiModel with ChangeNotifier {
                                   int.tryParse(hwnd) ?? 0;
                               parent.target?.canvasModel.currentSelectedAppName = name;
                               parent.target?.canvasModel.loadAppCrop(name);
+
+                              final dims = parent.target?.canvasModel.calculateRemoteWindowTargetSize();
+                              final targetW = dims?['targetW'] ?? 1000;
+                              final targetH = dims?['targetH'] ?? 600;
+
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'select_window',
-                                  value: '$hwnd:$modeStr');
+                                  value: '$hwnd:$modeStr:$targetW:$targetH');
+                              if (targetW > 0 && targetH > 0) {
+                                await bind.sessionPeerOption(
+                                    sessionId: sessionId,
+                                    name: 'resize_app_window',
+                                    value: '$hwnd:$targetW:$targetH');
+                              }
                               parent.target?.ffiModel.pi
                                       .platformAdditions['selected_window'] =
                                   int.tryParse(hwnd) ?? hwnd;
@@ -2690,8 +2701,7 @@ class CanvasModel with ChangeNotifier {
     if (isSingleAppMode) {
       final visibleW = max(1, displayWidth - appCropLeft - appCropRight);
       if (size.width > 0 && visibleW > 0) {
-        final mult = singleAppScaleOverride > 0 ? singleAppScaleOverride : 1.0;
-        _scale = (size.width / visibleW) * mult;
+        _scale = size.width / visibleW;
       }
     }
     _resetCanvasOffset(displayWidth, displayHeight);
@@ -2734,7 +2744,93 @@ class CanvasModel with ChangeNotifier {
   int appCropRight = 0;
   int appCropBottom = 0;
   double singleAppDockHeight = 66.0;
-  double singleAppScaleOverride = 1.0;
+
+  double get singleAppScaleOverride {
+    final v = double.tryParse(bind.mainGetLocalOption(key: 'single_app_scale'));
+    if (v != null && v > 0) return v;
+    return 2.0;
+  }
+
+  set singleAppScaleOverride(double val) {
+    bind.mainSetLocalOption(key: 'single_app_scale', value: val.toString());
+  }
+
+  Map<String, int> calculateRemoteWindowTargetSize({
+    double? scaleOverride,
+    int? customCropL,
+    int? customCropT,
+    int? customCropR,
+    int? customCropB,
+  }) {
+    double pixelRatio = ui.window.devicePixelRatio;
+    double screenW = ui.window.physicalSize.width / pixelRatio;
+    double screenH = ui.window.physicalSize.height / pixelRatio;
+
+    final savedPhoneW = int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_w'));
+    final savedPhoneH = int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_h'));
+
+    int phoneW = (savedPhoneW != null && savedPhoneW > 0) ? savedPhoneW : (screenW * pixelRatio).round();
+    int phoneH = (savedPhoneH != null && savedPhoneH > 0) ? savedPhoneH : (screenH * pixelRatio).round();
+    if (phoneW <= 0) phoneW = 2600;
+    if (phoneH <= 0) phoneH = 1264;
+
+    final dockPx = (singleAppDockHeight * pixelRatio).round();
+    final appH = max(100, phoneH - dockPx);
+    final s = (scaleOverride != null && scaleOverride > 0)
+        ? scaleOverride
+        : (singleAppScaleOverride > 0 ? singleAppScaleOverride : 2.0);
+
+    final baseW = (phoneW / s).round();
+    final baseH = (appH / s).round();
+
+    final cL = customCropL ?? appCropLeft;
+    final cT = customCropT ?? appCropTop;
+    final cR = customCropR ?? appCropRight;
+    final cB = customCropB ?? appCropBottom;
+
+    int targetW = baseW + cL + cR;
+    int targetH = baseH + cT + cB;
+
+    if (targetW % 2 != 0) targetW += 1;
+    if (targetH % 2 != 0) targetH += 1;
+
+    return {
+      'targetW': max(100, targetW),
+      'targetH': max(100, targetH),
+      'baseW': max(100, baseW),
+      'baseH': max(100, baseH),
+      'phoneW': phoneW,
+      'phoneH': phoneH,
+    };
+  }
+
+  Future<void> syncCurrentAppWindowSize({
+    double? scaleOverride,
+    int? customCropL,
+    int? customCropT,
+    int? customCropR,
+    int? customCropB,
+    int? hwndOverride,
+  }) async {
+    final hwnd = hwndOverride ?? currentSelectedHwnd;
+    if (hwnd == 0) return;
+
+    final dims = calculateRemoteWindowTargetSize(
+      scaleOverride: scaleOverride,
+      customCropL: customCropL,
+      customCropT: customCropT,
+      customCropR: customCropR,
+      customCropB: customCropB,
+    );
+    final targetW = dims['targetW'] ?? 1000;
+    final targetH = dims['targetH'] ?? 600;
+
+    await bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'resize_app_window',
+      value: '$hwnd:$targetW:$targetH',
+    );
+  }
 
   void loadAppCrop(String appName) {
     currentSelectedAppName = appName;

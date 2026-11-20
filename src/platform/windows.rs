@@ -5087,7 +5087,7 @@ pub fn resize_app_window(hwnd: usize, w: i32, h: i32) -> bool {
             rect.top,
             w.max(100),
             h.max(100),
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW,
         );
         focus_app_window(hwnd as usize);
         true
@@ -5108,7 +5108,7 @@ pub fn move_window_to_rect_and_size(hwnd: usize, x: i32, y: i32, w: i32, h: i32)
             y,
             w.max(100),
             h.max(100),
-            SWP_NOACTIVATE | SWP_NOZORDER,
+            SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_NOZORDER | SWP_SHOWWINDOW,
         );
         focus_app_window(hwnd as usize);
         true
