@@ -225,6 +225,8 @@ pub struct AppWindowInfo {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+    #[serde(default)]
+    pub icon: String,
 }
 
 #[cfg(not(windows))]

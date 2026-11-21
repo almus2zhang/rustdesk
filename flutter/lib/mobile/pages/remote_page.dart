@@ -2218,14 +2218,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         ),
         child: Row(
           children: [
-            // Left quick indicator
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: const Icon(
-                Icons.dashboard_customize_rounded,
+            // Left Windows Start Button (with soft keyboard trigger)
+            IconButton(
+              icon: const Icon(
+                Icons.grid_view_rounded,
                 color: Colors.cyanAccent,
-                size: 20,
+                size: 22,
               ),
+              tooltip: localeName.startsWith('zh')
+                  ? 'Windows 开始菜单 (呼出软键盘)'
+                  : 'Start Menu (Open Keyboard)',
+              onPressed: () {
+                gFFI.inputModel.inputKey('Meta', press: true);
+                openKeyboard();
+              },
             ),
             // Horizontal scrollable app list
             Expanded(
@@ -2266,166 +2272,223 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         final iconData = _resolveAppIcon(name, title);
                         final iconColor = _resolveAppColor(name);
 
-                        return GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () async {
-                            gFFI.canvasModel.currentSelectedHwnd = hwnd;
-                            gFFI.canvasModel.currentSelectedAppName = name;
-                            gFFI.canvasModel.loadAppCrop(name);
+                        final iconBase64 = item['icon']?.toString() ?? '';
+                        Widget appIconWidget;
+                        if (iconBase64.isNotEmpty) {
+                          try {
+                            final bytes = base64Decode(iconBase64);
+                            appIconWidget = Image.memory(
+                              bytes,
+                              width: 24,
+                              height: 24,
+                              filterQuality: FilterQuality.medium,
+                              errorBuilder: (ctx, err, stack) => Icon(iconData,
+                                  color: isSelected
+                                      ? Colors.cyanAccent
+                                      : iconColor,
+                                  size: 22),
+                            );
+                          } catch (_) {
+                            appIconWidget = Icon(iconData,
+                                color:
+                                    isSelected ? Colors.cyanAccent : iconColor,
+                                size: 22);
+                          }
+                        } else {
+                          appIconWidget = Icon(iconData,
+                              color: isSelected ? Colors.cyanAccent : iconColor,
+                              size: 22);
+                        }
 
-                            final directMode = bind.mainGetLocalOption(
-                                    key: 'direct_window_capture') !=
-                                'N';
-                            final modeStr = directMode ? 'direct' : 'crop';
+                        return Tooltip(
+                          message: title.isNotEmpty
+                              ? '$title ($displayName)'
+                              : displayName,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () async {
+                              gFFI.canvasModel.currentSelectedHwnd = hwnd;
+                              gFFI.canvasModel.currentSelectedAppName = name;
+                              gFFI.canvasModel.loadAppCrop(name);
 
-                            final itemW = int.tryParse(
-                                    item['width']?.toString() ?? '0') ??
-                                0;
-                            final dims = gFFI.canvasModel
-                                .calculateRemoteWindowTargetSize(
-                                    knownWindowW: itemW);
-                            final targetW = dims['targetW'] ?? 1000;
-                            final targetH = dims['targetH'] ?? 600;
+                              final directMode = bind.mainGetLocalOption(
+                                      key: 'direct_window_capture') !=
+                                  'N';
+                              final modeStr = directMode ? 'direct' : 'crop';
 
-                            await bind.sessionPeerOption(
-                              sessionId: gFFI.sessionId,
-                              name: 'select_window',
-                              value: '$hwnd:$modeStr:$targetW:$targetH',
-                            );
-                            await bind.sessionPeerOption(
-                              sessionId: gFFI.sessionId,
-                              name: 'resize_app_window',
-                              value: '$hwnd:$targetW:$targetH',
-                            );
-                            gFFI.ffiModel.pi
-                                .platformAdditions['selected_window'] = hwnd;
-                            gFFI.ffiModel.touchMode = true;
-                            gFFI.canvasModel.isSingleAppMode = true;
-                            await bind.sessionPeerOption(
-                              sessionId: gFFI.sessionId,
-                              name: 'is_single_app_mode',
-                              value: 'Y',
-                            );
-                            await gFFI.canvasModel.updateViewStyle(force: true);
-                            BotToast.showText(
-                              text: localeName.startsWith('zh')
-                                  ? '已切至: $displayName (${targetW}x$targetH)'
-                                  : 'Switched to $displayName (${targetW}x$targetH)',
-                            );
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? const Color(0x3300E5FF)
-                                  : const Color(0x22FFFFFF),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
+                              final itemW = int.tryParse(
+                                      item['width']?.toString() ?? '0') ??
+                                  0;
+                              final dims = gFFI.canvasModel
+                                  .calculateRemoteWindowTargetSize(
+                                      knownWindowW: itemW);
+                              final targetW = dims['targetW'] ?? 1000;
+                              final targetH = dims['targetH'] ?? 600;
+
+                              await bind.sessionPeerOption(
+                                sessionId: gFFI.sessionId,
+                                name: 'select_window',
+                                value: '$hwnd:$modeStr:$targetW:$targetH',
+                              );
+                              await bind.sessionPeerOption(
+                                sessionId: gFFI.sessionId,
+                                name: 'resize_app_window',
+                                value: '$hwnd:$targetW:$targetH',
+                              );
+                              gFFI.ffiModel.pi
+                                  .platformAdditions['selected_window'] = hwnd;
+                              gFFI.ffiModel.touchMode = true;
+                              gFFI.canvasModel.isSingleAppMode = true;
+                              await bind.sessionPeerOption(
+                                sessionId: gFFI.sessionId,
+                                name: 'is_single_app_mode',
+                                value: 'Y',
+                              );
+                              await gFFI.canvasModel
+                                  .updateViewStyle(force: true);
+                              BotToast.showText(
+                                text: localeName.startsWith('zh')
+                                    ? '已切至: $displayName (${targetW}x$targetH)'
+                                    : 'Switched to $displayName (${targetW}x$targetH)',
+                              );
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 42,
+                              height: 42,
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 3, vertical: 4),
+                              decoration: BoxDecoration(
                                 color: isSelected
-                                    ? Colors.cyanAccent
-                                    : const Color(0x22FFFFFF),
-                                width: isSelected ? 1.5 : 0.8,
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(iconData,
-                                    color: isSelected
-                                        ? Colors.cyanAccent
-                                        : iconColor,
-                                    size: 22),
-                                const SizedBox(height: 2),
-                                ConstrainedBox(
-                                  constraints:
-                                      const BoxConstraints(maxWidth: 64),
-                                  child: Text(
-                                    displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: isSelected
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      color: isSelected
-                                          ? Colors.cyanAccent
-                                          : Colors.white,
-                                    ),
-                                  ),
+                                    ? const Color(0x3300E5FF)
+                                    : const Color(0x18FFFFFF),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? Colors.cyanAccent
+                                      : const Color(0x22FFFFFF),
+                                  width: isSelected ? 1.5 : 0.8,
                                 ),
-                              ],
+                              ),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  appIconWidget,
+                                  if (isSelected)
+                                    Positioned(
+                                      bottom: 2,
+                                      child: Container(
+                                        width: 4,
+                                        height: 4,
+                                        decoration: const BoxDecoration(
+                                          color: Colors.cyanAccent,
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         );
                       },
                     ),
             ),
-            // Right actions
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.refresh,
-                      color: Colors.white70, size: 20),
-                  tooltip: localeName.startsWith('zh')
-                      ? '刷新程序列表'
-                      : 'Refresh App List',
-                  onPressed: () {
-                    bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId,
-                      name: 'get_window_list',
-                      value: '',
-                    );
-                    BotToast.showText(
-                      text: localeName.startsWith('zh')
-                          ? '正在刷新程序列表...'
-                          : 'Refreshing apps...',
-                    );
-                  },
+            // Right compact action menu
+            PopupMenuButton<String>(
+              icon:
+                  const Icon(Icons.more_vert, color: Colors.white70, size: 22),
+              tooltip: localeName.startsWith('zh') ? '更多选项' : 'More Options',
+              color: const Color(0xEE1E2633),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0x33FFFFFF), width: 0.8),
+              ),
+              onSelected: (val) async {
+                if (val == 'refresh') {
+                  bind.sessionPeerOption(
+                    sessionId: gFFI.sessionId,
+                    name: 'get_window_list',
+                    value: '',
+                  );
+                  BotToast.showText(
+                    text: localeName.startsWith('zh')
+                        ? '正在刷新程序列表...'
+                        : 'Refreshing apps...',
+                  );
+                } else if (val == 'tune') {
+                  _showSingleAppAdjustSheet(context);
+                } else if (val == 'exit') {
+                  await bind.sessionPeerOption(
+                    sessionId: gFFI.sessionId,
+                    name: 'select_window',
+                    value: '0',
+                  );
+                  gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
+                  gFFI.canvasModel.isSingleAppMode = false;
+                  await bind.sessionPeerOption(
+                    sessionId: gFFI.sessionId,
+                    name: 'is_single_app_mode',
+                    value: 'N',
+                  );
+                  await gFFI.canvasModel.updateViewStyle(force: true);
+                  BotToast.showText(
+                    text: localeName.startsWith('zh')
+                        ? '已退出单程序模式'
+                        : 'Exited single app mode',
+                  );
+                }
+              },
+              itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'refresh',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.refresh,
+                          color: Colors.cyanAccent, size: 20),
+                      const SizedBox(width: 10),
+                      Text(
+                        localeName.startsWith('zh') ? '刷新程序列表' : 'Refresh Apps',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.tune,
-                      color: Colors.amberAccent, size: 20),
-                  tooltip: localeName.startsWith('zh')
-                      ? '视口与四边微调'
-                      : 'Edge Crop & Viewport',
-                  onPressed: () {
-                    _showSingleAppAdjustSheet(context);
-                  },
+                PopupMenuItem(
+                  value: 'tune',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tune,
+                          color: Colors.amberAccent, size: 20),
+                      const SizedBox(width: 10),
+                      Text(
+                        localeName.startsWith('zh')
+                            ? '视口与裁剪微调'
+                            : 'Edge Crop & Viewport',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.fullscreen,
-                      color: Colors.white70, size: 20),
-                  tooltip: localeName.startsWith('zh')
-                      ? '退出单程序 (全屏桌面)'
-                      : 'Exit Single App (Desktop)',
-                  onPressed: () async {
-                    await bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId,
-                      name: 'select_window',
-                      value: '0',
-                    );
-                    gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
-                    gFFI.canvasModel.isSingleAppMode = false;
-                    await bind.sessionPeerOption(
-                      sessionId: gFFI.sessionId,
-                      name: 'is_single_app_mode',
-                      value: 'N',
-                    );
-                    await gFFI.canvasModel.updateViewStyle();
-                    BotToast.showText(
-                      text: localeName.startsWith('zh')
-                          ? '已退出单程序模式'
-                          : 'Exited Single App Mode',
-                    );
-                  },
+                const PopupMenuDivider(height: 1),
+                PopupMenuItem(
+                  value: 'exit',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.fullscreen,
+                          color: Colors.redAccent, size: 20),
+                      const SizedBox(width: 10),
+                      Text(
+                        localeName.startsWith('zh')
+                            ? '退出单程序 (全屏桌面)'
+                            : 'Exit Single App (Desktop)',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),

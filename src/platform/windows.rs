@@ -4938,6 +4938,170 @@ pub struct AppWindowInfo {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+    #[serde(default)]
+    pub icon: String,
+}
+
+unsafe fn get_window_icon_base64(hwnd: HWND, exe_path: &str) -> String {
+    let mut hicon: HICON = std::ptr::null_mut();
+    let mut result: usize = 0;
+    if SendMessageTimeoutW(
+        hwnd,
+        WM_GETICON,
+        ICON_SMALL2 as _,
+        0,
+        SMTO_ABORTIFHUNG,
+        50,
+        &mut result as *mut _ as _,
+    ) != 0
+        && result != 0
+    {
+        hicon = result as HICON;
+    }
+    if hicon.is_null() {
+        if SendMessageTimeoutW(
+            hwnd,
+            WM_GETICON,
+            ICON_SMALL as _,
+            0,
+            SMTO_ABORTIFHUNG,
+            50,
+            &mut result as *mut _ as _,
+        ) != 0
+            && result != 0
+        {
+            hicon = result as HICON;
+        }
+    }
+    if hicon.is_null() {
+        hicon = GetClassLongPtrW(hwnd, GCLP_HICONSM) as HICON;
+    }
+    if hicon.is_null() {
+        hicon = GetClassLongPtrW(hwnd, GCLP_HICON) as HICON;
+    }
+
+    let mut need_destroy = false;
+    if hicon.is_null() && !exe_path.is_empty() {
+        let mut h_large: HICON = std::ptr::null_mut();
+        let mut h_small: HICON = std::ptr::null_mut();
+        let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
+        winapi::um::shellapi::ExtractIconExW(wide.as_ptr(), 0, &mut h_large, &mut h_small, 1);
+        if !h_small.is_null() {
+            hicon = h_small;
+            need_destroy = true;
+            if !h_large.is_null() {
+                DestroyIcon(h_large);
+            }
+        } else if !h_large.is_null() {
+            hicon = h_large;
+            need_destroy = true;
+        }
+    }
+
+    if hicon.is_null() {
+        return String::new();
+    }
+
+    let mut base64_str = String::new();
+    let mut icon_info = winapi::um::wingdi::ICONINFO {
+        fIcon: 0,
+        xHotspot: 0,
+        yHotspot: 0,
+        hbmMask: std::ptr::null_mut(),
+        hbmColor: std::ptr::null_mut(),
+    };
+
+    if GetIconInfo(hicon, &mut icon_info) != 0 {
+        if !icon_info.hbmColor.is_null() {
+            let mut bm = winapi::um::wingdi::BITMAP {
+                bmType: 0,
+                bmWidth: 0,
+                bmHeight: 0,
+                bmWidthBytes: 0,
+                bmPlanes: 0,
+                bmBitsPixel: 0,
+                bmBits: std::ptr::null_mut(),
+            };
+            if GetObjectW(
+                icon_info.hbmColor as _,
+                std::mem::size_of::<winapi::um::wingdi::BITMAP>() as _,
+                &mut bm as *mut _ as _,
+            ) != 0
+                && bm.bmWidth > 0
+                && bm.bmHeight > 0
+            {
+                let width = bm.bmWidth;
+                let height = bm.bmHeight;
+                let hdc = GetDC(std::ptr::null_mut());
+                let mem_dc = CreateCompatibleDC(hdc);
+
+                let mut bi = winapi::um::wingdi::BITMAPINFO {
+                    bmiHeader: winapi::um::wingdi::BITMAPINFOHEADER {
+                        biSize: std::mem::size_of::<winapi::um::wingdi::BITMAPINFOHEADER>() as u32,
+                        biWidth: width,
+                        biHeight: height,
+                        biPlanes: 1,
+                        biBitCount: 32,
+                        biCompression: winapi::um::wingdi::BI_RGB,
+                        biSizeImage: 0,
+                        biXPelsPerMeter: 0,
+                        biYPelsPerMeter: 0,
+                        biClrUsed: 0,
+                        biClrImportant: 0,
+                    },
+                    bmiColors: [winapi::um::wingdi::RGBQUAD {
+                        rgbBlue: 0,
+                        rgbGreen: 0,
+                        rgbRed: 0,
+                        rgbReserved: 0,
+                    }],
+                };
+
+                let buf_size = (width * height * 4) as usize;
+                let mut pixels = vec![0u8; buf_size];
+                if GetDIBits(
+                    mem_dc,
+                    icon_info.hbmColor,
+                    0,
+                    height as u32,
+                    pixels.as_mut_ptr() as _,
+                    &mut bi,
+                    winapi::um::wingdi::DIB_RGB_COLORS,
+                ) != 0
+                {
+                    let file_size = 54 + buf_size as u32;
+                    let mut bmp_data = Vec::with_capacity(file_size as usize);
+                    bmp_data.extend_from_slice(b"BM");
+                    bmp_data.extend_from_slice(&file_size.to_le_bytes());
+                    bmp_data.extend_from_slice(&0u32.to_le_bytes());
+                    bmp_data.extend_from_slice(&54u32.to_le_bytes());
+
+                    let mut hdr_bytes = [0u8; 40];
+                    std::ptr::copy_nonoverlapping(
+                        &bi.bmiHeader as *const _ as *const u8,
+                        hdr_bytes.as_mut_ptr(),
+                        40,
+                    );
+                    bmp_data.extend_from_slice(&hdr_bytes);
+                    bmp_data.extend_from_slice(&pixels);
+
+                    base64_str = hbb_common::base64::encode(&bmp_data);
+                }
+                DeleteDC(mem_dc);
+                ReleaseDC(std::ptr::null_mut(), hdc);
+            }
+            DeleteObject(icon_info.hbmColor as _);
+        }
+        if !icon_info.hbmMask.is_null() {
+            DeleteObject(icon_info.hbmMask as _);
+        }
+    }
+
+    if need_destroy {
+        DestroyIcon(hicon);
+    }
+
+    base64_str
 }
 
 pub fn get_app_window_list() -> Vec<AppWindowInfo> {
@@ -4991,6 +5155,7 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     }
 
     let mut proc_name = String::new();
+    let mut full_path = String::new();
     let h_proc = OpenProcess(
         PROCESS_QUERY_LIMITED_INFORMATION,
         0,
@@ -5000,7 +5165,7 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         let mut path_buf = [0u16; 1024];
         let mut size = 1024;
         if winapi::um::winbase::QueryFullProcessImageNameW(h_proc, 0, path_buf.as_mut_ptr(), &mut size) != 0 {
-            let full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
+            full_path = String::from_utf16_lossy(&path_buf[..size as usize]);
             if let Some(filename) = std::path::Path::new(&full_path).file_name() {
                 proc_name = filename.to_string_lossy().to_string();
             }
@@ -5011,6 +5176,8 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         proc_name = class_name;
     }
 
+    let icon = get_window_icon_base64(hwnd, &full_path);
+
     list.push(AppWindowInfo {
         hwnd: hwnd as usize,
         title,
@@ -5019,6 +5186,7 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         y: rect.top,
         width,
         height,
+        icon,
     });
     TRUE
 }

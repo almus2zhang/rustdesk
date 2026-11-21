@@ -4059,31 +4059,36 @@ impl Connection {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
             if let Ok(displays) = crate::server::display_service::try_get_displays() {
-                if let Some(d) = displays.get(self.display_idx) {
-                    if self.is_secondary_session || crate::virtual_display_manager::is_any_virtual_display(&d.name()) {
-                        let (ox, oy) = d.origin();
-                        let w = d.width() as i32;
-                        let h = d.height() as i32;
-                        if target_w > 0 && target_h > 0 {
-                            log::info!(
-                                "Moving window {} to virtual display {} at ({}, {}) with target size {}x{}",
-                                hwnd, self.display_idx, ox, oy, target_w, target_h
-                            );
-                            crate::platform::move_window_to_rect_and_size(
-                                hwnd, ox, oy, target_w, target_h
-                            );
-                        } else {
-                            log::info!(
-                                "Moving window {} to virtual display {} at ({}, {}) {}x{} and maximizing",
-                                hwnd, self.display_idx, ox, oy, w, h
-                            );
-                            crate::platform::move_window_to_rect_and_maximize(
-                                hwnd, ox, oy, w, h
-                            );
-                        }
-                    } else if target_w > 0 && target_h > 0 {
-                        let (ox, oy) = d.origin();
+                let v_display_idx = displays.iter().position(|d| {
+                    crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                        || crate::usb_display::is_this_usb_display(&d.name())
+                });
+
+                let target_idx = if let Some(v_idx) = v_display_idx {
+                    if self.display_idx != v_idx {
+                        log::info!("Single app auto-routing to virtual display {} (current was {})", v_idx, self.display_idx);
+                        self.display_idx = v_idx;
+                        let mut misc = Misc::new();
+                        misc.set_follow_current_display(v_idx as i32);
+                        let mut msg = Message::new();
+                        msg.set_misc(misc);
+                        self.send(msg).await;
+                    }
+                    v_idx
+                } else {
+                    self.display_idx
+                };
+
+                if let Some(d) = displays.get(target_idx) {
+                    let (ox, oy) = d.origin();
+                    if target_w > 0 && target_h > 0 {
+                        log::info!(
+                            "Moving window {} to display {} at ({}, {}) with target size {}x{}",
+                            hwnd, target_idx, ox, oy, target_w, target_h
+                        );
                         crate::platform::move_window_to_rect_and_size(hwnd, ox, oy, target_w, target_h);
+                    } else {
+                        crate::platform::move_window_to_rect_and_maximize(hwnd, ox, oy, d.width() as _, d.height() as _);
                     }
                 }
             }
@@ -4335,7 +4340,12 @@ impl Connection {
                     #[cfg(windows)]
                     {
                         if let Ok(displays) = crate::server::display_service::try_get_displays() {
-                            if let Some(d) = displays.get(self.display_idx) {
+                            let v_display_idx = displays.iter().position(|d| {
+                                crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                                    || crate::usb_display::is_this_usb_display(&d.name())
+                            });
+                            let target_idx = v_display_idx.unwrap_or(self.display_idx);
+                            if let Some(d) = displays.get(target_idx) {
                                 let (ox, oy) = d.origin();
                                 crate::platform::move_window_to_rect_and_size(hwnd, ox, oy, w, h);
                             } else {
