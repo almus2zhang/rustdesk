@@ -158,6 +158,11 @@ class FfiModel with ChangeNotifier {
   bool get inputBlocked => _inputBlocked;
 
   bool get touchMode => _touchMode;
+  set touchMode(bool value) {
+    _touchMode = value;
+    bind.mainSetLocalOption(key: kOptionTouchMode, value: value ? 'Y' : '');
+    notifyListeners();
+  }
 
   bool get isPeerAndroid => _pi.platform == kPeerPlatformAndroid;
   bool get isPeerMobile => isPeerAndroid;
@@ -791,6 +796,9 @@ class FfiModel with ChangeNotifier {
                                   int.tryParse(hwnd) ?? hwnd;
                               parent.target?.canvasModel.isSingleAppMode =
                                   (hwnd != '0');
+                              if (hwnd != '0') {
+                                parent.target?.ffiModel.touchMode = true;
+                              }
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
                                   name: 'is_single_app_mode',
@@ -2288,9 +2296,17 @@ class ImageModel with ChangeNotifier {
         await initializeCursorAndCanvas(parent.target!);
       }
     }
+    final oldW = _image?.width;
+    final oldH = _image?.height;
     _image?.dispose();
     _image = image;
-    if (image != null) notifyListeners();
+    if (image != null) {
+      if (parent.target?.canvasModel.isSingleAppMode == true &&
+          (oldW != image.width || oldH != image.height)) {
+        parent.target?.canvasModel.updateViewStyle(force: true);
+      }
+      notifyListeners();
+    }
   }
 
   // mobile only
@@ -2703,11 +2719,11 @@ class CanvasModel with ChangeNotifier {
       }
     }
     if (isSingleAppMode) {
-      final dims = calculateRemoteWindowTargetSize();
-      final baseW =
-          dims['baseW'] ?? max(1, displayWidth - appCropLeft - appCropRight);
-      if (size.width > 0 && baseW > 0) {
-        _scale = size.width / baseW;
+      final imgW = parent.target?.imageModel.image?.width ?? displayWidth;
+      final curW = imgW > 0 ? imgW : displayWidth;
+      final visibleW = max(1, curW - appCropLeft - appCropRight);
+      if (size.width > 0 && visibleW > 0) {
+        _scale = size.width / visibleW;
       }
     }
     _resetCanvasOffset(displayWidth, displayHeight);
@@ -2736,8 +2752,22 @@ class CanvasModel with ChangeNotifier {
     return false;
   }
 
+  bool get allowSingleAppZoom =>
+      bind.mainGetLocalOption(key: 'single_app_allow_zoom') == 'Y';
+  set allowSingleAppZoom(bool val) {
+    bind.mainSetLocalOption(
+        key: 'single_app_allow_zoom', value: val ? 'Y' : 'N');
+    notifyListeners();
+  }
+
   set isSingleAppMode(bool value) {
     _isSingleAppMode = value;
+    if (value) {
+      final ffiModel = parent.target?.ffiModel;
+      if (ffiModel != null && !ffiModel.touchMode) {
+        ffiModel.touchMode = true;
+      }
+    }
   }
 
   // Single App Mode & Dock state
@@ -3044,6 +3074,9 @@ class CanvasModel with ChangeNotifier {
     if (size.width == 0 || size.height == 0) {
       return;
     }
+    if (isSingleAppMode && !allowSingleAppZoom) {
+      return;
+    }
 
     // On mobile platforms, move the canvas with the cursor.
     final dw = getDisplayWidth() * _scale;
@@ -3195,6 +3228,9 @@ class CanvasModel with ChangeNotifier {
   }
 
   panX(double dx) {
+    if (isSingleAppMode && !allowSingleAppZoom) {
+      return;
+    }
     _x += dx;
     if (isMobile) {
       isMobileCanvasChanged = true;
@@ -3212,6 +3248,9 @@ class CanvasModel with ChangeNotifier {
   }
 
   panY(double dy) {
+    if (isSingleAppMode && !allowSingleAppZoom) {
+      return;
+    }
     _y += dy;
     if (isMobile) {
       isMobileCanvasChanged = true;
@@ -3221,6 +3260,9 @@ class CanvasModel with ChangeNotifier {
 
   // mobile only
   updateScale(double v, Offset focalPoint) {
+    if (isSingleAppMode && !allowSingleAppZoom) {
+      return;
+    }
     if (parent.target?.imageModel.image == null) return;
     final s = _scale;
     _scale *= v;

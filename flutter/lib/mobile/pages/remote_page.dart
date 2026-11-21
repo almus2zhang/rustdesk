@@ -2295,6 +2295,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             );
                             gFFI.ffiModel.pi
                                 .platformAdditions['selected_window'] = hwnd;
+                            gFFI.ffiModel.touchMode = true;
                             gFFI.canvasModel.isSingleAppMode = true;
                             await bind.sessionPeerOption(
                               sessionId: gFFI.sessionId,
@@ -3051,6 +3052,31 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             phoneWOverride: tw,
                             phoneHOverride: th);
                         await cm.updateViewStyle(force: true);
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        localeName.startsWith('zh')
+                            ? '允许双指缩放画布'
+                            : 'Allow Pinch Zoom Canvas',
+                        style:
+                            const TextStyle(fontSize: 13, color: Colors.white),
+                      ),
+                      subtitle: Text(
+                        localeName.startsWith('zh')
+                            ? '默认关闭，触屏操作时防止手势误触画面收缩'
+                            : 'Disabled by default to avoid accidental zooming',
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white54),
+                      ),
+                      value: cm.allowSingleAppZoom,
+                      activeColor: Colors.cyanAccent,
+                      onChanged: (val) {
+                        cm.allowSingleAppZoom = val;
+                        setSheetState(() {});
                       },
                     ),
                     const SizedBox(height: 8),
@@ -5065,6 +5091,33 @@ void showOptions(
               ),
             ],
           )),
+      Obx(() => isSingleApp.value
+          ? StatefulBuilder(
+              builder: (context, setSwState) => SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  localeName.startsWith('zh')
+                      ? '允许双指缩放画布'
+                      : 'Allow Pinch Zoom Canvas',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                subtitle: Text(
+                  localeName.startsWith('zh')
+                      ? '默认关闭，触屏操作时防止手势误触画面收缩'
+                      : 'Disabled by default to avoid accidental zooming',
+                  style: const TextStyle(fontSize: 11, color: Colors.white54),
+                ),
+                value: gFFI.canvasModel.allowSingleAppZoom,
+                activeColor: MyTheme.accent,
+                onChanged: (val) {
+                  setSwState(() {
+                    gFFI.canvasModel.allowSingleAppZoom = val;
+                  });
+                },
+              ),
+            )
+          : const SizedBox.shrink()),
     ];
 
     final rawKbdMode =

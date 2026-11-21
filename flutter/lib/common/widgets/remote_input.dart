@@ -622,6 +622,11 @@ class _RawTouchGestureDetectorRegionState
       // centre (the two fingers' midpoint), not at the screen centre.
       await ffi.cursorModel.move(d.localFocalPoint.dx, d.localFocalPoint.dy);
     }
+    if (ffi.canvasModel.isSingleAppMode &&
+        ffiModel.touchMode &&
+        !ffi.canvasModel.allowSingleAppZoom) {
+      _twoFingerState = TwoFingerModeState.scrolling;
+    }
   }
 
   onTwoFingerScaleUpdate(ScaleUpdateDetails d) async {
@@ -635,6 +640,41 @@ class _RawTouchGestureDetectorRegionState
       final delta = d.focalPoint - _lastSpecialHoldDragFocalPoint;
       _lastSpecialHoldDragFocalPoint = d.focalPoint;
       await ffi.cursorModel.updatePan(delta * 2.0, d.focalPoint, handleTouch);
+      return;
+    }
+
+    if (ffi.canvasModel.isSingleAppMode &&
+        ffiModel.touchMode &&
+        !ffi.canvasModel.allowSingleAppZoom) {
+      // 单程序触屏模式且未允许缩放：直接作为双指滚轮滚动，完全禁止缩放与拖动画布
+      _twoFingerScrollX += d.focalPointDelta.dx;
+      _twoFingerScrollY += d.focalPointDelta.dy;
+
+      const double threshold = 10.0;
+      int scrollX = 0;
+      int scrollY = 0;
+
+      if (_twoFingerScrollX.abs() >= threshold) {
+        scrollX = (_twoFingerScrollX / threshold).truncate();
+        _twoFingerScrollX -= scrollX * threshold;
+      }
+      if (_twoFingerScrollY.abs() >= threshold) {
+        scrollY = (_twoFingerScrollY / threshold).truncate();
+        _twoFingerScrollY -= scrollY * threshold;
+      }
+
+      if (scrollX != 0 || scrollY != 0) {
+        if (!widget.isCamera) {
+          await bind.sessionSendMouse(
+              sessionId: sessionId,
+              msg: json.encode(inputModel.modify({
+                'id': inputModel.id,
+                'type': 'wheel',
+                'x': scrollX.toString(),
+                'y': scrollY.toString(),
+              })));
+        }
+      }
       return;
     }
 

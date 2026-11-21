@@ -978,6 +978,14 @@ fn run(vs: VideoService) -> ResultType<()> {
                             "Window size changed: {}x{} -> {}x{}",
                             c.width, c.height, cur_w, cur_h
                         );
+                        if let Some(msg_out) = make_display_changed_msg(display_idx, None, vs.source) {
+                            let msg_out = Arc::new(msg_out);
+                            sp.send_shared(msg_out.clone());
+                            let _ = sp.snapshot(move |sps| {
+                                sps.send_shared(msg_out.clone());
+                                Ok(())
+                            });
+                        }
                         bail!("SWITCH");
                     } else if c.origin != (wx, wy) {
                         c.origin = (wx, wy);
