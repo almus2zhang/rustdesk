@@ -470,6 +470,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _mobileFocusNode = FocusNode();
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
+  bool _isStartMenuPushed = false;
   StreamSubscription? _textCursorSubscription;
   Timer? _textCursorPopupTimer;
 
@@ -799,6 +800,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void onSoftKeyboardChanged(bool visible) {
     if (!visible) {
+      _isStartMenuPushed = false;
       SystemChrome.setEnabledSystemUIMode(
           isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
           overlays: []);
@@ -841,11 +843,31 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             overlays: isAndroid ? [] : SystemUiOverlay.values);
         _mobileFocusNode.requestFocus();
       });
+      if (_isStartMenuPushed) {
+        _pushCanvasAboveKeyboardWhenVisible();
+      }
       Timer(const Duration(milliseconds: 150), () {
-        if (mounted) _adjustCanvasForTextCursor();
+        if (mounted) {
+          if (_isStartMenuPushed) {
+            _pushCanvasAboveKeyboardWhenVisible();
+          } else {
+            _adjustCanvasForTextCursor();
+          }
+        }
       });
       Timer(const Duration(milliseconds: 300), () {
-        if (mounted) _adjustCanvasForTextCursor();
+        if (mounted) {
+          if (_isStartMenuPushed) {
+            _pushCanvasAboveKeyboardWhenVisible();
+          } else {
+            _adjustCanvasForTextCursor();
+          }
+        }
+      });
+      Timer(const Duration(milliseconds: 500), () {
+        if (mounted && _isStartMenuPushed) {
+          _pushCanvasAboveKeyboardWhenVisible();
+        }
       });
     }
     // update for Scaffold
@@ -992,6 +1014,32 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       keyboardTop: keyboardTop,
       margin: margin,
     );
+  }
+
+  void _pushCanvasAboveKeyboardWhenVisible() {
+    void tryPush() {
+      if (!mounted) return;
+      final media = MediaQuery.of(context);
+      double kbHeight = media.viewInsets.bottom;
+      if (kbHeight <= 0) {
+        final dpr = ui.window.devicePixelRatio > 0
+            ? ui.window.devicePixelRatio
+            : 1.0;
+        final windowInsets = ui.window.viewInsets.bottom / dpr;
+        if (windowInsets > 0) {
+          kbHeight = windowInsets;
+        } else {
+          kbHeight = media.size.height * 0.38;
+        }
+      }
+      if (kbHeight > 50) {
+        gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight);
+      }
+    }
+
+    for (final delay in [100, 200, 350, 500, 700]) {
+      Timer(Duration(milliseconds: delay), tryPush);
+    }
   }
 
   void openKeyboard() {
@@ -2230,7 +2278,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   : 'Start Menu (Open Keyboard)',
               onPressed: () {
                 gFFI.inputModel.inputKey('Meta', press: true);
+                _isStartMenuPushed = true;
                 openKeyboard();
+                _pushCanvasAboveKeyboardWhenVisible();
               },
             ),
             // Horizontal scrollable app list
@@ -2316,14 +2366,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   'N';
                               final modeStr = directMode ? 'direct' : 'crop';
 
-                              final itemW = int.tryParse(
-                                      item['width']?.toString() ?? '0') ??
-                                  0;
                               final dims = gFFI.canvasModel
-                                  .calculateRemoteWindowTargetSize(
-                                      knownWindowW: itemW);
-                              final targetW = dims['targetW'] ?? 1000;
-                              final targetH = dims['targetH'] ?? 600;
+                                  .calculateRemoteWindowTargetSize();
+                              final targetW = dims['targetW'] ?? 700;
+                              final targetH = dims['targetH'] ?? 1300;
 
                               await bind.sessionPeerOption(
                                 sessionId: gFFI.sessionId,
@@ -2561,28 +2607,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void _showSingleAppAdjustSheet(BuildContext context) async {
     final cm = gFFI.canvasModel;
     final appName = cm.currentSelectedAppName;
-    final media = MediaQuery.of(context);
-    final pixelRatio = media.devicePixelRatio;
-    final defaultPhoneW = (media.size.width * pixelRatio).round();
-    final defaultPhoneH = (media.size.height * pixelRatio).round();
-
-    // 关键修复：呼出面板前必须清除 Android FLAG_ALT_FOCUSABLE_IM，否则系统软键盘无法弹出
-    if (isAndroid) {
-      await gFFI.invokeMethod("enable_soft_keyboard", true);
-    }
-
-    final widthController = TextEditingController(
-      text: bind.mainGetLocalOption(key: 'single_app_phone_w').isNotEmpty
-          ? bind.mainGetLocalOption(key: 'single_app_phone_w')
-          : '$defaultPhoneW',
-    );
-    final heightController = TextEditingController(
-      text: bind.mainGetLocalOption(key: 'single_app_phone_h').isNotEmpty
-          ? bind.mainGetLocalOption(key: 'single_app_phone_h')
-          : '$defaultPhoneH',
-    );
-    final widthFocusNode = FocusNode();
-    final heightFocusNode = FocusNode();
 
     await showModalBottomSheet(
       context: context,
@@ -2687,8 +2711,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             children: [
                               Text(
                                 localeName.startsWith('zh')
-                                    ? '单程序四边微调与尺寸'
-                                    : 'Single App Edge Crop & Size',
+                                    ? '单程序微调与目标放大倍率'
+                                    : 'Single App Scale & Crop',
                                 style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -2719,325 +2743,246 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     // Phone resolution & remote window size calculation
                     Text(
                       localeName.startsWith('zh')
-                          ? '手机目标分辨率与放大倍率'
-                          : 'Target Mobile Resolution & Scale',
+                          ? '目标放大倍率 (全屏自动匹配)'
+                          : 'Target Scale Factor (Fullscreen Auto-Fit)',
                       style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
                           color: Colors.cyanAccent),
                     ),
                     const SizedBox(height: 6),
-                    // Quick resolution presets
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        for (final preset in [
-                          {
-                            'label': localeName.startsWith('zh')
-                                ? '当前手机 (${defaultPhoneW}x$defaultPhoneH)'
-                                : 'Current (${defaultPhoneW}x$defaultPhoneH)',
-                            'w': defaultPhoneW,
-                            'h': defaultPhoneH
-                          },
-                          {'label': '1264x2600', 'w': 1264, 'h': 2600},
-                          {'label': '2600x1264', 'w': 2600, 'h': 1264},
-                          {'label': '1080x2400', 'w': 1080, 'h': 2400},
-                          {'label': '2400x1080', 'w': 2400, 'h': 1080},
-                          {'label': '1080x1920', 'w': 1080, 'h': 1920},
-                          {'label': '1920x1080', 'w': 1920, 'h': 1080},
-                        ]) ...[
-                          InkWell(
-                            onTap: () async {
-                              final pw = preset['w'] as int;
-                              final ph = preset['h'] as int;
-                              widthController.text = '$pw';
-                              heightController.text = '$ph';
-                              await bind.mainSetLocalOption(
-                                  key: 'single_app_phone_w', value: '$pw');
-                              await bind.mainSetLocalOption(
-                                  key: 'single_app_phone_h', value: '$ph');
-                              await cm.syncCurrentAppWindowSize(
-                                  phoneWOverride: pw, phoneHOverride: ph);
-                              await cm.updateViewStyle(force: true);
-                              setSheetState(() {});
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: const Color(0x33FFFFFF),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                    color: const Color(0x3300E5FF), width: 0.8),
-                              ),
-                              child: Text(
-                                preset['label'] as String,
-                                style: const TextStyle(
-                                    fontSize: 11, color: Colors.cyanAccent),
-                              ),
+                    // Auto-detected physical phone resolution & viewport card
+                    Builder(builder: (context) {
+                      final currentScale = cm.singleAppScaleOverride;
+                      final dims = cm.calculateRemoteWindowTargetSize(
+                          scaleOverride: currentScale);
+                      final phoneW = dims['phoneW'] ?? 1260;
+                      final phoneH = dims['phoneH'] ?? 2800;
+                      final viewW = dims['viewW'] ?? 1260;
+                      final viewH = dims['viewH'] ?? 2600;
+                      final dockPx = dims['dockPx'] ?? 200;
+                      final effectiveW = dims['effectiveW'] ?? 630;
+                      final effectiveH = dims['effectiveH'] ?? 1300;
+                      final targetW = dims['targetW'] ?? 700;
+                      final targetH = dims['targetH'] ?? 1300;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0x1A00E5FF),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: const Color(0x3300E5FF), width: 0.8),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.smartphone_rounded,
+                                        color: Colors.cyanAccent, size: 16),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      localeName.startsWith('zh')
+                                          ? '手机物理屏幕: ${phoneW}x$phoneH'
+                                          : 'Device Screen: ${phoneW}x$phoneH',
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  localeName.startsWith('zh')
+                                      ? '扣除底栏(${dockPx}px)可用视口: ${viewW}x$viewH'
+                                      : 'Viewport (less dock ${dockPx}px): ${viewW}x$viewH',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.white70),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // Width and Height text fields with steppers
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: widthController,
-                            focusNode: widthFocusNode,
-                            keyboardType: TextInputType.number,
-                            onTap: () {
-                              if (isAndroid) {
-                                gFFI.invokeMethod("enable_soft_keyboard", true);
-                              }
-                            },
-                            onSubmitted: (val) async {
-                              final tw = int.tryParse(val) ?? defaultPhoneW;
-                              final th = int.tryParse(heightController.text) ??
-                                  defaultPhoneH;
-                              await bind.mainSetLocalOption(
-                                  key: 'single_app_phone_w', value: '$tw');
-                              await cm.syncCurrentAppWindowSize(
-                                  phoneWOverride: tw, phoneHOverride: th);
-                              await cm.updateViewStyle(force: true);
-                            },
-                            decoration: InputDecoration(
-                              labelText: localeName.startsWith('zh')
-                                  ? '宽 (像素)'
-                                  : 'Width (px)',
-                              labelStyle: const TextStyle(
-                                  fontSize: 12, color: Colors.white70),
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                              prefixIcon: IconButton(
-                                icon: const Icon(Icons.remove,
-                                    size: 16, color: Colors.white70),
-                                onPressed: () async {
-                                  int w = (int.tryParse(widthController.text) ??
-                                          defaultPhoneW) -
-                                      100;
-                                  if (w < 400) w = 400;
-                                  widthController.text = '$w';
-                                  final th =
-                                      int.tryParse(heightController.text) ??
-                                          defaultPhoneH;
-                                  await bind.mainSetLocalOption(
-                                      key: 'single_app_phone_w', value: '$w');
-                                  await cm.syncCurrentAppWindowSize(
-                                      phoneWOverride: w, phoneHOverride: th);
-                                  await cm.updateViewStyle(force: true);
-                                  setSheetState(() {});
-                                },
-                              ),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.add,
-                                    size: 16, color: Colors.white70),
-                                onPressed: () async {
-                                  int w = (int.tryParse(widthController.text) ??
-                                          defaultPhoneW) +
-                                      100;
-                                  widthController.text = '$w';
-                                  final th =
-                                      int.tryParse(heightController.text) ??
-                                          defaultPhoneH;
-                                  await bind.mainSetLocalOption(
-                                      key: 'single_app_phone_w', value: '$w');
-                                  await cm.syncCurrentAppWindowSize(
-                                      phoneWOverride: w, phoneHOverride: th);
-                                  await cm.updateViewStyle(force: true);
-                                  setSheetState(() {});
-                                },
-                              ),
-                            ),
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13),
+                          const SizedBox(height: 8),
+                          // Quick preset buttons for scale
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final s in [
+                                1.0,
+                                1.25,
+                                1.5,
+                                1.75,
+                                2.0,
+                                2.25,
+                                2.5,
+                                3.0
+                              ]) ...[
+                                InkWell(
+                                  onTap: () async {
+                                    setSheetState(() {
+                                      cm.singleAppScaleOverride = s;
+                                    });
+                                    await cm.syncCurrentAppWindowSize(
+                                        scaleOverride: s);
+                                    await cm.updateViewStyle(force: true);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: (currentScale - s).abs() < 0.03
+                                          ? Colors.cyanAccent
+                                          : const Color(0x33FFFFFF),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: (currentScale - s).abs() < 0.03
+                                            ? Colors.cyanAccent
+                                            : Colors.white24,
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${s}x',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: (currentScale - s).abs() < 0.03
+                                            ? Colors.black
+                                            : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('x',
-                            style: TextStyle(color: Colors.white70)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: heightController,
-                            focusNode: heightFocusNode,
-                            keyboardType: TextInputType.number,
-                            onTap: () {
-                              if (isAndroid) {
-                                gFFI.invokeMethod("enable_soft_keyboard", true);
-                              }
-                            },
-                            onSubmitted: (val) async {
-                              final tw = int.tryParse(widthController.text) ??
-                                  defaultPhoneW;
-                              final th = int.tryParse(val) ?? defaultPhoneH;
-                              await bind.mainSetLocalOption(
-                                  key: 'single_app_phone_h', value: '$th');
-                              await cm.syncCurrentAppWindowSize(
-                                  phoneWOverride: tw, phoneHOverride: th);
-                              await cm.updateViewStyle(force: true);
-                            },
-                            decoration: InputDecoration(
-                              labelText: localeName.startsWith('zh')
-                                  ? '高 (像素)'
-                                  : 'Height (px)',
-                              labelStyle: const TextStyle(
-                                  fontSize: 12, color: Colors.white70),
-                              isDense: true,
-                              border: const OutlineInputBorder(),
-                              prefixIcon: IconButton(
-                                icon: const Icon(Icons.remove,
-                                    size: 16, color: Colors.white70),
+                          const SizedBox(height: 8),
+                          // Stepper for custom fine-tune scale
+                          Row(
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline,
+                                    color: Colors.cyanAccent, size: 22),
                                 onPressed: () async {
-                                  int h =
-                                      (int.tryParse(heightController.text) ??
-                                              defaultPhoneH) -
-                                          100;
-                                  if (h < 400) h = 400;
-                                  heightController.text = '$h';
-                                  final tw =
-                                      int.tryParse(widthController.text) ??
-                                          defaultPhoneW;
-                                  await bind.mainSetLocalOption(
-                                      key: 'single_app_phone_h', value: '$h');
+                                  final newS =
+                                      (currentScale - 0.1).clamp(0.8, 4.0);
+                                  final roundedS =
+                                      (newS * 10).round() / 10.0;
+                                  setSheetState(() {
+                                    cm.singleAppScaleOverride = roundedS;
+                                  });
                                   await cm.syncCurrentAppWindowSize(
-                                      phoneWOverride: tw, phoneHOverride: h);
+                                      scaleOverride: roundedS);
                                   await cm.updateViewStyle(force: true);
-                                  setSheetState(() {});
                                 },
                               ),
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.add,
-                                    size: 16, color: Colors.white70),
-                                onPressed: () async {
-                                  int h =
-                                      (int.tryParse(heightController.text) ??
-                                              defaultPhoneH) +
-                                          100;
-                                  heightController.text = '$h';
-                                  final tw =
-                                      int.tryParse(widthController.text) ??
-                                          defaultPhoneW;
-                                  await bind.mainSetLocalOption(
-                                      key: 'single_app_phone_h', value: '$h');
-                                  await cm.syncCurrentAppWindowSize(
-                                      phoneWOverride: tw, phoneHOverride: h);
-                                  await cm.updateViewStyle(force: true);
-                                  setSheetState(() {});
-                                },
-                              ),
-                            ),
-                            style: const TextStyle(
-                                color: Colors.white, fontSize: 13),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // Scale factor row
-                    Row(
-                      children: [
-                        Text(
-                          localeName.startsWith('zh') ? '放大倍率:' : 'Scale:',
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.white70),
-                        ),
-                        const SizedBox(width: 8),
-                        for (final s in [1.0, 1.5, 2.0, 2.5, 3.0]) ...[
-                          InkWell(
-                            onTap: () async {
-                              final tw = int.tryParse(widthController.text) ??
-                                  defaultPhoneW;
-                              final th = int.tryParse(heightController.text) ??
-                                  defaultPhoneH;
-                              setSheetState(() {
-                                cm.singleAppScaleOverride = s;
-                              });
-                              await cm.syncCurrentAppWindowSize(
-                                  scaleOverride: s,
-                                  phoneWOverride: tw,
-                                  phoneHOverride: th);
-                              await cm.updateViewStyle(force: true);
-                            },
-                            child: Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 3),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color:
-                                    (cm.singleAppScaleOverride - s).abs() < 0.05
-                                        ? Colors.cyanAccent
-                                        : const Color(0x33FFFFFF),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '${s}x',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: (cm.singleAppScaleOverride - s).abs() <
-                                          0.05
-                                      ? Colors.black
-                                      : Colors.white,
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0x22FFFFFF),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '当前放大: ${currentScale.toStringAsFixed(1)}x',
+                                    style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.amberAccent),
+                                  ),
                                 ),
                               ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline,
+                                    color: Colors.cyanAccent, size: 22),
+                                onPressed: () async {
+                                  final newS =
+                                      (currentScale + 0.1).clamp(0.8, 4.0);
+                                  final roundedS =
+                                      (newS * 10).round() / 10.0;
+                                  setSheetState(() {
+                                    cm.singleAppScaleOverride = roundedS;
+                                  });
+                                  await cm.syncCurrentAppWindowSize(
+                                      scaleOverride: roundedS);
+                                  await cm.updateViewStyle(force: true);
+                                },
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          // Formula explanation card
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0x1AFFFFFF),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '• 视口折算: ${viewW}x${viewH} ÷ ${currentScale.toStringAsFixed(1)}x = ${effectiveW}x${effectiveH}',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.white70),
+                                ),
+                                Text(
+                                  '• 加上裁切(左+${cropL} 右+${cropR} 上+${cropT} 下+${cropB}) ➔ 远端设为 ${targetW}x${targetH}',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.cyanAccent),
+                                ),
+                                Text(
+                                  '• 裁切后为 ${effectiveW}x${effectiveH}，放大 ${currentScale.toStringAsFixed(1)}x 刚好铺满！',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.white60),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          // Action button to resize remote window
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0071FF),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                              ),
+                              icon: const Icon(Icons.aspect_ratio, size: 18),
+                              label: Text(
+                                localeName.startsWith('zh')
+                                    ? '🚀 同步调整远端窗口 (${targetW}x$targetH)'
+                                    : 'Sync Remote Window (${targetW}x$targetH)',
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              onPressed: () async {
+                                await cm.syncCurrentAppWindowSize();
+                                await cm.updateViewStyle(force: true);
+                                BotToast.showText(
+                                  text: localeName.startsWith('zh')
+                                      ? '已同步调整远端窗口为: ${targetW}x$targetH (放大 ${currentScale.toStringAsFixed(1)}x)'
+                                      : 'Resized remote window to ${targetW}x$targetH (${currentScale.toStringAsFixed(1)}x)',
+                                );
+                              },
                             ),
                           ),
                         ],
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    // Action button to resize remote window
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF0071FF),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                        ),
-                        icon: const Icon(Icons.aspect_ratio, size: 18),
-                        label: Text(
-                          localeName.startsWith('zh')
-                              ? '🚀 同步调整远端窗口尺寸'
-                              : 'Sync & Resize Remote Window',
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.bold),
-                        ),
-                        onPressed: () async {
-                          final tw = int.tryParse(widthController.text) ??
-                              defaultPhoneW;
-                          final th = int.tryParse(heightController.text) ??
-                              defaultPhoneH;
-                          await bind.mainSetLocalOption(
-                              key: 'single_app_phone_w', value: '$tw');
-                          await bind.mainSetLocalOption(
-                              key: 'single_app_phone_h', value: '$th');
-
-                          await cm.syncCurrentAppWindowSize(
-                              phoneWOverride: tw, phoneHOverride: th);
-                          await cm.updateViewStyle(force: true);
-
-                          final dims = cm.calculateRemoteWindowTargetSize(
-                              phoneWOverride: tw,
-                              phoneHOverride: th,
-                              knownWindowW: gFFI.imageModel.image?.width);
-                          final winW = dims['targetW'];
-                          final winH = dims['targetH'];
-
-                          BotToast.showText(
-                            text: localeName.startsWith('zh')
-                                ? '已同步调整远端窗口为: ${winW}x$winH'
-                                : 'Resized remote window to ${winW}x$winH',
-                          );
-                        },
-                      ),
-                    ),
+                      );
+                    }),
                     const Divider(color: Colors.white24, height: 24),
 
                     // Edge crop sliders
@@ -3056,16 +3001,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_left,
                       cropL,
                       (n) async {
-                        final tw =
-                            int.tryParse(widthController.text) ?? defaultPhoneW;
-                        final th = int.tryParse(heightController.text) ??
-                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, n, cropT, cropR, cropB);
-                        await cm.syncCurrentAppWindowSize(
-                            customCropL: n,
-                            phoneWOverride: tw,
-                            phoneHOverride: th);
+                        await cm.syncCurrentAppWindowSize(customCropL: n);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -3074,16 +3012,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_top,
                       cropT,
                       (n) async {
-                        final tw =
-                            int.tryParse(widthController.text) ?? defaultPhoneW;
-                        final th = int.tryParse(heightController.text) ??
-                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, n, cropR, cropB);
-                        await cm.syncCurrentAppWindowSize(
-                            customCropT: n,
-                            phoneWOverride: tw,
-                            phoneHOverride: th);
+                        await cm.syncCurrentAppWindowSize(customCropT: n);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -3092,16 +3023,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_right,
                       cropR,
                       (n) async {
-                        final tw =
-                            int.tryParse(widthController.text) ?? defaultPhoneW;
-                        final th = int.tryParse(heightController.text) ??
-                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, cropT, n, cropB);
-                        await cm.syncCurrentAppWindowSize(
-                            customCropR: n,
-                            phoneWOverride: tw,
-                            phoneHOverride: th);
+                        await cm.syncCurrentAppWindowSize(customCropR: n);
                         await cm.updateViewStyle(force: true);
                       },
                     ),
@@ -3110,16 +3034,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       Icons.border_bottom,
                       cropB,
                       (n) async {
-                        final tw =
-                            int.tryParse(widthController.text) ?? defaultPhoneW;
-                        final th = int.tryParse(heightController.text) ??
-                            defaultPhoneH;
                         setSheetState(() {});
                         cm.saveAppCrop(appName, cropL, cropT, cropR, n);
-                        await cm.syncCurrentAppWindowSize(
-                            customCropB: n,
-                            phoneWOverride: tw,
-                            phoneHOverride: th);
+                        await cm.syncCurrentAppWindowSize(customCropB: n);
                         await cm.updateViewStyle(force: true);
                       },
                     ),

@@ -776,12 +776,10 @@ class FfiModel with ChangeNotifier {
                                   .currentSelectedAppName = name;
                               parent.target?.canvasModel.loadAppCrop(name);
 
-                              final itemW = int.tryParse(w) ?? 0;
                               final dims = parent.target?.canvasModel
-                                  .calculateRemoteWindowTargetSize(
-                                      knownWindowW: itemW);
-                              final targetW = dims?['targetW'] ?? 1000;
-                              final targetH = dims?['targetH'] ?? 600;
+                                  .calculateRemoteWindowTargetSize();
+                              final targetW = dims?['targetW'] ?? 700;
+                              final targetH = dims?['targetH'] ?? 1300;
 
                               await bind.sessionPeerOption(
                                   sessionId: sessionId,
@@ -2821,71 +2819,43 @@ class CanvasModel with ChangeNotifier {
 
   Map<String, int> calculateRemoteWindowTargetSize({
     double? scaleOverride,
-    int? phoneWOverride,
-    int? phoneHOverride,
     int? customCropL,
     int? customCropT,
     int? customCropR,
     int? customCropB,
-    int? knownWindowW,
   }) {
-    double pixelRatio = ui.window.devicePixelRatio;
-    double screenW = ui.window.physicalSize.width / pixelRatio;
-    double screenH = ui.window.physicalSize.height / pixelRatio;
+    final double pixelRatio =
+        ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
 
-    final savedPhoneW =
-        int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_w'));
-    final savedPhoneH =
-        int.tryParse(bind.mainGetLocalOption(key: 'single_app_phone_h'));
+    // 始终全屏：自动获取手机物理屏幕全部分辨率，无需手动设置
+    int phoneW = ui.window.physicalSize.width.round();
+    int phoneH = ui.window.physicalSize.height.round();
+    if (phoneW <= 0) phoneW = 1260;
+    if (phoneH <= 0) phoneH = 2800;
 
-    int phoneW = (phoneWOverride != null && phoneWOverride > 0)
-        ? phoneWOverride
-        : ((savedPhoneW != null && savedPhoneW > 0)
-            ? savedPhoneW
-            : (screenW * pixelRatio).round());
+    // 自动扣除底部程序栏物理高度（由 singleAppDockHeight * pixelRatio 计算）
+    final int dockPx = (singleAppDockHeight * pixelRatio).round();
+    final int viewW = phoneW;
+    final int viewH = max(100, phoneH - dockPx);
 
-    int phoneH = (phoneHOverride != null && phoneHOverride > 0)
-        ? phoneHOverride
-        : ((savedPhoneH != null && savedPhoneH > 0)
-            ? savedPhoneH
-            : (screenH * pixelRatio).round());
-
-    if (phoneW <= 0) phoneW = 1264;
-    if (phoneH <= 0) phoneH = 2600;
-
-    // 手机端底部Dock栏固定预留200物理像素，不随放大倍率改变
-    const int dockPx = 200;
-    final appH = max(100, phoneH - dockPx);
-
-    final s = (scaleOverride != null && scaleOverride > 0)
+    // 用户设定的目标放大倍率（默认为 2.0x）
+    final double s = (scaleOverride != null && scaleOverride > 0)
         ? scaleOverride
         : (singleAppScaleOverride > 0 ? singleAppScaleOverride : 2.0);
 
-    // 远端基准有效窗口尺寸：例如手机1264宽，倍率2，基准宽632
-    int baseW = (phoneW / s).round();
-    int baseH = (appH / s).round();
+    // 对应远端有效视口尺寸：例如 1260x2600 扣除底栏后，选择 x2，则有效视口为 630x1300
+    final int effectiveW = (viewW / s).round();
+    final int effectiveH = (viewH / s).round();
 
-    final cL = customCropL ?? appCropLeft;
-    final cT = customCropT ?? appCropTop;
-    final cR = customCropR ?? appCropRight;
-    final cB = customCropB ?? appCropBottom;
+    final int cL = customCropL ?? appCropLeft;
+    final int cT = customCropT ?? appCropTop;
+    final int cR = customCropR ?? appCropRight;
+    final int cB = customCropB ?? appCropBottom;
 
     // 裁剪补边：裁切多少，远端窗口尺寸就增加多少！
-    int targetW = baseW + cL + cR;
-    int targetH = baseH + cT + cB;
-
-    // 如果已知窗口实际宽度（或者窗口最小宽度限制比基准宽度还要宽）：
-    // 例如微信强制最小宽度为 680px。为了在手机端横向满屏，手机端缩放倍率会自适应变为 phoneW / (curW - cL - cR)。
-    // 此时为了让纵向也严格等比铺满屏幕（消除底部黑边），远端窗口目标高度必须按屏幕纵横比等比延展：
-    // visibleH = actualVisibleW * (appH / phoneW)
-    if (knownWindowW != null && knownWindowW > 0) {
-      final actualVisibleW = max(baseW, knownWindowW - cL - cR);
-      if (actualVisibleW > baseW) {
-        final proportionalH = (actualVisibleW * appH / phoneW).round();
-        targetH = max(targetH, proportionalH + cT + cB);
-        targetW = max(targetW, knownWindowW);
-      }
-    }
+    // 例如设定左切 70，则程序窗口大小为 700x1300，切掉 70 后正好为 630x1300，放大两倍完美贴合 1260x2600！
+    int targetW = effectiveW + cL + cR;
+    int targetH = effectiveH + cT + cB;
 
     if (targetW % 2 != 0) targetW += 1;
     if (targetH % 2 != 0) targetH += 1;
@@ -2893,8 +2863,10 @@ class CanvasModel with ChangeNotifier {
     return {
       'targetW': max(100, targetW),
       'targetH': max(100, targetH),
-      'baseW': max(100, baseW),
-      'baseH': max(100, baseH),
+      'effectiveW': max(100, effectiveW),
+      'effectiveH': max(100, effectiveH),
+      'viewW': viewW,
+      'viewH': viewH,
       'phoneW': phoneW,
       'phoneH': phoneH,
       'dockPx': dockPx,
@@ -2908,10 +2880,8 @@ class CanvasModel with ChangeNotifier {
     _lastCheckedH = curH;
 
     final dims = calculateRemoteWindowTargetSize();
-    final phoneW = dims['phoneW'] ?? 1264;
-    final phoneH = dims['phoneH'] ?? 2600;
-    final dockPx = dims['dockPx'] ?? 200;
-    final appH = max(100, phoneH - dockPx);
+    final viewW = dims['viewW'] ?? 1260;
+    final viewH = dims['viewH'] ?? 2600;
 
     final cL = appCropLeft;
     final cT = appCropTop;
@@ -2921,10 +2891,10 @@ class CanvasModel with ChangeNotifier {
     final visibleW = max(1, curW - cL - cR);
     final visibleH = max(1, curH - cT - cB);
 
-    final renderedH = visibleH * (phoneW / visibleW);
+    final renderedH = visibleH * (viewW / visibleW);
 
-    if (renderedH < appH - 20) {
-      final neededVisibleH = (visibleW * appH / phoneW).round();
+    if (renderedH < viewH - 20) {
+      final neededVisibleH = (visibleW * viewH / viewW).round();
       int neededTargetH = neededVisibleH + cT + cB;
       if (neededTargetH % 2 != 0) neededTargetH += 1;
 
@@ -2943,34 +2913,32 @@ class CanvasModel with ChangeNotifier {
 
   Future<void> syncCurrentAppWindowSize({
     double? scaleOverride,
-    int? phoneWOverride,
-    int? phoneHOverride,
     int? customCropL,
     int? customCropT,
     int? customCropR,
     int? customCropB,
     int? hwndOverride,
-    int? knownWindowW,
   }) async {
     final hwnd = hwndOverride ?? currentHwnd;
     if (hwnd == 0) return;
 
-    final curImgW = knownWindowW ?? parent.target?.imageModel.image?.width;
+    if (scaleOverride != null && scaleOverride > 0) {
+      singleAppScaleOverride = scaleOverride;
+    }
 
     final dims = calculateRemoteWindowTargetSize(
       scaleOverride: scaleOverride,
-      phoneWOverride: phoneWOverride,
-      phoneHOverride: phoneHOverride,
       customCropL: customCropL,
       customCropT: customCropT,
       customCropR: customCropR,
       customCropB: customCropB,
-      knownWindowW: curImgW,
     );
-    final targetW = dims['targetW'] ?? 1000;
-    final targetH = dims['targetH'] ?? 600;
+    final targetW = dims['targetW'] ?? 700;
+    final targetH = dims['targetH'] ?? 1300;
 
     _lastSyncedTargetH = targetH;
+    _lastCheckedW = 0;
+    _lastCheckedH = 0;
 
     await bind.sessionPeerOption(
       sessionId: sessionId,
@@ -3419,6 +3387,29 @@ class CanvasModel with ChangeNotifier {
     if (_offsetBeforeMobileSoftKeyboard == null) {
       _offsetBeforeMobileSoftKeyboard = Offset(_x, _y);
       _scaleBeforeMobileSoftKeyboard = _scale;
+    }
+  }
+
+  void pushCanvasAboveKeyboard(double keyboardHeight) {
+    if (keyboardHeight <= 0) return;
+    saveMobileOffsetBeforeSoftKeyboard();
+
+    final mediaData = MediaQueryData.fromView(ui.window);
+    final screenH = mediaData.size.height;
+    final keyboardTop = screenH - keyboardHeight;
+
+    final imgH = parent.target?.imageModel.image?.height ?? displayHeight;
+    final totalH = imgH > 0 ? imgH : displayHeight;
+    final s = _scale > 0 ? _scale : 1.0;
+    final visibleBottom = (totalH - appCropBottom) * s;
+
+    // 将底端（Windows任务栏与开始菜单所在区域）推到软键盘顶端正上方，留 6px 间隙
+    final targetY = keyboardTop - 6.0 - visibleBottom;
+
+    if (targetY < _y) {
+      _y = targetY;
+      isMobileCanvasChanged = true;
+      notifyListeners();
     }
   }
 
