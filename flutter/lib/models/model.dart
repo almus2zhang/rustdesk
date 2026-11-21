@@ -3398,8 +3398,8 @@ class CanvasModel with ChangeNotifier {
     final screenH = mediaData.size.height;
     final keyboardTop = screenH - keyboardHeight;
 
-    final imgH = parent.target?.imageModel.image?.height ?? displayHeight;
-    final totalH = imgH > 0 ? imgH : displayHeight;
+    final imgH = parent.target?.imageModel.image?.height ?? getDisplayHeight();
+    final totalH = imgH > 0 ? imgH : getDisplayHeight();
     final s = _scale > 0 ? _scale : 1.0;
     final visibleBottom = (totalH - appCropBottom) * s;
 

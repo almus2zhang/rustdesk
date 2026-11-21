@@ -1022,15 +1022,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final media = MediaQuery.of(context);
       double kbHeight = media.viewInsets.bottom;
       if (kbHeight <= 0) {
-        final dpr = ui.window.devicePixelRatio > 0
-            ? ui.window.devicePixelRatio
-            : 1.0;
-        final windowInsets = ui.window.viewInsets.bottom / dpr;
-        if (windowInsets > 0) {
-          kbHeight = windowInsets;
-        } else {
-          kbHeight = media.size.height * 0.38;
-        }
+        kbHeight = media.size.height * 0.38;
       }
       if (kbHeight > 50) {
         gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight);
@@ -3078,18 +3070,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 color: Colors.white70, fontSize: 12),
                           ),
                           onPressed: () async {
-                            final tw = int.tryParse(widthController.text) ??
-                                defaultPhoneW;
-                            final th = int.tryParse(heightController.text) ??
-                                defaultPhoneH;
                             cm.saveAppCrop(appName, 0, 0, 0, 0);
                             await cm.syncCurrentAppWindowSize(
                               customCropL: 0,
                               customCropT: 0,
                               customCropR: 0,
                               customCropB: 0,
-                              phoneWOverride: tw,
-                              phoneHOverride: th,
                             );
                             await cm.updateViewStyle(force: true);
                             setSheetState(() {});
