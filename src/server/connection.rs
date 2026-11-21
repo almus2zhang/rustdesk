@@ -4058,29 +4058,33 @@ impl Connection {
         if hwnd != 0 {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
-            if let Ok(displays) = crate::server::display_service::try_get_displays() {
-                let v_display_idx = displays.iter().position(|d| {
-                    crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                        || crate::usb_display::is_this_usb_display(&d.name())
-                });
-
-                let target_idx = if let Some(v_idx) = v_display_idx {
-                    if self.display_idx != v_idx {
-                        log::info!("Single app auto-routing to virtual display {} (current was {})", v_idx, self.display_idx);
-                        self.display_idx = v_idx;
-                        let mut misc = Misc::new();
-                        misc.set_follow_current_display(v_idx as i32);
-                        let mut msg = Message::new();
-                        msg.set_misc(misc);
-                        self.send(msg).await;
+            {
+                let (switch_needed, target_idx, rect_info) = {
+                    if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                        let v_display_idx = displays.iter().position(|d| {
+                            crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                                || crate::usb_display::is_this_usb_display(&d.name())
+                        });
+                        let target_idx = v_display_idx.unwrap_or(self.display_idx);
+                        let switch_needed = v_display_idx.is_some() && self.display_idx != target_idx;
+                        let rect_info = displays.get(target_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
+                        (switch_needed, target_idx, rect_info)
+                    } else {
+                        (false, self.display_idx, None)
                     }
-                    v_idx
-                } else {
-                    self.display_idx
                 };
 
-                if let Some(d) = displays.get(target_idx) {
-                    let (ox, oy) = d.origin();
+                if switch_needed {
+                    log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
+                    self.display_idx = target_idx;
+                    let mut misc = Misc::new();
+                    misc.set_follow_current_display(target_idx as i32);
+                    let mut msg = Message::new();
+                    msg.set_misc(misc);
+                    self.send(msg).await;
+                }
+
+                if let Some(((ox, oy), dw, dh)) = rect_info {
                     if target_w > 0 && target_h > 0 {
                         log::info!(
                             "Moving window {} to display {} at ({}, {}) with target size {}x{}",
@@ -4088,7 +4092,7 @@ impl Connection {
                         );
                         crate::platform::move_window_to_rect_and_size(hwnd, ox, oy, target_w, target_h);
                     } else {
-                        crate::platform::move_window_to_rect_and_maximize(hwnd, ox, oy, d.width() as _, d.height() as _);
+                        crate::platform::move_window_to_rect_and_maximize(hwnd, ox, oy, dw, dh);
                     }
                 }
             }
