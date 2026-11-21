@@ -5003,7 +5003,7 @@ unsafe fn get_window_icon_base64(hwnd: HWND, exe_path: &str) -> String {
     }
 
     let mut base64_str = String::new();
-    let mut icon_info = winapi::um::wingdi::ICONINFO {
+    let mut icon_info = winapi::um::winuser::ICONINFO {
         fIcon: 0,
         xHotspot: 0,
         yHotspot: 0,

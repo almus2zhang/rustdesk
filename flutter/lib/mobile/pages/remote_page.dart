@@ -3026,7 +3026,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           final dims = cm.calculateRemoteWindowTargetSize(
                               phoneWOverride: tw,
                               phoneHOverride: th,
-                              knownWindowW: cm.imageModel.image?.width);
+                              knownWindowW: gFFI.imageModel.image?.width);
                           final winW = dims['targetW'];
                           final winH = dims['targetH'];
 
