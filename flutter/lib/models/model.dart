@@ -657,8 +657,27 @@ class FfiModel with ChangeNotifier {
       Map<String, dynamic> evt, SessionID sessionId, String peerId) {
     try {
       final String raw = evt['data'] ?? '[]';
-      final List<dynamic> list = jsonDecode(raw);
-      parent.target?.canvasModel.appWindowList.value = list;
+      final List<dynamic> rawList = jsonDecode(raw);
+      final List<dynamic> list = rawList.where((item) {
+        final n = (item['name'] ?? '').toString().toLowerCase();
+        final t = (item['title'] ?? '').toString().toLowerCase();
+        return !n.contains('rustdesk') && !t.contains('rustdesk');
+      }).toList();
+
+      final current = parent.target?.canvasModel.appWindowList.value ?? [];
+      bool isIdentical = current.length == list.length;
+      if (isIdentical) {
+        for (int i = 0; i < list.length; i++) {
+          if (current[i]['hwnd'] != list[i]['hwnd'] ||
+              current[i]['title'] != list[i]['title']) {
+            isIdentical = false;
+            break;
+          }
+        }
+      }
+      if (!isIdentical) {
+        parent.target?.canvasModel.appWindowList.value = list;
+      }
       if (parent.target?.canvasModel.showWindowPickerModal != true) {
         return;
       }
@@ -2794,7 +2813,7 @@ class CanvasModel with ChangeNotifier {
   double get singleAppDockHeight {
     final dpr =
         ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
-    return 200.0 / dpr;
+    return 130.0 / dpr; // 紧凑型底栏高度（约 42-45 逻辑像素，130 物理像素）
   }
 
   int get currentHwnd {
@@ -2806,12 +2825,19 @@ class CanvasModel with ChangeNotifier {
   }
 
   double get singleAppScaleOverride {
+    if (currentSelectedAppName.isNotEmpty) {
+      final appVal = double.tryParse(bind.mainGetLocalOption(key: 'single_app_scale_$currentSelectedAppName'));
+      if (appVal != null && appVal > 0) return appVal;
+    }
     final v = double.tryParse(bind.mainGetLocalOption(key: 'single_app_scale'));
     if (v != null && v > 0) return v;
     return 2.0;
   }
 
   set singleAppScaleOverride(double val) {
+    if (currentSelectedAppName.isNotEmpty) {
+      bind.mainSetLocalOption(key: 'single_app_scale_$currentSelectedAppName', value: val.toString());
+    }
     bind.mainSetLocalOption(key: 'single_app_scale', value: val.toString());
   }
 
@@ -3408,6 +3434,23 @@ class CanvasModel with ChangeNotifier {
     if (alignLeft) {
       _x = 0.0; // 调整在最左下角：横向紧贴屏幕最左侧（完全展示开始菜单图标与搜索框）
     }
+    isMobileCanvasChanged = true;
+    notifyListeners();
+  }
+
+  void pushCanvasToRemoteBottomLeft(double keyboardHeight) {
+    if (keyboardHeight <= 0) return;
+    saveMobileOffsetBeforeSoftKeyboard();
+
+    final mediaData = MediaQueryData.fromView(ui.window);
+    final screenH = mediaData.size.height;
+    final keyboardTop = screenH - keyboardHeight;
+
+    final dh = getDisplayHeight().toDouble();
+    final s = _scale > 0 ? _scale : 1.0;
+    // 强制将远程桌面的最左下角（田字标与任务栏所在区域）推到软键盘正上方
+    _x = 0.0;
+    _y = keyboardTop - 4.0 - (dh * s);
     isMobileCanvasChanged = true;
     notifyListeners();
   }
@@ -4954,6 +4997,8 @@ class PeerInfo with ChangeNotifier {
       platformAdditions[kPlatformAdditionsIddImpl] == 'rustdesk_idd';
   bool get isAmyuniIdd =>
       platformAdditions[kPlatformAdditionsIddImpl] == 'amyuni_idd';
+  bool get isVddIdd =>
+      platformAdditions[kPlatformAdditionsIddImpl] == 'vdd_idd';
 
   Display? tryGetDisplay({int? display}) {
     if (displays.isEmpty) {

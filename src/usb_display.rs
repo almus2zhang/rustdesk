@@ -202,7 +202,7 @@ pub fn get_configured_direct_port() -> i32 {
 /// accepts modes the driver advertised; passing an arbitrary WxH to
 /// `ChangeDisplaySettingsExW` fails with `res=-1`.
 #[cfg(windows)]
-fn closest_resolution(name: &str, w: u32, h: u32) -> Option<(usize, usize)> {
+pub fn closest_resolution(name: &str, w: u32, h: u32) -> Option<(usize, usize)> {
     let target_ratio = w as f64 / h.max(1) as f64;
     let mut best: Option<(f64, usize, usize)> = None;
     for m in crate::platform::windows::resolutions(name) {

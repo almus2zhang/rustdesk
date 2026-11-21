@@ -471,6 +471,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
   bool _isStartMenuPushed = false;
+  final Map<String, MemoryImage> _appIconMemoryCache = {};
   StreamSubscription? _textCursorSubscription;
   Timer? _textCursorPopupTimer;
 
@@ -1025,7 +1026,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         kbHeight = media.size.height * 0.38;
       }
       if (kbHeight > 50) {
-        gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight, alignLeft: true);
+        if (_isStartMenuPushed) {
+          gFFI.canvasModel.pushCanvasToRemoteBottomLeft(kbHeight);
+        } else {
+          gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight, alignLeft: true);
+        }
       }
     }
 
@@ -2243,6 +2248,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       final currentHwnd = gFFI.canvasModel.currentSelectedHwnd;
 
       return Container(
+        height: gFFI.canvasModel.singleAppDockHeight,
         decoration: BoxDecoration(
           color: const Color(0xEE161D28),
           border: const Border(
@@ -2260,10 +2266,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           children: [
             // Left Windows Start Button (with soft keyboard trigger)
             IconButton(
+              padding: const EdgeInsets.all(6),
               icon: const Icon(
                 Icons.grid_view_rounded,
                 color: Colors.cyanAccent,
-                size: 22,
+                size: 20,
               ),
               tooltip: localeName.startsWith('zh')
                   ? 'Windows 开始菜单 (呼出软键盘)'
@@ -2281,7 +2288,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? Center(
                       child: TextButton.icon(
                         icon: const Icon(Icons.refresh,
-                            size: 16, color: Colors.white70),
+                            size: 15, color: Colors.white70),
                         label: Text(
                           localeName.startsWith('zh')
                               ? '点击刷新程序列表'
@@ -2318,32 +2325,35 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         Widget appIconWidget;
                         if (iconBase64.isNotEmpty) {
                           try {
-                            final bytes = base64Decode(iconBase64);
+                            final imageProvider = _appIconMemoryCache.putIfAbsent(
+                              iconBase64,
+                              () => MemoryImage(base64Decode(iconBase64)),
+                            );
                             appIconWidget = ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Image.memory(
-                                bytes,
-                                width: 30,
-                                height: 30,
+                              borderRadius: BorderRadius.circular(6),
+                              child: Image(
+                                image: imageProvider,
+                                width: 26,
+                                height: 26,
                                 fit: BoxFit.contain,
                                 filterQuality: FilterQuality.high,
                                 errorBuilder: (ctx, err, stack) => Icon(iconData,
                                     color: isSelected
                                         ? Colors.cyanAccent
                                         : iconColor,
-                                    size: 24),
+                                    size: 20),
                               ),
                             );
                           } catch (_) {
                             appIconWidget = Icon(iconData,
                                 color:
                                     isSelected ? Colors.cyanAccent : iconColor,
-                                size: 24);
+                                size: 20);
                           }
                         } else {
                           appIconWidget = Icon(iconData,
                               color: isSelected ? Colors.cyanAccent : iconColor,
-                              size: 24);
+                              size: 20);
                         }
 
                         return Tooltip(
@@ -2370,6 +2380,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               final targetW = dims['targetW'] ?? 700;
                               final targetH = dims['targetH'] ?? 1300;
 
+                              int phoneW = ui.window.physicalSize.width.round();
+                              int phoneH = ui.window.physicalSize.height.round();
+                              if (phoneW <= 0) phoneW = 1260;
+                              if (phoneH <= 0) phoneH = 2800;
+
                               gFFI.ffiModel.pi
                                   .platformAdditions['selected_window'] = hwnd;
                               gFFI.ffiModel.touchMode = true;
@@ -2378,7 +2393,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               bind.sessionPeerOption(
                                 sessionId: gFFI.sessionId,
                                 name: 'select_window',
-                                value: '$hwnd:$modeStr:$targetW:$targetH',
+                                value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
                               );
                               bind.sessionPeerOption(
                                 sessionId: gFFI.sessionId,
@@ -2394,33 +2409,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              width: 44,
-                              height: 44,
+                              width: 36,
+                              height: 36,
                               margin: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 3),
+                                  horizontal: 3, vertical: 2),
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? const Color(0x3D00E5FF)
                                     : const Color(0x1FFFFFFF),
-                                borderRadius: BorderRadius.circular(11),
+                                borderRadius: BorderRadius.circular(9),
                                 border: Border.all(
                                   color: isSelected
                                       ? Colors.cyanAccent
                                       : const Color(0x33FFFFFF),
-                                  width: isSelected ? 1.6 : 0.8,
+                                  width: isSelected ? 1.4 : 0.6,
                                 ),
                                 boxShadow: isSelected
                                     ? [
                                         BoxShadow(
                                           color: Colors.cyanAccent.withOpacity(0.35),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
+                                          blurRadius: 5,
+                                          offset: const Offset(0, 1),
                                         )
                                       ]
                                     : [
                                         const BoxShadow(
                                           color: Colors.black26,
-                                          blurRadius: 3,
+                                          blurRadius: 2,
                                           offset: Offset(0, 1),
                                         )
                                       ],
@@ -2431,10 +2446,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   appIconWidget,
                                   if (isSelected)
                                     Positioned(
-                                      bottom: 2,
+                                      bottom: 1,
                                       child: Container(
-                                        width: 5,
-                                        height: 5,
+                                        width: 4,
+                                        height: 4,
                                         decoration: const BoxDecoration(
                                           color: Colors.cyanAccent,
                                           shape: BoxShape.circle,
@@ -2452,7 +2467,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             // Right compact action menu
             PopupMenuButton<String>(
               icon:
-                  const Icon(Icons.more_vert, color: Colors.white70, size: 22),
+                  const Icon(Icons.more_vert, color: Colors.white70, size: 20),
               tooltip: localeName.startsWith('zh') ? '更多选项' : 'More Options',
               color: const Color(0xEE1E2633),
               shape: RoundedRectangleBorder(
@@ -5725,10 +5740,16 @@ Future<void> setupPhonePortraitVirtualDisplay({
   final hasVirtual =
       pi.RustDeskVirtualDisplays.isNotEmpty || pi.amyuniVirtualDisplayCount > 0;
   if (!hasVirtual) {
-    if (pi.isRustDeskIdd) {
+    if (pi.isVddIdd) {
+      await bind.sessionToggleVirtualDisplay(
+          sessionId: ffi.sessionId, index: 0, on: true);
+    } else if (pi.isRustDeskIdd) {
       await bind.sessionToggleVirtualDisplay(
           sessionId: ffi.sessionId, index: 1, on: true);
     } else if (pi.isAmyuniIdd) {
+      await bind.sessionToggleVirtualDisplay(
+          sessionId: ffi.sessionId, index: 0, on: true);
+    } else {
       await bind.sessionToggleVirtualDisplay(
           sessionId: ffi.sessionId, index: 0, on: true);
     }

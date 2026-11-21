@@ -713,7 +713,12 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             } else {
                 (0, 0)
             };
-            session.select_app_window_with_size(hwnd, direct, target_w, target_h);
+            let (client_w, client_h) = if parts.len() >= 6 {
+                (parts[4].parse::<i32>().unwrap_or(0), parts[5].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            session.select_app_window_with_size_and_client(hwnd, direct, target_w, target_h, client_w, client_h);
             return;
         }
         if name == "resize_app_window" {

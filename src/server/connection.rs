@@ -4052,8 +4052,8 @@ impl Connection {
         });
     }
 
-    async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32) {
-        log::info!("select_app_window: {} (target_size: {}x{})", hwnd, target_w, target_h);
+    async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32, client_w: i32, client_h: i32) {
+        log::info!("select_app_window: {} (target_size: {}x{}, client_size: {}x{})", hwnd, target_w, target_h, client_w, client_h);
         crate::server::video_service::set_selected_window(hwnd);
         #[allow(unused_mut)]
         let mut switch_needed = false;
@@ -4061,22 +4061,51 @@ impl Connection {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
             {
-                let (sw_needed, target_idx, rect_info) = {
-                    if let Ok(displays) = crate::server::display_service::try_get_displays() {
-                        let v_display_idx = displays.iter().position(|d| {
+                let req_w = if client_w > 0 { client_w as u32 } else { 1260 };
+                let req_h = if client_h > 0 { client_h as u32 } else { 2800 };
+
+                let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                let mut v_display_idx = displays.iter().position(|d| {
+                    crate::virtual_display_manager::is_vdd_display(&d.name())
+                        || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                        || crate::usb_display::is_this_usb_display(&d.name())
+                });
+
+                // 没有虚拟屏的话就加一个vdd虚拟屏
+                if v_display_idx.is_none() {
+                    log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
+                    if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
+                        crate::server::display_service::check_displays_changed().ok();
+                        displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                        v_display_idx = displays.iter().position(|d| {
                             crate::virtual_display_manager::is_vdd_display(&d.name())
                                 || crate::virtual_display_manager::is_any_virtual_display(&d.name())
                                 || crate::usb_display::is_this_usb_display(&d.name())
                         });
-                        let target_idx = v_display_idx.unwrap_or(self.display_idx);
-                        let sw_needed = v_display_idx.is_some() && self.display_idx != target_idx;
-                        let rect_info = displays.get(target_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
-                        (sw_needed, target_idx, rect_info)
-                    } else {
-                        (false, self.display_idx, None)
                     }
-                };
-                switch_needed = sw_needed;
+                }
+
+                let target_idx = v_display_idx.unwrap_or(self.display_idx);
+
+                // 分辨率按照本机分辨率最接近的来
+                if let Some(d) = displays.get(target_idx) {
+                    let dev_name = d.name();
+                    if crate::virtual_display_manager::is_any_virtual_display(&dev_name) || crate::usb_display::is_this_usb_display(&dev_name) {
+                        if let Some((best_w, best_h)) = crate::usb_display::closest_resolution(&dev_name, req_w, req_h) {
+                            if let Ok(cur_res) = crate::platform::windows::current_resolution(&dev_name) {
+                                if cur_res.width != best_w as u32 || cur_res.height != best_h as u32 {
+                                    log::info!("Adjusting virtual display {} to closest resolution {}x{} (was {}x{})", dev_name, best_w, best_h, cur_res.width, cur_res.height);
+                                    crate::platform::windows::change_resolution(&dev_name, best_w, best_h).ok();
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let rect_info = displays.get(target_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
+                switch_needed = v_display_idx.is_some() && self.display_idx != target_idx;
 
                 if switch_needed {
                     log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
@@ -4088,6 +4117,7 @@ impl Connection {
                     self.send(msg).await;
                 }
 
+                // 点击程序后把程序拉到虚拟屏然后调整窗口大小后显示
                 if let Some(((ox, oy), dw, dh)) = rect_info {
                     if target_w > 0 && target_h > 0 {
                         log::info!(
@@ -4246,14 +4276,6 @@ impl Connection {
 
     #[cfg(windows)]
     async fn toggle_virtual_display(&mut self, t: ToggleVirtualDisplay) {
-        if self.is_secondary_session || crate::usb_display::is_usb_display_active() {
-            log::info!(
-                "Ignoring toggle_virtual_display (display={}, on={}) during secondary display session to avoid duplicate virtual display",
-                t.display,
-                t.on
-            );
-            return;
-        }
         let make_msg = |text: String| {
             let mut msg_out = Message::new();
             let res = MessageBox {
@@ -4272,16 +4294,14 @@ impl Connection {
                 self.send(make_msg("idd_not_support_under_win10_2004_tip".to_string()))
                     .await;
             } else {
-                let has_virtual = crate::server::display_service::try_get_displays()
-                    .map(|displays| {
-                        displays
-                            .iter()
-                            .any(|d| crate::usb_display::is_this_usb_display(&d.name()))
-                    })
-                    .unwrap_or(false);
-                if crate::usb_display::is_usb_display_active() && has_virtual && t.display == 0 {
-                    log::info!("USB secondary display already active and present in displays, ignoring duplicate plug-in request");
-                } else {
+                let mut plugged = false;
+                if virtual_display_manager::is_vdd_available() {
+                    log::info!("Plugging in virtual display via VDD");
+                    if let Ok(_) = crate::usb_display::plug_in_usb_display(0, 0) {
+                        plugged = true;
+                    }
+                }
+                if !plugged {
                     if let Err(e) = virtual_display_manager::plug_in_monitor(t.display as _, Vec::new())
                     {
                         log::error!("Failed to plug in virtual display: {}", e);
@@ -4290,17 +4310,23 @@ impl Connection {
                             e
                         )))
                         .await;
+                        return;
                     }
+                }
+                crate::server::display_service::check_displays_changed().ok();
+                if let Some(msg) = crate::server::display_service::check_get_displays_changed_msg() {
+                    self.send(msg).await;
                 }
             }
         } else {
-            if let Err(e) = virtual_display_manager::plug_out_monitor(t.display, false, true) {
-                log::error!("Failed to plug out virtual display {}: {}", t.display, e);
-                self.send(make_msg(format!(
-                    "Failed to plug out virtual displays: {}",
-                    e
-                )))
-                .await;
+            if virtual_display_manager::is_vdd_available() && crate::usb_display::is_usb_display_active() {
+                crate::usb_display::plug_out_usb_display().ok();
+            } else {
+                virtual_display_manager::plug_out_monitor(t.display, false, true).ok();
+            }
+            crate::server::display_service::check_displays_changed().ok();
+            if let Some(msg) = crate::server::display_service::check_get_displays_changed_msg() {
+                self.send(msg).await;
             }
         }
     }
@@ -4335,7 +4361,12 @@ impl Connection {
             } else {
                 (0, 0)
             };
-            self.select_app_window(hwnd, target_w, target_h).await;
+            let (client_w, client_h) = if parts.len() >= 6 {
+                (parts[4].parse::<i32>().unwrap_or(0), parts[5].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            self.select_app_window(hwnd, target_w, target_h, client_w, client_h).await;
             return;
         }
         if t.impl_key.starts_with("app_window:resize:") {

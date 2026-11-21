@@ -5247,6 +5247,12 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         proc_name = class_name;
     }
 
+    let proc_lower = proc_name.to_lowercase();
+    let title_lower = title.to_lowercase();
+    if proc_lower.contains("rustdesk") || title_lower.contains("rustdesk") {
+        return TRUE;
+    }
+
     let icon = get_window_icon_base64(hwnd, &full_path);
 
     list.push(AppWindowInfo {

@@ -39,6 +39,9 @@ pub fn is_virtual_display_supported() -> bool {
 pub fn is_virtual_display(name: &str) -> bool {
     #[cfg(target_os = "windows")]
     {
+        if is_vdd_display(name) {
+            return true;
+        }
         match IDD_IMPL {
             IDD_IMPL_RUSTDESK => rustdesk_idd::is_virtual_display(name),
             IDD_IMPL_AMYUNI => amyuni_idd::is_my_display(name),
@@ -63,12 +66,25 @@ pub fn is_vdd_display(_name: &str) -> bool {
     false
 }
 
+#[cfg(target_os = "windows")]
+pub fn is_vdd_available() -> bool {
+    find_vdd_display().is_some()
+        || windows::find_any_vdd_device_name().is_some()
+        || crate::usb_display::get_vdd_settings_path().exists()
+        || std::path::Path::new(r"\\.\pipe\MTTVirtualDisplayPipe").exists()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_vdd_available() -> bool {
+    false
+}
+
 /// Whether `name` is any virtual/IDD monitor, including third-party drivers
 /// that RustDesk does not manage. Used where a virtual monitor must not be
 /// mistaken for a physical one (e.g. rejecting a resolution change).
 #[cfg(target_os = "windows")]
 pub fn is_any_virtual_display(name: &str) -> bool {
-    if is_virtual_display(name) {
+    if is_virtual_display(name) || is_vdd_display(name) {
         return true;
     }
     windows::device_string_matches_any(name, &["virtual", "idd", "mttvdd"])
@@ -146,7 +162,20 @@ pub fn get_platform_additions() -> serde_json::Map<String, serde_json::Value> {
     if !crate::platform::windows::is_self_service_running() {
         return map;
     }
+    #[cfg(target_os = "windows")]
+    if is_vdd_available() {
+        map.insert("vdd_supported".into(), serde_json::json!(true));
+        if hbb_common::config::Config::get_option("usb-display-driver") == "vdd" {
+            map.insert("idd_impl".into(), serde_json::json!("vdd_idd"));
+        } else {
+            map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+        }
+    } else {
+        map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+    }
+    #[cfg(not(target_os = "windows"))]
     map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+
     if let Some(vdd_name) = find_vdd_display() {
         map.insert("vdd_display_name".into(), serde_json::json!(vdd_name));
     }
@@ -173,6 +202,13 @@ pub fn get_platform_additions() -> serde_json::Map<String, serde_json::Value> {
 
 #[inline]
 pub fn plug_in_monitor(idx: u32, modes: Vec<virtual_display::MonitorMode>) -> ResultType<()> {
+    #[cfg(target_os = "windows")]
+    if is_vdd_available() && (hbb_common::config::Config::get_option("usb-display-driver") == "vdd" || IDD_IMPL != IDD_IMPL_RUSTDESK) {
+        let (w, h) = modes.first().map(|m| (m.width, m.height)).unwrap_or((0, 0));
+        if crate::usb_display::plug_in_usb_display(w, h).is_ok() {
+            return Ok(());
+        }
+    }
     match IDD_IMPL {
         IDD_IMPL_RUSTDESK => rustdesk_idd::plug_in_index_modes(idx, modes),
         IDD_IMPL_AMYUNI => amyuni_idd::plug_in_monitor(),
@@ -181,6 +217,12 @@ pub fn plug_in_monitor(idx: u32, modes: Vec<virtual_display::MonitorMode>) -> Re
 }
 
 pub fn plug_out_monitor(index: i32, force_all: bool, force_one: bool) -> ResultType<()> {
+    #[cfg(target_os = "windows")]
+    if is_vdd_available() && crate::usb_display::is_usb_display_active() {
+        if crate::usb_display::plug_out_usb_display().is_ok() {
+            return Ok(());
+        }
+    }
     match IDD_IMPL {
         IDD_IMPL_RUSTDESK => {
             let indices = if index == IDD_PLUG_OUT_ALL_INDEX {
