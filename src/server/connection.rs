@@ -4055,11 +4055,13 @@ impl Connection {
     async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32) {
         log::info!("select_app_window: {} (target_size: {}x{})", hwnd, target_w, target_h);
         crate::server::video_service::set_selected_window(hwnd);
+        #[allow(unused_mut)]
+        let mut switch_needed = false;
         if hwnd != 0 {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
             {
-                let (switch_needed, target_idx, rect_info) = {
+                let (sw_needed, target_idx, rect_info) = {
                     if let Ok(displays) = crate::server::display_service::try_get_displays() {
                         let v_display_idx = displays.iter().position(|d| {
                             crate::virtual_display_manager::is_vdd_display(&d.name())
@@ -4067,13 +4069,14 @@ impl Connection {
                                 || crate::usb_display::is_this_usb_display(&d.name())
                         });
                         let target_idx = v_display_idx.unwrap_or(self.display_idx);
-                        let switch_needed = v_display_idx.is_some() && self.display_idx != target_idx;
+                        let sw_needed = v_display_idx.is_some() && self.display_idx != target_idx;
                         let rect_info = displays.get(target_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
-                        (switch_needed, target_idx, rect_info)
+                        (sw_needed, target_idx, rect_info)
                     } else {
                         (false, self.display_idx, None)
                     }
                 };
+                switch_needed = sw_needed;
 
                 if switch_needed {
                     log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
