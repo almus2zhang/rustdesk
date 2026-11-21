@@ -94,6 +94,7 @@ pub fn get_display_driver_string(name: &str) -> Option<String> {
     }
 }
 
+#[cfg(target_os = "windows")]
 pub fn find_vdd_display() -> Option<String> {
     if let Ok(displays) = crate::server::display_service::try_get_displays() {
         if let Some(d) = displays.iter().find(|d| is_vdd_display(&d.name())) {
@@ -105,6 +106,16 @@ pub fn find_vdd_display() -> Option<String> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn find_vdd_display() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+pub fn find_any_vdd_device_name() -> Option<String> {
+    windows::find_any_vdd_device_name()
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn find_any_vdd_device_name() -> Option<String> {
     None
 }
 
