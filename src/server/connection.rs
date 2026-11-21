@@ -4082,7 +4082,8 @@ impl Connection {
                             );
                         }
                     } else if target_w > 0 && target_h > 0 {
-                        crate::platform::resize_app_window(hwnd, target_w, target_h);
+                        let (ox, oy) = d.origin();
+                        crate::platform::move_window_to_rect_and_size(hwnd, ox, oy, target_w, target_h);
                     }
                 }
             }

@@ -2278,8 +2278,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 'N';
                             final modeStr = directMode ? 'direct' : 'crop';
 
+                            final itemW = int.tryParse(
+                                    item['width']?.toString() ?? '0') ??
+                                0;
                             final dims = gFFI.canvasModel
-                                .calculateRemoteWindowTargetSize();
+                                .calculateRemoteWindowTargetSize(
+                                    knownWindowW: itemW);
                             final targetW = dims['targetW'] ?? 1000;
                             final targetH = dims['targetH'] ?? 600;
 
@@ -2957,7 +2961,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           await cm.updateViewStyle(force: true);
 
                           final dims = cm.calculateRemoteWindowTargetSize(
-                              phoneWOverride: tw, phoneHOverride: th);
+                              phoneWOverride: tw,
+                              phoneHOverride: th,
+                              knownWindowW: cm.imageModel.image?.width);
                           final winW = dims['targetW'];
                           final winH = dims['targetH'];
 

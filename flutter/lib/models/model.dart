@@ -776,8 +776,10 @@ class FfiModel with ChangeNotifier {
                                   .currentSelectedAppName = name;
                               parent.target?.canvasModel.loadAppCrop(name);
 
+                              final itemW = int.tryParse(w) ?? 0;
                               final dims = parent.target?.canvasModel
-                                  .calculateRemoteWindowTargetSize();
+                                  .calculateRemoteWindowTargetSize(
+                                      knownWindowW: itemW);
                               final targetW = dims?['targetW'] ?? 1000;
                               final targetH = dims?['targetH'] ?? 600;
 
@@ -2301,9 +2303,12 @@ class ImageModel with ChangeNotifier {
     _image?.dispose();
     _image = image;
     if (image != null) {
-      if (parent.target?.canvasModel.isSingleAppMode == true &&
-          (oldW != image.width || oldH != image.height)) {
-        parent.target?.canvasModel.updateViewStyle(force: true);
+      if (parent.target?.canvasModel.isSingleAppMode == true) {
+        if (oldW != image.width || oldH != image.height) {
+          parent.target?.canvasModel.updateViewStyle(force: true);
+        }
+        parent.target?.canvasModel
+            .autoAdjustHeightIfUnderfilled(image.width, image.height);
       }
       notifyListeners();
     }
@@ -2779,6 +2784,17 @@ class CanvasModel with ChangeNotifier {
   int appCropTop = 0;
   int appCropRight = 0;
   int appCropBottom = 0;
+
+  int _lastCheckedW = 0;
+  int _lastCheckedH = 0;
+  int _lastSyncedTargetH = 0;
+
+  void resetSyncState() {
+    _lastCheckedW = 0;
+    _lastCheckedH = 0;
+    _lastSyncedTargetH = 0;
+  }
+
   double get singleAppDockHeight {
     final dpr =
         ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
@@ -2811,6 +2827,7 @@ class CanvasModel with ChangeNotifier {
     int? customCropT,
     int? customCropR,
     int? customCropB,
+    int? knownWindowW,
   }) {
     double pixelRatio = ui.window.devicePixelRatio;
     double screenW = ui.window.physicalSize.width / pixelRatio;
@@ -2854,9 +2871,21 @@ class CanvasModel with ChangeNotifier {
     final cB = customCropB ?? appCropBottom;
 
     // 裁剪补边：裁切多少，远端窗口尺寸就增加多少！
-    // 例如左裁32，远端窗口变为 632 + 32 = 664，使裁剪后仍有632像素填满手机全宽，右侧绝不留黑
     int targetW = baseW + cL + cR;
     int targetH = baseH + cT + cB;
+
+    // 如果已知窗口实际宽度（或者窗口最小宽度限制比基准宽度还要宽）：
+    // 例如微信强制最小宽度为 680px。为了在手机端横向满屏，手机端缩放倍率会自适应变为 phoneW / (curW - cL - cR)。
+    // 此时为了让纵向也严格等比铺满屏幕（消除底部黑边），远端窗口目标高度必须按屏幕纵横比等比延展：
+    // visibleH = actualVisibleW * (appH / phoneW)
+    if (knownWindowW != null && knownWindowW > 0) {
+      final actualVisibleW = max(baseW, knownWindowW - cL - cR);
+      if (actualVisibleW > baseW) {
+        final proportionalH = (actualVisibleW * appH / phoneW).round();
+        targetH = max(targetH, proportionalH + cT + cB);
+        targetW = max(targetW, knownWindowW);
+      }
+    }
 
     if (targetW % 2 != 0) targetW += 1;
     if (targetH % 2 != 0) targetH += 1;
@@ -2872,6 +2901,46 @@ class CanvasModel with ChangeNotifier {
     };
   }
 
+  void autoAdjustHeightIfUnderfilled(int curW, int curH) {
+    if (!isSingleAppMode || currentHwnd == 0 || curW <= 0 || curH <= 0) return;
+    if (curW == _lastCheckedW && curH == _lastCheckedH) return;
+    _lastCheckedW = curW;
+    _lastCheckedH = curH;
+
+    final dims = calculateRemoteWindowTargetSize();
+    final phoneW = dims['phoneW'] ?? 1264;
+    final phoneH = dims['phoneH'] ?? 2600;
+    final dockPx = dims['dockPx'] ?? 200;
+    final appH = max(100, phoneH - dockPx);
+
+    final cL = appCropLeft;
+    final cT = appCropTop;
+    final cR = appCropRight;
+    final cB = appCropBottom;
+
+    final visibleW = max(1, curW - cL - cR);
+    final visibleH = max(1, curH - cT - cB);
+
+    final renderedH = visibleH * (phoneW / visibleW);
+
+    if (renderedH < appH - 20) {
+      final neededVisibleH = (visibleW * appH / phoneW).round();
+      int neededTargetH = neededVisibleH + cT + cB;
+      if (neededTargetH % 2 != 0) neededTargetH += 1;
+
+      if (_lastSyncedTargetH != neededTargetH) {
+        _lastSyncedTargetH = neededTargetH;
+        debugPrint(
+            'Auto-adjusting app window height: hwnd=$currentHwnd, cur=${curW}x${curH}, neededTargetH=$neededTargetH');
+        bind.sessionPeerOption(
+          sessionId: sessionId,
+          name: 'resize_app_window',
+          value: '$currentHwnd:$curW:$neededTargetH',
+        );
+      }
+    }
+  }
+
   Future<void> syncCurrentAppWindowSize({
     double? scaleOverride,
     int? phoneWOverride,
@@ -2881,9 +2950,12 @@ class CanvasModel with ChangeNotifier {
     int? customCropR,
     int? customCropB,
     int? hwndOverride,
+    int? knownWindowW,
   }) async {
     final hwnd = hwndOverride ?? currentHwnd;
     if (hwnd == 0) return;
+
+    final curImgW = knownWindowW ?? parent.target?.imageModel.image?.width;
 
     final dims = calculateRemoteWindowTargetSize(
       scaleOverride: scaleOverride,
@@ -2893,9 +2965,12 @@ class CanvasModel with ChangeNotifier {
       customCropT: customCropT,
       customCropR: customCropR,
       customCropB: customCropB,
+      knownWindowW: curImgW,
     );
     final targetW = dims['targetW'] ?? 1000;
     final targetH = dims['targetH'] ?? 600;
+
+    _lastSyncedTargetH = targetH;
 
     await bind.sessionPeerOption(
       sessionId: sessionId,
@@ -2905,6 +2980,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   void loadAppCrop(String appName) {
+    resetSyncState();
     currentSelectedAppName = appName;
     if (appName.isEmpty) {
       appCropLeft = 0;
@@ -2931,6 +3007,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   void saveAppCrop(String appName, int l, int t, int r, int b) {
+    resetSyncState();
     appCropLeft = l;
     appCropTop = t;
     appCropRight = r;
