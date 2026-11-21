@@ -4942,60 +4942,91 @@ pub struct AppWindowInfo {
     pub icon: String,
 }
 
+extern "system" {
+    fn PrivateExtractIconsW(
+        szFileName: *const u16,
+        nIconIndex: i32,
+        cxIcon: i32,
+        cyIcon: i32,
+        phicon: *mut HICON,
+        piconid: *mut u32,
+        nIcons: u32,
+        flags: u32,
+    ) -> u32;
+}
+
 unsafe fn get_window_icon_base64(hwnd: HWND, exe_path: &str) -> String {
     let mut hicon: HICON = std::ptr::null_mut();
-    let mut result: usize = 0;
-    if SendMessageTimeoutW(
-        hwnd,
-        WM_GETICON,
-        ICON_SMALL2 as _,
-        0,
-        SMTO_ABORTIFHUNG,
-        50,
-        &mut result as *mut _ as _,
-    ) != 0
-        && result != 0
-    {
-        hicon = result as HICON;
+    let mut need_destroy = false;
+
+    // 1. First priority: Extract high-resolution (96x96) crisp icon directly from the executable
+    if !exe_path.is_empty() {
+        let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut extracted: HICON = std::ptr::null_mut();
+        let mut icon_id: u32 = 0;
+        let count = PrivateExtractIconsW(wide.as_ptr(), 0, 96, 96, &mut extracted, &mut icon_id, 1, 0);
+        if count > 0 && !extracted.is_null() {
+            hicon = extracted;
+            need_destroy = true;
+        }
     }
+
+    // 2. Second priority: Query high-res/standard icon from HWND
     if hicon.is_null() {
+        let mut result: usize = 0;
         if SendMessageTimeoutW(
             hwnd,
             WM_GETICON,
-            ICON_SMALL as _,
+            ICON_BIG as _,
             0,
             SMTO_ABORTIFHUNG,
             50,
             &mut result as *mut _ as _,
-        ) != 0
-            && result != 0
-        {
+        ) != 0 && result != 0 {
             hicon = result as HICON;
         }
     }
-    if hicon.is_null() {
-        hicon = GetClassLongPtrW(hwnd, GCLP_HICONSM) as HICON;
-    }
+
+    // 3. Third priority: Query class icon
     if hicon.is_null() {
         hicon = GetClassLongPtrW(hwnd, GCLP_HICON) as HICON;
     }
 
-    let mut need_destroy = false;
+    // 4. Fourth priority: ExtractIconExW large icon
     if hicon.is_null() && !exe_path.is_empty() {
         let mut h_large: HICON = std::ptr::null_mut();
         let mut h_small: HICON = std::ptr::null_mut();
         let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
         winapi::um::shellapi::ExtractIconExW(wide.as_ptr(), 0, &mut h_large, &mut h_small, 1);
-        if !h_small.is_null() {
-            hicon = h_small;
-            need_destroy = true;
-            if !h_large.is_null() {
-                DestroyIcon(h_large);
-            }
-        } else if !h_large.is_null() {
+        if !h_large.is_null() {
             hicon = h_large;
             need_destroy = true;
+            if !h_small.is_null() {
+                DestroyIcon(h_small);
+            }
+        } else if !h_small.is_null() {
+            hicon = h_small;
+            need_destroy = true;
         }
+    }
+
+    // 5. Fallback: small icon
+    if hicon.is_null() {
+        let mut result: usize = 0;
+        if SendMessageTimeoutW(
+            hwnd,
+            WM_GETICON,
+            ICON_SMALL2 as _,
+            0,
+            SMTO_ABORTIFHUNG,
+            50,
+            &mut result as *mut _ as _,
+        ) != 0 && result != 0 {
+            hicon = result as HICON;
+        }
+    }
+    if hicon.is_null() {
+        hicon = GetClassLongPtrW(hwnd, GCLP_HICONSM) as HICON;
     }
 
     if hicon.is_null() {
@@ -5069,23 +5100,63 @@ unsafe fn get_window_icon_base64(hwnd: HWND, exe_path: &str) -> String {
                     winapi::um::wingdi::DIB_RGB_COLORS,
                 ) != 0
                 {
-                    let file_size = 54 + buf_size as u32;
-                    let mut bmp_data = Vec::with_capacity(file_size as usize);
-                    bmp_data.extend_from_slice(b"BM");
-                    bmp_data.extend_from_slice(&file_size.to_le_bytes());
-                    bmp_data.extend_from_slice(&0u32.to_le_bytes());
-                    bmp_data.extend_from_slice(&54u32.to_le_bytes());
+                    // Check if alpha channel has any non-zero bytes
+                    let mut has_alpha = false;
+                    for i in 0..(width as usize * height as usize) {
+                        if pixels[i * 4 + 3] > 0 {
+                            has_alpha = true;
+                            break;
+                        }
+                    }
+                    if !has_alpha {
+                        for i in 0..(width as usize * height as usize) {
+                            pixels[i * 4 + 3] = 255;
+                        }
+                    }
 
-                    let mut hdr_bytes = [0u8; 40];
-                    std::ptr::copy_nonoverlapping(
-                        &bi.bmiHeader as *const _ as *const u8,
-                        hdr_bytes.as_mut_ptr(),
-                        40,
-                    );
-                    bmp_data.extend_from_slice(&hdr_bytes);
-                    bmp_data.extend_from_slice(&pixels);
+                    // Convert bottom-up BGRA DIB to top-down RGBA for PNG
+                    let w = width as usize;
+                    let h = height as usize;
+                    let mut rgba = vec![0u8; buf_size];
+                    for y in 0..h {
+                        let src_row = (h - 1 - y) * w * 4;
+                        let dst_row = y * w * 4;
+                        for x in 0..w {
+                            let src_idx = src_row + x * 4;
+                            let dst_idx = dst_row + x * 4;
+                            rgba[dst_idx + 0] = pixels[src_idx + 2]; // R
+                            rgba[dst_idx + 1] = pixels[src_idx + 1]; // G
+                            rgba[dst_idx + 2] = pixels[src_idx + 0]; // B
+                            rgba[dst_idx + 3] = pixels[src_idx + 3]; // A
+                        }
+                    }
 
-                    base64_str = hbb_common::base64::encode(&bmp_data);
+                    if let Some(img) = image::RgbaImage::from_raw(width as u32, height as u32, rgba) {
+                        let mut png_data = Vec::new();
+                        if image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png_data), image::ImageOutputFormat::Png).is_ok() {
+                            base64_str = hbb_common::base64::encode(&png_data);
+                        }
+                    }
+
+                    if base64_str.is_empty() {
+                        let file_size = 54 + buf_size as u32;
+                        let mut bmp_data = Vec::with_capacity(file_size as usize);
+                        bmp_data.extend_from_slice(b"BM");
+                        bmp_data.extend_from_slice(&file_size.to_le_bytes());
+                        bmp_data.extend_from_slice(&0u32.to_le_bytes());
+                        bmp_data.extend_from_slice(&54u32.to_le_bytes());
+
+                        let mut hdr_bytes = [0u8; 40];
+                        std::ptr::copy_nonoverlapping(
+                            &bi.bmiHeader as *const _ as *const u8,
+                            hdr_bytes.as_mut_ptr(),
+                            40,
+                        );
+                        bmp_data.extend_from_slice(&hdr_bytes);
+                        bmp_data.extend_from_slice(&pixels);
+
+                        base64_str = hbb_common::base64::encode(&bmp_data);
+                    }
                 }
                 DeleteDC(mem_dc);
                 ReleaseDC(std::ptr::null_mut(), hdc);

@@ -2033,6 +2033,9 @@ class FfiModel with ChangeNotifier {
         _pendingFollowDisplay = targetIdx;
         return;
       }
+      if (_pi.currentDisplay == targetIdx) {
+        return;
+      }
       _pendingFollowDisplay = null;
       _pi.currentDisplay = targetIdx;
       try {
@@ -2040,11 +2043,6 @@ class FfiModel with ChangeNotifier {
       } catch (e) {
         //
       }
-      bind.sessionSwitchDisplay(
-        isDesktop: isDesktop,
-        sessionId: sessionId,
-        value: Int32List.fromList([_pi.currentDisplay]),
-      );
     }
     notifyListeners();
   }
@@ -3390,7 +3388,7 @@ class CanvasModel with ChangeNotifier {
     }
   }
 
-  void pushCanvasAboveKeyboard(double keyboardHeight) {
+  void pushCanvasAboveKeyboard(double keyboardHeight, {bool alignLeft = true}) {
     if (keyboardHeight <= 0) return;
     saveMobileOffsetBeforeSoftKeyboard();
 
@@ -3403,14 +3401,15 @@ class CanvasModel with ChangeNotifier {
     final s = _scale > 0 ? _scale : 1.0;
     final visibleBottom = (totalH - appCropBottom) * s;
 
-    // 将底端（Windows任务栏与开始菜单所在区域）推到软键盘顶端正上方，留 6px 间隙
-    final targetY = keyboardTop - 6.0 - visibleBottom;
+    // 将底端（Windows任务栏与开始菜单所在区域）推到软键盘顶端正上方，留 4px 间隙
+    final targetY = keyboardTop - 4.0 - visibleBottom;
 
-    if (targetY < _y) {
-      _y = targetY;
-      isMobileCanvasChanged = true;
-      notifyListeners();
+    _y = targetY;
+    if (alignLeft) {
+      _x = 0.0; // 调整在最左下角：横向紧贴屏幕最左侧（完全展示开始菜单图标与搜索框）
     }
+    isMobileCanvasChanged = true;
+    notifyListeners();
   }
 
   void adjustForKeyboardAboveCursor(
@@ -3450,7 +3449,8 @@ class CanvasModel with ChangeNotifier {
     }
     _timerMobileRestoreCanvasOffset = Timer(Duration(milliseconds: 100), () {
       updateSize();
-      // 只有纵向位置回到弹出之前，横向不动（键盘不会造成横向变化，保留用户主动挪动后的横向位置）
+      // 恢复软键盘弹出前的横向与纵向偏移（恢复单程序裁剪的居中/左偏移）
+      _x = targetOffset.dx;
       _y = targetOffset.dy;
       _offsetBeforeMobileSoftKeyboard = null;
       _scaleBeforeMobileSoftKeyboard = null;

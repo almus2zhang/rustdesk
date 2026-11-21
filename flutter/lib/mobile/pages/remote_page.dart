@@ -1025,7 +1025,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         kbHeight = media.size.height * 0.38;
       }
       if (kbHeight > 50) {
-        gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight);
+        gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight, alignLeft: true);
       }
     }
 
@@ -2319,27 +2319,31 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         if (iconBase64.isNotEmpty) {
                           try {
                             final bytes = base64Decode(iconBase64);
-                            appIconWidget = Image.memory(
-                              bytes,
-                              width: 24,
-                              height: 24,
-                              filterQuality: FilterQuality.medium,
-                              errorBuilder: (ctx, err, stack) => Icon(iconData,
-                                  color: isSelected
-                                      ? Colors.cyanAccent
-                                      : iconColor,
-                                  size: 22),
+                            appIconWidget = ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Image.memory(
+                                bytes,
+                                width: 30,
+                                height: 30,
+                                fit: BoxFit.contain,
+                                filterQuality: FilterQuality.high,
+                                errorBuilder: (ctx, err, stack) => Icon(iconData,
+                                    color: isSelected
+                                        ? Colors.cyanAccent
+                                        : iconColor,
+                                    size: 24),
+                              ),
                             );
                           } catch (_) {
                             appIconWidget = Icon(iconData,
                                 color:
                                     isSelected ? Colors.cyanAccent : iconColor,
-                                size: 22);
+                                size: 24);
                           }
                         } else {
                           appIconWidget = Icon(iconData,
                               color: isSelected ? Colors.cyanAccent : iconColor,
-                              size: 22);
+                              size: 24);
                         }
 
                         return Tooltip(
@@ -2348,7 +2352,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               : displayName,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () async {
+                            onTap: () {
+                              if (gFFI.canvasModel.currentSelectedHwnd == hwnd) {
+                                return;
+                              }
                               gFFI.canvasModel.currentSelectedHwnd = hwnd;
                               gFFI.canvasModel.currentSelectedAppName = name;
                               gFFI.canvasModel.loadAppCrop(name);
@@ -2363,27 +2370,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               final targetW = dims['targetW'] ?? 700;
                               final targetH = dims['targetH'] ?? 1300;
 
-                              await bind.sessionPeerOption(
-                                sessionId: gFFI.sessionId,
-                                name: 'select_window',
-                                value: '$hwnd:$modeStr:$targetW:$targetH',
-                              );
-                              await bind.sessionPeerOption(
-                                sessionId: gFFI.sessionId,
-                                name: 'resize_app_window',
-                                value: '$hwnd:$targetW:$targetH',
-                              );
                               gFFI.ffiModel.pi
                                   .platformAdditions['selected_window'] = hwnd;
                               gFFI.ffiModel.touchMode = true;
                               gFFI.canvasModel.isSingleAppMode = true;
-                              await bind.sessionPeerOption(
+
+                              bind.sessionPeerOption(
+                                sessionId: gFFI.sessionId,
+                                name: 'select_window',
+                                value: '$hwnd:$modeStr:$targetW:$targetH',
+                              );
+                              bind.sessionPeerOption(
                                 sessionId: gFFI.sessionId,
                                 name: 'is_single_app_mode',
                                 value: 'Y',
                               );
-                              await gFFI.canvasModel
-                                  .updateViewStyle(force: true);
+                              gFFI.canvasModel.updateViewStyle(force: true);
                               BotToast.showText(
                                 text: localeName.startsWith('zh')
                                     ? '已切至: $displayName (${targetW}x$targetH)'
@@ -2392,21 +2394,36 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              width: 42,
-                              height: 42,
+                              width: 44,
+                              height: 44,
                               margin: const EdgeInsets.symmetric(
-                                  horizontal: 3, vertical: 4),
+                                  horizontal: 4, vertical: 3),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0x3300E5FF)
-                                    : const Color(0x18FFFFFF),
-                                borderRadius: BorderRadius.circular(10),
+                                    ? const Color(0x3D00E5FF)
+                                    : const Color(0x1FFFFFFF),
+                                borderRadius: BorderRadius.circular(11),
                                 border: Border.all(
                                   color: isSelected
                                       ? Colors.cyanAccent
-                                      : const Color(0x22FFFFFF),
-                                  width: isSelected ? 1.5 : 0.8,
+                                      : const Color(0x33FFFFFF),
+                                  width: isSelected ? 1.6 : 0.8,
                                 ),
+                                boxShadow: isSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: Colors.cyanAccent.withOpacity(0.35),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        )
+                                      ]
+                                    : [
+                                        const BoxShadow(
+                                          color: Colors.black26,
+                                          blurRadius: 3,
+                                          offset: Offset(0, 1),
+                                        )
+                                      ],
                               ),
                               child: Stack(
                                 alignment: Alignment.center,
@@ -2416,8 +2433,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     Positioned(
                                       bottom: 2,
                                       child: Container(
-                                        width: 4,
-                                        height: 4,
+                                        width: 5,
+                                        height: 5,
                                         decoration: const BoxDecoration(
                                           color: Colors.cyanAccent,
                                           shape: BoxShape.circle,

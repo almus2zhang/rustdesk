@@ -4062,7 +4062,8 @@ impl Connection {
                 let (switch_needed, target_idx, rect_info) = {
                     if let Ok(displays) = crate::server::display_service::try_get_displays() {
                         let v_display_idx = displays.iter().position(|d| {
-                            crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                            crate::virtual_display_manager::is_vdd_display(&d.name())
+                                || crate::virtual_display_manager::is_any_virtual_display(&d.name())
                                 || crate::usb_display::is_this_usb_display(&d.name())
                         });
                         let target_idx = v_display_idx.unwrap_or(self.display_idx);
@@ -4097,17 +4098,19 @@ impl Connection {
                 }
             }
         }
-        if let Some(msg_out) =
-            video_service::make_display_changed_msg(self.display_idx, None, self.video_source())
-        {
-            self.send(msg_out).await;
+        if switch_needed || crate::server::video_service::get_direct_window_capture() {
+            if let Some(msg_out) =
+                video_service::make_display_changed_msg(self.display_idx, None, self.video_source())
+            {
+                self.send(msg_out).await;
+            }
+            log::info!(
+                "[PERF_REFRESH] source=select_app_window display={} conn={}",
+                self.display_idx,
+                self.inner.id
+            );
+            self.refresh_video_display(Some(self.display_idx));
         }
-        log::info!(
-            "[PERF_REFRESH] source=select_app_window display={} conn={}",
-            self.display_idx,
-            self.inner.id
-        );
-        self.refresh_video_display(Some(self.display_idx));
     }
 
     async fn handle_switch_display(&mut self, s: SwitchDisplay) {
@@ -4395,11 +4398,14 @@ impl Connection {
                             let displays = crate::server::display_service::try_get_displays().unwrap_or_default();
                             displays
                                 .iter()
-                                .position(|d| crate::usb_display::is_this_usb_display(&d.name()))
+                                .position(|d| {
+                                    crate::virtual_display_manager::is_vdd_display(&d.name())
+                                })
                                 .or_else(|| {
-                                    displays.iter().position(|d| {
-                                        crate::virtual_display_manager::is_vdd_display(&d.name())
-                                    })
+                                    displays.iter().position(|d| crate::usb_display::is_this_usb_display(&d.name()))
+                                })
+                                .or_else(|| {
+                                    displays.iter().position(|d| crate::virtual_display_manager::is_any_virtual_display(&d.name()))
                                 })
                                 .unwrap_or(displays.len().saturating_sub(1))
                         };

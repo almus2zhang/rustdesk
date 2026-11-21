@@ -371,12 +371,16 @@ fn plug_in_vdd_display(name_opt: Option<&str>, width: u32, height: u32) -> Resul
         None => {
             if let Some(existing) = virtual_display_manager::find_vdd_display() {
                 existing
+            } else if let Some(vdd_dev) = virtual_display_manager::find_any_vdd_device_name() {
+                log::info!("Found unattached VDD device from display enumeration: {}", vdd_dev);
+                vdd_dev
             } else {
                 ensure_vdd_resolution(width, height).ok();
                 let mut found = None;
                 for _ in 0..15 {
                     std::thread::sleep(Duration::from_millis(100));
-                    found = virtual_display_manager::find_vdd_display();
+                    found = virtual_display_manager::find_vdd_display()
+                        .or_else(|| virtual_display_manager::find_any_vdd_device_name());
                     if found.is_some() {
                         break;
                     }
@@ -463,6 +467,7 @@ pub fn plug_in_usb_display(width: u32, height: u32) -> ResultType<u32> {
             if driver == SecondaryDriver::Vdd
                 || get_vdd_settings_path().exists()
                 || std::path::Path::new(r"\\.\pipe\MTTVirtualDisplayPipe").exists()
+                || virtual_display_manager::find_any_vdd_device_name().is_some()
             {
                 if let Ok(idx) = plug_in_vdd_display(None, width, height) {
                     return Ok(idx);
