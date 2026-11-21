@@ -2380,10 +2380,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               final targetW = dims['targetW'] ?? 700;
                               final targetH = dims['targetH'] ?? 1300;
 
-                              int phoneW = ui.window.physicalSize.width.round();
-                              int phoneH = ui.window.physicalSize.height.round();
-                              if (phoneW <= 0) phoneW = 1260;
-                              if (phoneH <= 0) phoneH = 2800;
+                              int phoneW = 1260;
+                              int phoneH = 2800;
+                              if (WidgetsBinding.instance.platformDispatcher.views.isNotEmpty) {
+                                final view = WidgetsBinding.instance.platformDispatcher.views.first;
+                                phoneW = view.physicalSize.width.round();
+                                phoneH = view.physicalSize.height.round();
+                              }
 
                               gFFI.ffiModel.pi
                                   .platformAdditions['selected_window'] = hwnd;

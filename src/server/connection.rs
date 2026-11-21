@@ -4093,9 +4093,9 @@ impl Connection {
                     if crate::virtual_display_manager::is_any_virtual_display(&dev_name) || crate::usb_display::is_this_usb_display(&dev_name) {
                         if let Some((best_w, best_h)) = crate::usb_display::closest_resolution(&dev_name, req_w, req_h) {
                             if let Ok(cur_res) = crate::platform::windows::current_resolution(&dev_name) {
-                                if cur_res.width != best_w as u32 || cur_res.height != best_h as u32 {
+                                if cur_res.width != best_w as i32 || cur_res.height != best_h as i32 {
                                     log::info!("Adjusting virtual display {} to closest resolution {}x{} (was {}x{})", dev_name, best_w, best_h, cur_res.width, cur_res.height);
-                                    crate::platform::windows::change_resolution(&dev_name, best_w, best_h).ok();
+                                    crate::platform::change_resolution(&dev_name, best_w, best_h).ok();
                                     std::thread::sleep(std::time::Duration::from_millis(100));
                                     displays = crate::server::display_service::try_get_displays().unwrap_or_default();
                                 }
