@@ -4064,48 +4064,51 @@ impl Connection {
                 let req_w = if client_w > 0 { client_w as u32 } else { 1260 };
                 let req_h = if client_h > 0 { client_h as u32 } else { 2800 };
 
-                let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
-                let mut v_display_idx = displays.iter().position(|d| {
-                    crate::virtual_display_manager::is_vdd_display(&d.name())
-                        || crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                        || crate::usb_display::is_this_usb_display(&d.name())
-                });
+                let (target_idx, switch_needed_here, rect_info) = {
+                    let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                    let mut v_display_idx = displays.iter().position(|d| {
+                        crate::virtual_display_manager::is_vdd_display(&d.name())
+                            || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                            || crate::usb_display::is_this_usb_display(&d.name())
+                    });
 
-                // 没有虚拟屏的话就加一个vdd虚拟屏
-                if v_display_idx.is_none() {
-                    log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
-                    if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
-                        crate::server::display_service::check_displays_changed().ok();
-                        displays = crate::server::display_service::try_get_displays().unwrap_or_default();
-                        v_display_idx = displays.iter().position(|d| {
-                            crate::virtual_display_manager::is_vdd_display(&d.name())
-                                || crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                                || crate::usb_display::is_this_usb_display(&d.name())
-                        });
+                    // 没有虚拟屏的话就加一个vdd虚拟屏
+                    if v_display_idx.is_none() {
+                        log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
+                        if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
+                            crate::server::display_service::check_displays_changed().ok();
+                            displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                            v_display_idx = displays.iter().position(|d| {
+                                crate::virtual_display_manager::is_vdd_display(&d.name())
+                                    || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                                    || crate::usb_display::is_this_usb_display(&d.name())
+                            });
+                        }
                     }
-                }
 
-                let target_idx = v_display_idx.unwrap_or(self.display_idx);
+                    let t_idx = v_display_idx.unwrap_or(self.display_idx);
 
-                // 分辨率按照本机分辨率最接近的来
-                if let Some(d) = displays.get(target_idx) {
-                    let dev_name = d.name();
-                    if crate::virtual_display_manager::is_any_virtual_display(&dev_name) || crate::usb_display::is_this_usb_display(&dev_name) {
-                        if let Some((best_w, best_h)) = crate::usb_display::closest_resolution(&dev_name, req_w, req_h) {
-                            if let Ok(cur_res) = crate::platform::windows::current_resolution(&dev_name) {
-                                if cur_res.width != best_w as i32 || cur_res.height != best_h as i32 {
-                                    log::info!("Adjusting virtual display {} to closest resolution {}x{} (was {}x{})", dev_name, best_w, best_h, cur_res.width, cur_res.height);
-                                    crate::platform::change_resolution(&dev_name, best_w, best_h).ok();
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                    displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                    // 分辨率按照本机分辨率最接近的来
+                    if let Some(d) = displays.get(t_idx) {
+                        let dev_name = d.name();
+                        if crate::virtual_display_manager::is_any_virtual_display(&dev_name) || crate::usb_display::is_this_usb_display(&dev_name) {
+                            if let Some((best_w, best_h)) = crate::usb_display::closest_resolution(&dev_name, req_w, req_h) {
+                                if let Ok(cur_res) = crate::platform::windows::current_resolution(&dev_name) {
+                                    if cur_res.width != best_w as i32 || cur_res.height != best_h as i32 {
+                                        log::info!("Adjusting virtual display {} to closest resolution {}x{} (was {}x{})", dev_name, best_w, best_h, cur_res.width, cur_res.height);
+                                        crate::platform::change_resolution(&dev_name, best_w, best_h).ok();
+                                        std::thread::sleep(std::time::Duration::from_millis(100));
+                                        displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                let rect_info = displays.get(target_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
-                switch_needed = v_display_idx.is_some() && self.display_idx != target_idx;
+                    let r_info = displays.get(t_idx).map(|d| (d.origin(), d.width() as i32, d.height() as i32));
+                    (t_idx, v_display_idx.is_some() && self.display_idx != t_idx, r_info)
+                };
+                switch_needed = switch_needed_here;
 
                 if switch_needed {
                     log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
