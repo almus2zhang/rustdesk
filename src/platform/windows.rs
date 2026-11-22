@@ -5215,14 +5215,25 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         return TRUE;
     }
 
-    let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
-    if GetWindowRect(hwnd, &mut rect) == 0 {
+    let ex_style = winapi::um::winuser::GetWindowLongW(hwnd, winapi::um::winuser::GWL_EXSTYLE) as u32;
+    if (ex_style & winapi::um::winuser::WS_EX_TOOLWINDOW != 0) && (ex_style & winapi::um::winuser::WS_EX_APPWINDOW == 0) {
         return TRUE;
     }
-    let width = rect.right - rect.left;
-    let height = rect.bottom - rect.top;
-    if width < 100 || height < 100 {
+    let owner = winapi::um::winuser::GetWindow(hwnd, winapi::um::winuser::GW_OWNER);
+    if !owner.is_null() && (ex_style & winapi::um::winuser::WS_EX_APPWINDOW == 0) {
         return TRUE;
+    }
+
+    let is_iconic = IsIconic(hwnd) != 0;
+    if !is_iconic {
+        let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        if GetWindowRect(hwnd, &mut rect) != 0 {
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+            if width < 100 || height < 100 {
+                return TRUE;
+            }
+        }
     }
 
     let mut proc_name = String::new();

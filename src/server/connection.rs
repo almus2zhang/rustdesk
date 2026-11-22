@@ -4110,15 +4110,15 @@ impl Connection {
                 };
                 switch_needed = switch_needed_here;
 
-                if switch_needed {
+                if switch_needed || self.display_idx != target_idx {
                     log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
                     self.display_idx = target_idx;
-                    let mut misc = Misc::new();
-                    misc.set_follow_current_display(target_idx as i32);
-                    let mut msg = Message::new();
-                    msg.set_misc(misc);
-                    self.send(msg).await;
                 }
+                let mut misc = Misc::new();
+                misc.set_follow_current_display(target_idx as i32);
+                let mut msg = Message::new();
+                msg.set_misc(misc);
+                self.send(msg).await;
 
                 // 点击程序后把程序拉到虚拟屏然后调整窗口大小后显示
                 if let Some(((ox, oy), dw, dh)) = rect_info {

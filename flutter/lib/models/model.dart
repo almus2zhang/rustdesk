@@ -1734,7 +1734,10 @@ class FfiModel with ChangeNotifier {
         }
       }
       final selWin = _pi.platformAdditions['selected_window'];
-      if (selWin != null && selWin != 0) {
+      final isSecondary = bind.mainGetPeerOptionSync(id: peerId, key: 'is_secondary_display') == 'Y';
+      if (isSecondary) {
+        parent.target?.canvasModel.isSingleAppMode = false;
+      } else if (selWin != null && selWin != 0) {
         parent.target?.canvasModel.isSingleAppMode = true;
       } else if (_pi.platformAdditions.containsKey('selected_window')) {
         parent.target?.canvasModel.isSingleAppMode = false;
@@ -1947,16 +1950,21 @@ class FfiModel with ChangeNotifier {
           _pendingFollowDisplay! < _pi.displays.length) {
         final target = _pendingFollowDisplay!;
         _pendingFollowDisplay = null;
-        _pi.currentDisplay = target;
-        try {
-          CurrentDisplayState.find(peerId).value = target;
-        } catch (e) {}
-        bind.sessionSwitchDisplay(
-          isDesktop: isDesktop,
-          sessionId: sessionId,
-          value: Int32List.fromList([target]),
-        );
-        updateCurDisplay(sessionId);
+        final ffi = parent.target;
+        if (ffi != null) {
+          openMonitorInTheSameTab(target, ffi, _pi);
+        } else {
+          _pi.currentDisplay = target;
+          try {
+            CurrentDisplayState.find(peerId).value = target;
+          } catch (e) {}
+          bind.sessionSwitchDisplay(
+            isDesktop: isDesktop,
+            sessionId: sessionId,
+            value: Int32List.fromList([target]),
+          );
+          updateCurDisplay(sessionId);
+        }
       } else if (_pi.currentDisplay == kAllDisplayValue) {
         updateCurDisplay(sessionId);
         // to-do: What if the displays are changed?
@@ -2056,11 +2064,16 @@ class FfiModel with ChangeNotifier {
         return;
       }
       _pendingFollowDisplay = null;
-      _pi.currentDisplay = targetIdx;
-      try {
-        CurrentDisplayState.find(peerId).value = _pi.currentDisplay;
-      } catch (e) {
-        //
+      final ffi = parent.target;
+      if (ffi != null) {
+        openMonitorInTheSameTab(targetIdx, ffi, _pi);
+      } else {
+        _pi.currentDisplay = targetIdx;
+        try {
+          CurrentDisplayState.find(peerId).value = _pi.currentDisplay;
+        } catch (e) {
+          //
+        }
       }
     }
     notifyListeners();
@@ -2739,9 +2752,13 @@ class CanvasModel with ChangeNotifier {
       }
     }
     if (isSingleAppMode) {
-      final imgW = parent.target?.imageModel.image?.width ?? displayWidth;
-      final curW = imgW > 0 ? imgW : displayWidth;
-      final visibleW = max(1, curW - appCropLeft - appCropRight);
+      final dims = calculateRemoteWindowTargetSize();
+      final targetW = dims['targetW'] ?? 700;
+      final cL = appCropLeft;
+      final cR = appCropRight;
+      final imgW = parent.target?.imageModel.image?.width ?? 0;
+      final curW = (imgW > 0 && (imgW - targetW).abs() <= 10) ? imgW : targetW;
+      final visibleW = max(1, curW - cL - cR);
       if (size.width > 0 && visibleW > 0) {
         _scale = size.width / visibleW;
       }
@@ -2837,8 +2854,9 @@ class CanvasModel with ChangeNotifier {
   set singleAppScaleOverride(double val) {
     if (currentSelectedAppName.isNotEmpty) {
       bind.mainSetLocalOption(key: 'single_app_scale_$currentSelectedAppName', value: val.toString());
+    } else {
+      bind.mainSetLocalOption(key: 'single_app_scale', value: val.toString());
     }
-    bind.mainSetLocalOption(key: 'single_app_scale', value: val.toString());
   }
 
   Map<String, int> calculateRemoteWindowTargetSize({
@@ -2900,10 +2918,13 @@ class CanvasModel with ChangeNotifier {
   void autoAdjustHeightIfUnderfilled(int curW, int curH) {
     if (!isSingleAppMode || currentHwnd == 0 || curW <= 0 || curH <= 0) return;
     if (curW == _lastCheckedW && curH == _lastCheckedH) return;
-    _lastCheckedW = curW;
-    _lastCheckedH = curH;
 
     final dims = calculateRemoteWindowTargetSize();
+    final targetW = dims['targetW'] ?? 700;
+    if ((curW - targetW).abs() > 10) return;
+
+    _lastCheckedW = curW;
+    _lastCheckedH = curH;
     final viewW = dims['viewW'] ?? 1260;
     final viewH = dims['viewH'] ?? 2600;
 
@@ -3448,9 +3469,10 @@ class CanvasModel with ChangeNotifier {
 
     final dh = getDisplayHeight().toDouble();
     final s = _scale > 0 ? _scale : 1.0;
+    final adjust = getAdjustY();
     // 强制将远程桌面的最左下角（田字标与任务栏所在区域）推到软键盘正上方
     _x = 0.0;
-    _y = keyboardTop - 4.0 - (dh * s);
+    _y = keyboardTop - 4.0 - adjust - (dh * s);
     isMobileCanvasChanged = true;
     notifyListeners();
   }
@@ -4986,6 +5008,11 @@ class PeerInfo with ChangeNotifier {
       platformAdditions[kPlatformAdditionsRustDeskVirtualDisplays] ?? []);
   int get amyuniVirtualDisplayCount =>
       platformAdditions[kPlatformAdditionsAmyuniVirtualDisplays] ?? 0;
+  int get vddVirtualDisplayCount {
+    final count = platformAdditions['vdd_virtual_displays'];
+    if (count is int) return count;
+    return displays.where((d) => d.isVirtualDisplayResolution).length;
+  }
 
   bool get isSupportMultiDisplay =>
       (isDesktop || isWebDesktop) && isSupportMultiUiSession;

@@ -1025,8 +1025,8 @@ bool showVirtualDisplayMenu(FFI ffi) {
   if (ffi.ffiModel.pi.platform != kPeerPlatformWindows) {
     return false;
   }
-  if (!ffi.ffiModel.pi.isInstalled) {
-    return false;
+  if (ffi.ffiModel.pi.isVddIdd) {
+    return true;
   }
   if (ffi.ffiModel.pi.isRustDeskIdd || ffi.ffiModel.pi.isAmyuniIdd) {
     return true;
@@ -1076,48 +1076,58 @@ List<Widget> getVirtualDisplayMenuChildren(
         )));
     return children;
   }
-  if (pi.isAmyuniIdd) {
-    final count = ffi.ffiModel.pi.amyuniVirtualDisplayCount;
+  if (pi.isVddIdd || pi.isAmyuniIdd) {
     final children = <Widget>[
-      Obx(() => Row(
-            children: [
-              TextButton(
-                onPressed: privacyModeState.isNotEmpty || count == 0
-                    ? null
-                    : () {
-                        bind.sessionToggleVirtualDisplay(
-                            sessionId: ffi.sessionId, index: 0, on: false);
-                        clickCallBack?.call();
-                      },
-                child: Icon(Icons.remove),
-              ),
-              Text(count.toString()),
-              TextButton(
-                onPressed: privacyModeState.isNotEmpty || count == 4
-                    ? null
-                    : () {
-                        bind.sessionToggleVirtualDisplay(
-                            sessionId: ffi.sessionId, index: 0, on: true);
-                        clickCallBack?.call();
-                      },
-                child: Icon(Icons.add),
-              ),
-            ],
-          )),
-      Divider(),
-      Obx(() => MenuButton(
-            onPressed: privacyModeState.isNotEmpty || count == 0
-                ? null
-                : () {
-                    bind.sessionToggleVirtualDisplay(
-                        sessionId: ffi.sessionId,
-                        index: kAllVirtualDisplay,
-                        on: false);
-                    clickCallBack?.call();
-                  },
-            ffi: ffi,
-            child: Text(translate('Plug out all')),
-          )),
+      Obx(() {
+        final count = pi.isVddIdd
+            ? ffi.ffiModel.pi.vddVirtualDisplayCount
+            : ffi.ffiModel.pi.amyuniVirtualDisplayCount;
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton(
+              onPressed: privacyModeState.isNotEmpty || count == 0
+                  ? null
+                  : () {
+                      bind.sessionToggleVirtualDisplay(
+                          sessionId: ffi.sessionId, index: 0, on: false);
+                      clickCallBack?.call();
+                    },
+              child: const Icon(Icons.remove),
+            ),
+            Text(count.toString()),
+            TextButton(
+              onPressed: privacyModeState.isNotEmpty || count >= 4
+                  ? null
+                  : () {
+                      bind.sessionToggleVirtualDisplay(
+                          sessionId: ffi.sessionId, index: 0, on: true);
+                      clickCallBack?.call();
+                    },
+              child: const Icon(Icons.add),
+            ),
+          ],
+        );
+      }),
+      const Divider(),
+      Obx(() {
+        final count = pi.isVddIdd
+            ? ffi.ffiModel.pi.vddVirtualDisplayCount
+            : ffi.ffiModel.pi.amyuniVirtualDisplayCount;
+        return MenuButton(
+          onPressed: privacyModeState.isNotEmpty || count == 0
+              ? null
+              : () {
+                  bind.sessionToggleVirtualDisplay(
+                      sessionId: ffi.sessionId,
+                      index: kAllVirtualDisplay,
+                      on: false);
+                  clickCallBack?.call();
+                },
+          ffi: ffi,
+          child: Text(translate('Plug out all')),
+        );
+      }),
     ];
     return children;
   }

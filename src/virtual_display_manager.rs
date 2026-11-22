@@ -159,44 +159,60 @@ pub fn plug_in_headless() -> ResultType<()> {
 
 pub fn get_platform_additions() -> serde_json::Map<String, serde_json::Value> {
     let mut map = serde_json::Map::new();
-    if !crate::platform::windows::is_self_service_running() {
-        return map;
-    }
     #[cfg(target_os = "windows")]
-    if is_vdd_available() {
-        map.insert("vdd_supported".into(), serde_json::json!(true));
-        if hbb_common::config::Config::get_option("usb-display-driver") == "vdd" {
-            map.insert("idd_impl".into(), serde_json::json!("vdd_idd"));
+    {
+        let vdd_avail = is_vdd_available();
+        let service_running = crate::platform::windows::is_self_service_running();
+        if !vdd_avail && !service_running {
+            return map;
+        }
+        if vdd_avail {
+            map.insert("vdd_supported".into(), serde_json::json!(true));
+            if hbb_common::config::Config::get_option("usb-display-driver") == "vdd"
+                || !service_running
+                || IDD_IMPL != IDD_IMPL_RUSTDESK
+            {
+                map.insert("idd_impl".into(), serde_json::json!("vdd_idd"));
+            } else {
+                map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+            }
+            if let Some(vdd_name) = find_vdd_display() {
+                map.insert("vdd_display_name".into(), serde_json::json!(vdd_name));
+            }
+            let count = if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                displays.iter().filter(|d| is_vdd_display(&d.name())).count()
+            } else {
+                if find_vdd_display().is_some() { 1 } else { 0 }
+            };
+            map.insert("vdd_virtual_displays".into(), serde_json::json!(count));
         } else {
             map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
         }
-    } else {
-        map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
+
+        if service_running {
+            match IDD_IMPL {
+                IDD_IMPL_RUSTDESK => {
+                    let virtual_displays = rustdesk_idd::get_virtual_displays();
+                    if !virtual_displays.is_empty() {
+                        map.insert(
+                            "rustdesk_virtual_displays".into(),
+                            serde_json::json!(virtual_displays),
+                        );
+                    }
+                }
+                IDD_IMPL_AMYUNI => {
+                    let c = amyuni_idd::get_monitor_count();
+                    if c > 0 {
+                        map.insert("amyuni_virtual_displays".into(), serde_json::json!(c));
+                    }
+                }
+                _ => {}
+            }
+        }
     }
     #[cfg(not(target_os = "windows"))]
     map.insert("idd_impl".into(), serde_json::json!(IDD_IMPL));
 
-    if let Some(vdd_name) = find_vdd_display() {
-        map.insert("vdd_display_name".into(), serde_json::json!(vdd_name));
-    }
-    match IDD_IMPL {
-        IDD_IMPL_RUSTDESK => {
-            let virtual_displays = rustdesk_idd::get_virtual_displays();
-            if !virtual_displays.is_empty() {
-                map.insert(
-                    "rustdesk_virtual_displays".into(),
-                    serde_json::json!(virtual_displays),
-                );
-            }
-        }
-        IDD_IMPL_AMYUNI => {
-            let c = amyuni_idd::get_monitor_count();
-            if c > 0 {
-                map.insert("amyuni_virtual_displays".into(), serde_json::json!(c));
-            }
-        }
-        _ => {}
-    }
     map
 }
 

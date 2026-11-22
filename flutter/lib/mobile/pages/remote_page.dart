@@ -471,6 +471,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final FocusNode _physicalFocusNode = FocusNode();
   var _showEdit = false; // use soft keyboard
   bool _isStartMenuPushed = false;
+  int? _preStartMenuDisplay;
   final Map<String, MemoryImage> _appIconMemoryCache = {};
   StreamSubscription? _textCursorSubscription;
   Timer? _textCursorPopupTimer;
@@ -598,7 +599,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
     final savedViewStyle =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'view_style');
-    if (savedViewStyle.isNotEmpty) {
+    if (isSecondary) {
+      gFFI.canvasModel.isSingleAppMode = false;
+      bind.sessionPeerOption(
+          sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
+      bind.sessionSetViewStyle(sessionId: sessionId, value: kRemoteViewStyleAdaptive);
+      gFFI.canvasModel.viewStyle.value = kRemoteViewStyleAdaptive;
+    } else if (savedViewStyle.isNotEmpty) {
       bind.sessionSetViewStyle(sessionId: sessionId, value: savedViewStyle);
     }
 
@@ -802,6 +809,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   void onSoftKeyboardChanged(bool visible) {
     if (!visible) {
       _isStartMenuPushed = false;
+      if (_preStartMenuDisplay != null) {
+        final d = _preStartMenuDisplay!;
+        _preStartMenuDisplay = null;
+        if (d != gFFI.ffiModel.pi.currentDisplay) {
+          openMonitorInTheSameTab(d, gFFI, gFFI.ffiModel.pi);
+        }
+      }
       SystemChrome.setEnabledSystemUIMode(
           isAndroid ? SystemUiMode.immersiveSticky : SystemUiMode.manual,
           overlays: []);
@@ -1078,27 +1092,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     // while displays.length <= _initialDisplayCount.
     // For reused monitors (where count does not increase), the host explicitly
     // sends follow_current_display to select the exact display index.
-    final hasNewDisplay = displays.length > _initialDisplayCount;
-    if (!hasNewDisplay) {
-      return;
+    int targetIndex = -1;
+    for (int i = 0; i < displays.length; i++) {
+      if (displays[i].isVirtualDisplayResolution) {
+        targetIndex = i;
+        break;
+      }
+    }
+    if (targetIndex == -1) {
+      if (displays.length > _initialDisplayCount) {
+        targetIndex = displays.length - 1;
+      } else {
+        return;
+      }
     }
 
     _hasAutoSwitchedDisplay = true;
 
     final saved =
         bind.mainGetPeerOptionSync(id: widget.id, key: 'usb_selected_display');
-    // '0' means the user last stayed on the primary monitor. An empty value
-    // means no choice has been made yet; a secondary-display session then
-    // defaults to the virtual monitor (appended last by Windows).
     final stayOnPrimary = saved == '0';
-    final targetIndex = stayOnPrimary ? 0 : displays.length - 1;
+    final finalIndex = stayOnPrimary ? 0 : targetIndex;
 
-    if (targetIndex != gFFI.ffiModel.pi.currentDisplay) {
-      debugPrint('Restoring remembered display choice: $targetIndex '
-          '(saved "$saved", ${displays.length} displays)');
-      openMonitorInTheSameTab(targetIndex, gFFI, gFFI.ffiModel.pi);
+    if (finalIndex != gFFI.ffiModel.pi.currentDisplay) {
+      debugPrint('Switching to secondary display: $finalIndex (${displays.length} displays)');
+      openMonitorInTheSameTab(finalIndex, gFFI, gFFI.ffiModel.pi);
       BotToast.showText(
-        text: 'Restored remembered display (Screen ${targetIndex + 1})',
+        text: 'Switched to secondary display (Screen ${finalIndex + 1})',
       );
     }
   }
@@ -2276,6 +2296,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? 'Windows 开始菜单 (呼出软键盘)'
                   : 'Start Menu (Open Keyboard)',
               onPressed: () {
+                if (gFFI.ffiModel.pi.currentDisplay != 0) {
+                  _preStartMenuDisplay = gFFI.ffiModel.pi.currentDisplay;
+                  openMonitorInTheSameTab(0, gFFI, gFFI.ffiModel.pi);
+                }
                 gFFI.inputModel.inputKey('Meta', press: true);
                 _isStartMenuPushed = true;
                 openKeyboard();
