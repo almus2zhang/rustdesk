@@ -2301,6 +2301,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   openMonitorInTheSameTab(0, gFFI, gFFI.ffiModel.pi);
                 }
                 gFFI.inputModel.inputKey('Meta', press: true);
+                // Ask the host to drop the single-app window crop and show the
+                // primary display, otherwise the Start menu stays off-screen.
+                bind.sessionPeerOption(
+                  sessionId: gFFI.sessionId,
+                  name: 'open_start_menu',
+                  value: '',
+                );
                 _isStartMenuPushed = true;
                 openKeyboard();
                 _pushCanvasAboveKeyboardWhenVisible();

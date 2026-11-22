@@ -341,6 +341,11 @@ pub struct Connection {
     // the primary monitor even if the peer used a secondary display before.
     is_secondary_session: bool,
     secondary_qos_applied: bool,
+    // True when this single-app-mode session itself plugged in a virtual
+    // display. Only such a session removes it on exit, so an already-present
+    // or mirroring-mode VDD is never torn down by single-app mode.
+    #[cfg(windows)]
+    single_app_vdd_added: bool,
     #[cfg(not(any(target_os = "ios")))]
     pressed_modifiers: HashSet<rdev::Key>,
     #[cfg(target_os = "linux")]
@@ -528,6 +533,8 @@ impl Connection {
             options_in_login: None,
             is_secondary_session: false,
             secondary_qos_applied: false,
+            #[cfg(windows)]
+            single_app_vdd_added: false,
             #[cfg(not(any(target_os = "ios")))]
             pressed_modifiers: Default::default(),
             #[cfg(target_os = "linux")]
@@ -4055,6 +4062,35 @@ impl Connection {
     async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32, client_w: i32, client_h: i32) {
         log::info!("select_app_window: {} (target_size: {}x{}, client_size: {}x{})", hwnd, target_w, target_h, client_w, client_h);
         crate::server::video_service::set_selected_window(hwnd);
+        // Exiting single-app mode (client sends select_window:0). Remove the
+        // virtual display this session added, then fall back to the primary
+        // display so the main screen keeps its original resolution.
+        if hwnd == 0 {
+            #[cfg(windows)]
+            {
+                if self.single_app_vdd_added {
+                    log::info!("Single app mode exit: plugging out the virtual display added by this session");
+                    crate::usb_display::plug_out_usb_display().ok();
+                    crate::server::display_service::check_displays_changed().ok();
+                    self.single_app_vdd_added = false;
+                    if self.display_idx != 0 {
+                        self.display_idx = 0;
+                        let mut misc = Misc::new();
+                        misc.set_follow_current_display(0);
+                        let mut msg = Message::new();
+                        msg.set_misc(misc);
+                        self.send(msg).await;
+                    }
+                }
+            }
+            if let Some(msg_out) =
+                video_service::make_display_changed_msg(self.display_idx, None, self.video_source())
+            {
+                self.send(msg_out).await;
+            }
+            self.refresh_video_display(Some(self.display_idx));
+            return;
+        }
         #[allow(unused_mut)]
         let mut switch_needed = false;
         if hwnd != 0 {
@@ -4072,10 +4108,17 @@ impl Connection {
                             || crate::usb_display::is_this_usb_display(&d.name())
                     });
 
-                    // 没有虚拟屏的话就加一个vdd虚拟屏
+                    // 没有虚拟屏的话就加一个和手机分辨率匹配的 vdd 虚拟屏
                     if v_display_idx.is_none() {
                         log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
+                        // Make sure the phone resolution is a declared VDD mode,
+                        // otherwise closest_resolution() snaps it to another size
+                        // and the window cannot fill the phone exactly.
+                        if crate::virtual_display_manager::is_vdd_available() {
+                            crate::usb_display::ensure_vdd_resolution(req_w, req_h).ok();
+                        }
                         if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
+                            self.single_app_vdd_added = true;
                             crate::server::display_service::check_displays_changed().ok();
                             displays = crate::server::display_service::try_get_displays().unwrap_or_default();
                             v_display_idx = displays.iter().position(|d| {
@@ -4462,6 +4505,34 @@ impl Connection {
                         self.send(msg).await;
                     }
                 }
+            }
+            return;
+        }
+        if t.impl_key == "app_window:start_menu" {
+            #[cfg(windows)]
+            {
+                // The client already injects the Win key to open the Start menu.
+                // Here we only re-route capture: the Start menu opens on the
+                // taskbar monitor (primary), so drop the window crop and show
+                // the primary display instead of the cropped window.
+                log::info!("Single app mode: showing the Start menu on the primary display");
+                crate::server::video_service::set_selected_window(0);
+                if self.display_idx != 0 {
+                    self.display_idx = 0;
+                    let mut misc = Misc::new();
+                    misc.set_follow_current_display(0);
+                    let mut msg = Message::new();
+                    msg.set_misc(misc);
+                    self.send(msg).await;
+                }
+                if let Some(msg_out) = video_service::make_display_changed_msg(
+                    self.display_idx,
+                    None,
+                    self.video_source(),
+                ) {
+                    self.send(msg_out).await;
+                }
+                self.refresh_video_display(Some(self.display_idx));
             }
             return;
         }
@@ -6131,6 +6202,12 @@ impl Drop for Connection {
                 // the monitor (the USB detach poller may already have done so).
                 crate::usb_display::plug_out_usb_display().ok();
             }
+        }
+        // Single-app mode owns the virtual display it plugged in; remove it on
+        // disconnect so it never leaks onto the user's main screen.
+        #[cfg(windows)]
+        if self.single_app_vdd_added && !self.is_secondary_session {
+            crate::usb_display::plug_out_usb_display().ok();
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();

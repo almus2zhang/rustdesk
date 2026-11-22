@@ -455,6 +455,19 @@ impl<T: InvokeUiSession> Session<T> {
         self.send(Data::Message(msg_out));
     }
 
+    /// Ask the remote host to open the Start menu (single-app mode Windows icon).
+    pub fn open_start_menu(&self) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: "app_window:start_menu".to_string(),
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
     pub fn select_app_window(&self, hwnd: u64, direct_mode: bool) {
         self.select_app_window_with_size(hwnd, direct_mode, 0, 0);
     }

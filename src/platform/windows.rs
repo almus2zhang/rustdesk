@@ -5192,14 +5192,11 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         return TRUE;
     }
     let len = GetWindowTextLengthW(hwnd);
-    if len <= 0 {
-        return TRUE;
-    }
-    let mut title_buf = vec![0u16; (len + 1) as usize];
-    GetWindowTextW(hwnd, title_buf.as_mut_ptr(), len + 1);
-    let title = String::from_utf16_lossy(&title_buf[..len as usize]).trim().to_string();
-    if title.is_empty() {
-        return TRUE;
+    let mut title = String::new();
+    if len > 0 {
+        let mut title_buf = vec![0u16; (len + 1) as usize];
+        GetWindowTextW(hwnd, title_buf.as_mut_ptr(), len + 1);
+        title = String::from_utf16_lossy(&title_buf[..len as usize]).trim().to_string();
     }
 
     let mut pid = 0;
@@ -5219,10 +5216,6 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     if (ex_style & winapi::um::winuser::WS_EX_TOOLWINDOW != 0) && (ex_style & winapi::um::winuser::WS_EX_APPWINDOW == 0) {
         return TRUE;
     }
-    let owner = winapi::um::winuser::GetWindow(hwnd, winapi::um::winuser::GW_OWNER);
-    if !owner.is_null() && (ex_style & winapi::um::winuser::WS_EX_APPWINDOW == 0) {
-        return TRUE;
-    }
 
     let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
     let is_iconic = IsIconic(hwnd) != 0;
@@ -5238,6 +5231,17 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
     if !is_iconic && (width < 100 || height < 100) {
+        return TRUE;
+    }
+
+    // Owned windows without WS_EX_APPWINDOW are usually popups/dialogs, but many
+    // real application main windows (WPF/Qt/Java) are owned as well. Keep owned
+    // windows when they are large enough to be a genuine main window.
+    let owner = winapi::um::winuser::GetWindow(hwnd, winapi::um::winuser::GW_OWNER);
+    if !owner.is_null()
+        && (ex_style & winapi::um::winuser::WS_EX_APPWINDOW == 0)
+        && !(width >= 300 && height >= 200)
+    {
         return TRUE;
     }
 
@@ -5261,6 +5265,16 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
     }
     if proc_name.is_empty() {
         proc_name = class_name;
+    }
+    // Real application windows (PWA, DirectX fullscreen, some UWP) often have no
+    // caption. Fall back to the process name for reasonably large windows rather
+    // than dropping them, so the program list is more complete.
+    if title.is_empty() {
+        if is_iconic || (width >= 200 && height >= 200) {
+            title = proc_name.clone();
+        } else {
+            return TRUE;
+        }
     }
 
     let proc_lower = proc_name.to_lowercase();
