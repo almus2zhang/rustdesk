@@ -346,11 +346,10 @@ pub struct Connection {
     // or mirroring-mode VDD is never torn down by single-app mode.
     #[cfg(windows)]
     single_app_vdd_added: bool,
-    // Device name (\\.\DISPLAYn) of the virtual monitor this session attached
-    // for single-app mode. It is detached again on exit so the user's desktop
-    // is never left missing a screen.
+    // Resolution single-app mode changed on the target display, restored when
+    // the mode is left so the host screen does not stay at the phone's size.
     #[cfg(windows)]
-    single_app_vdd_name: Option<String>,
+    single_app_original_resolution: Option<(String, usize, usize)>,
     // Last JSON payload sent for "app_window:query". The client polls the list
     // to pick up newly launched programs, and skipping identical payloads
     // keeps that polling essentially free.
@@ -545,7 +544,7 @@ impl Connection {
             #[cfg(windows)]
             single_app_vdd_added: false,
             #[cfg(windows)]
-            single_app_vdd_name: None,
+            single_app_original_resolution: None,
             last_app_window_list: "".to_owned(),
             #[cfg(not(any(target_os = "ios")))]
             pressed_modifiers: Default::default(),
@@ -4080,21 +4079,20 @@ impl Connection {
         if hwnd == 0 {
             #[cfg(windows)]
             {
+                // 把进入单程序模式时改过的分辨率还原，否则原屏幕会一直停在手机尺寸。
+                if let Some((name, w, h)) = self.single_app_original_resolution.take() {
+                    log::info!(
+                        "Single app mode exit: restoring {} to {}x{}",
+                        name,
+                        w,
+                        h
+                    );
+                    crate::platform::change_resolution(&name, w, h).ok();
+                    crate::server::display_service::check_displays_changed().ok();
+                }
                 if self.single_app_vdd_added {
-                    if let Some(name) = self.single_app_vdd_name.take() {
-                        log::info!(
-                            "Single app mode exit: detaching dedicated virtual display '{}'",
-                            name
-                        );
-                        // Keep the marker when the detach fails so the next
-                        // session can still reuse (and retry removing) it.
-                        if crate::platform::windows::detach_display_from_desktop(&name).is_ok() {
-                            crate::usb_display::set_single_app_vdd_marker(None);
-                        }
-                    } else {
-                        log::info!("Single app mode exit: plugging out the virtual display added by this session");
-                        crate::usb_display::plug_out_usb_display().ok();
-                    }
+                    log::info!("Single app mode exit: plugging out the virtual display added by this session");
+                    crate::usb_display::plug_out_usb_display().ok();
                     crate::server::display_service::check_displays_changed().ok();
                     self.single_app_vdd_added = false;
                     if self.display_idx != 0 {
@@ -4127,56 +4125,74 @@ impl Connection {
                 let (target_idx, switch_needed_here, rect_info) = {
                     let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
 
-                    // Single-app mode always gets a virtual display of its own:
-                    // reusing (and later tearing down) a monitor that already
-                    // belonged to the user's desktop is what made the app show
-                    // up on the physical screen instead of an extra one.
-                    if !self.single_app_vdd_added {
-                        match crate::usb_display::plug_in_dedicated_vdd(req_w, req_h) {
-                            Ok(name) => {
-                                log::info!(
-                                    "Single app mode: attached dedicated virtual display '{}'",
-                                    name
-                                );
-                                self.single_app_vdd_added = true;
-                                self.single_app_vdd_name = Some(name);
-                                crate::server::display_service::check_displays_changed().ok();
-                                displays = crate::server::display_service::try_get_displays()
-                                    .unwrap_or_default();
-                            }
-                            Err(e) => log::warn!(
-                                "Single app mode: cannot attach a dedicated virtual display, \
-                                 falling back to an existing one: {}",
-                                e
-                            ),
-                        }
-                    }
+                    let mut v_display_idx = displays.iter().position(|d| {
+                        crate::virtual_display_manager::is_vdd_display(&d.name())
+                            || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                            || crate::usb_display::is_this_usb_display(&d.name())
+                    });
 
-                    let mut v_display_idx = self
-                        .single_app_vdd_name
-                        .as_ref()
-                        .and_then(|n| displays.iter().position(|d| d.name() == *n));
+                    // 只有物理屏的话才加一块和手机分辨率匹配的虚拟屏；
+                    // 已经有虚拟屏（包括用户手动加的、USB 副屏的）就直接用那块。
                     if v_display_idx.is_none() {
-                        v_display_idx = displays.iter().position(|d| {
-                            crate::virtual_display_manager::is_vdd_display(&d.name())
-                                || crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                                || crate::usb_display::is_this_usb_display(&d.name())
-                        });
+                        log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
+                        // Make sure the phone resolution is a declared VDD mode,
+                        // otherwise closest_resolution() snaps it to another size
+                        // and the window cannot fill the phone exactly.
+                        if crate::virtual_display_manager::is_vdd_available() {
+                            crate::usb_display::ensure_vdd_resolution(req_w, req_h).ok();
+                        }
+                        if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
+                            self.single_app_vdd_added = true;
+                            crate::server::display_service::check_displays_changed().ok();
+                            displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                            v_display_idx = displays.iter().position(|d| {
+                                crate::virtual_display_manager::is_vdd_display(&d.name())
+                                    || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                                    || crate::usb_display::is_this_usb_display(&d.name())
+                            });
+                        }
                     }
 
                     let t_idx = v_display_idx.unwrap_or(self.display_idx);
 
-                    // 分辨率按照本机分辨率最接近的来
+                    // 分辨率按手机竖屏取最接近的驱动模式；只动虚拟屏，物理屏不碰。
                     if let Some(d) = displays.get(t_idx) {
                         let dev_name = d.name();
-                        if crate::virtual_display_manager::is_any_virtual_display(&dev_name) || crate::usb_display::is_this_usb_display(&dev_name) {
-                            if let Some((best_w, best_h)) = crate::usb_display::closest_resolution(&dev_name, req_w, req_h) {
-                                if let Ok(cur_res) = crate::platform::windows::current_resolution(&dev_name) {
-                                    if cur_res.width != best_w as i32 || cur_res.height != best_h as i32 {
-                                        log::info!("Adjusting virtual display {} to closest resolution {}x{} (was {}x{})", dev_name, best_w, best_h, cur_res.width, cur_res.height);
-                                        crate::platform::change_resolution(&dev_name, best_w, best_h).ok();
+                        if crate::virtual_display_manager::is_any_virtual_display(&dev_name)
+                            || crate::usb_display::is_this_usb_display(&dev_name)
+                        {
+                            if let Some((best_w, best_h)) =
+                                crate::usb_display::closest_resolution(&dev_name, req_w, req_h)
+                            {
+                                if let Ok(cur_res) =
+                                    crate::platform::windows::current_resolution(&dev_name)
+                                {
+                                    if cur_res.width != best_w as i32
+                                        || cur_res.height != best_h as i32
+                                    {
+                                        if self.single_app_original_resolution.is_none() {
+                                            self.single_app_original_resolution = Some((
+                                                dev_name.clone(),
+                                                cur_res.width as usize,
+                                                cur_res.height as usize,
+                                            ));
+                                        }
+                                        log::info!(
+                                            "Single app mode: adjusting {} to closest resolution {}x{} (was {}x{})",
+                                            dev_name,
+                                            best_w,
+                                            best_h,
+                                            cur_res.width,
+                                            cur_res.height
+                                        );
+                                        crate::platform::change_resolution(
+                                            &dev_name, best_w, best_h,
+                                        )
+                                        .ok();
                                         std::thread::sleep(std::time::Duration::from_millis(100));
-                                        displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                                        displays =
+                                            crate::server::display_service::try_get_displays()
+                                                .unwrap_or_default();
                                     }
                                 }
                             }
@@ -6259,20 +6275,17 @@ impl Drop for Connection {
                 crate::usb_display::plug_out_usb_display().ok();
             }
         }
-        // Single-app mode owns the virtual display it plugged in; remove it on
-        // disconnect so it never leaks onto the user's main screen.
+        // Restore the resolution single-app mode changed, then remove the
+        // virtual display it plugged in (if any) so nothing leaks into the
+        // user's desktop after the session ends.
         #[cfg(windows)]
         {
-            if let Some(name) = self.single_app_vdd_name.take() {
-                log::info!(
-                    "Disconnect: detaching single-app virtual display '{}'",
-                    name
-                );
-                if crate::platform::windows::detach_display_from_desktop(&name).is_ok() {
-                    crate::usb_display::set_single_app_vdd_marker(None);
-                }
+            if let Some((name, w, h)) = self.single_app_original_resolution.take() {
+                log::info!("Disconnect: restoring {} to {}x{}", name, w, h);
+                crate::platform::change_resolution(&name, w, h).ok();
                 crate::server::display_service::check_displays_changed().ok();
-            } else if self.single_app_vdd_added && !self.is_secondary_session {
+            }
+            if self.single_app_vdd_added && !self.is_secondary_session {
                 crate::usb_display::plug_out_usb_display().ok();
             }
         }
