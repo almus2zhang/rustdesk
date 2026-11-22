@@ -346,6 +346,15 @@ pub struct Connection {
     // or mirroring-mode VDD is never torn down by single-app mode.
     #[cfg(windows)]
     single_app_vdd_added: bool,
+    // Device name (\\.\DISPLAYn) of the virtual monitor this session attached
+    // for single-app mode. It is detached again on exit so the user's desktop
+    // is never left missing a screen.
+    #[cfg(windows)]
+    single_app_vdd_name: Option<String>,
+    // Last JSON payload sent for "app_window:query". The client polls the list
+    // to pick up newly launched programs, and skipping identical payloads
+    // keeps that polling essentially free.
+    last_app_window_list: String,
     #[cfg(not(any(target_os = "ios")))]
     pressed_modifiers: HashSet<rdev::Key>,
     #[cfg(target_os = "linux")]
@@ -535,6 +544,9 @@ impl Connection {
             secondary_qos_applied: false,
             #[cfg(windows)]
             single_app_vdd_added: false,
+            #[cfg(windows)]
+            single_app_vdd_name: None,
+            last_app_window_list: "".to_owned(),
             #[cfg(not(any(target_os = "ios")))]
             pressed_modifiers: Default::default(),
             #[cfg(target_os = "linux")]
@@ -4069,8 +4081,20 @@ impl Connection {
             #[cfg(windows)]
             {
                 if self.single_app_vdd_added {
-                    log::info!("Single app mode exit: plugging out the virtual display added by this session");
-                    crate::usb_display::plug_out_usb_display().ok();
+                    if let Some(name) = self.single_app_vdd_name.take() {
+                        log::info!(
+                            "Single app mode exit: detaching dedicated virtual display '{}'",
+                            name
+                        );
+                        // Keep the marker when the detach fails so the next
+                        // session can still reuse (and retry removing) it.
+                        if crate::platform::windows::detach_display_from_desktop(&name).is_ok() {
+                            crate::usb_display::set_single_app_vdd_marker(None);
+                        }
+                    } else {
+                        log::info!("Single app mode exit: plugging out the virtual display added by this session");
+                        crate::usb_display::plug_out_usb_display().ok();
+                    }
                     crate::server::display_service::check_displays_changed().ok();
                     self.single_app_vdd_added = false;
                     if self.display_idx != 0 {
@@ -4102,31 +4126,42 @@ impl Connection {
 
                 let (target_idx, switch_needed_here, rect_info) = {
                     let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
-                    let mut v_display_idx = displays.iter().position(|d| {
-                        crate::virtual_display_manager::is_vdd_display(&d.name())
-                            || crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                            || crate::usb_display::is_this_usb_display(&d.name())
-                    });
 
-                    // 没有虚拟屏的话就加一个和手机分辨率匹配的 vdd 虚拟屏
+                    // Single-app mode always gets a virtual display of its own:
+                    // reusing (and later tearing down) a monitor that already
+                    // belonged to the user's desktop is what made the app show
+                    // up on the physical screen instead of an extra one.
+                    if !self.single_app_vdd_added {
+                        match crate::usb_display::plug_in_dedicated_vdd(req_w, req_h) {
+                            Ok(name) => {
+                                log::info!(
+                                    "Single app mode: attached dedicated virtual display '{}'",
+                                    name
+                                );
+                                self.single_app_vdd_added = true;
+                                self.single_app_vdd_name = Some(name);
+                                crate::server::display_service::check_displays_changed().ok();
+                                displays = crate::server::display_service::try_get_displays()
+                                    .unwrap_or_default();
+                            }
+                            Err(e) => log::warn!(
+                                "Single app mode: cannot attach a dedicated virtual display, \
+                                 falling back to an existing one: {}",
+                                e
+                            ),
+                        }
+                    }
+
+                    let mut v_display_idx = self
+                        .single_app_vdd_name
+                        .as_ref()
+                        .and_then(|n| displays.iter().position(|d| d.name() == *n));
                     if v_display_idx.is_none() {
-                        log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
-                        // Make sure the phone resolution is a declared VDD mode,
-                        // otherwise closest_resolution() snaps it to another size
-                        // and the window cannot fill the phone exactly.
-                        if crate::virtual_display_manager::is_vdd_available() {
-                            crate::usb_display::ensure_vdd_resolution(req_w, req_h).ok();
-                        }
-                        if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
-                            self.single_app_vdd_added = true;
-                            crate::server::display_service::check_displays_changed().ok();
-                            displays = crate::server::display_service::try_get_displays().unwrap_or_default();
-                            v_display_idx = displays.iter().position(|d| {
-                                crate::virtual_display_manager::is_vdd_display(&d.name())
-                                    || crate::virtual_display_manager::is_any_virtual_display(&d.name())
-                                    || crate::usb_display::is_this_usb_display(&d.name())
-                            });
-                        }
+                        v_display_idx = displays.iter().position(|d| {
+                            crate::virtual_display_manager::is_vdd_display(&d.name())
+                                || crate::virtual_display_manager::is_any_virtual_display(&d.name())
+                                || crate::usb_display::is_this_usb_display(&d.name())
+                        });
                     }
 
                     let t_idx = v_display_idx.unwrap_or(self.display_idx);
@@ -4381,6 +4416,14 @@ impl Connection {
         if t.impl_key == "app_window:query" {
             let windows = crate::platform::get_app_window_list();
             if let Ok(json_str) = serde_json::to_string(&windows) {
+                // The client polls this list so newly launched programs appear
+                // without a manual refresh. Only push when the list really
+                // changed: re-sending identical icon payloads would burn
+                // bandwidth for nothing.
+                if json_str == self.last_app_window_list {
+                    return;
+                }
+                self.last_app_window_list = json_str.clone();
                 let mut msg_out = Message::new();
                 let res = MessageBox {
                     msgtype: "app_window_list".to_owned(),
@@ -6219,8 +6262,19 @@ impl Drop for Connection {
         // Single-app mode owns the virtual display it plugged in; remove it on
         // disconnect so it never leaks onto the user's main screen.
         #[cfg(windows)]
-        if self.single_app_vdd_added && !self.is_secondary_session {
-            crate::usb_display::plug_out_usb_display().ok();
+        {
+            if let Some(name) = self.single_app_vdd_name.take() {
+                log::info!(
+                    "Disconnect: detaching single-app virtual display '{}'",
+                    name
+                );
+                if crate::platform::windows::detach_display_from_desktop(&name).is_ok() {
+                    crate::usb_display::set_single_app_vdd_marker(None);
+                }
+                crate::server::display_service::check_displays_changed().ok();
+            } else if self.single_app_vdd_added && !self.is_secondary_session {
+                crate::usb_display::plug_out_usb_display().ok();
+            }
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();

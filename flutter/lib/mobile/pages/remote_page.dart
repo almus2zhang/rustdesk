@@ -111,6 +111,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   Timer? _timer;
+  // 单程序模式下定时拉取程序列表：服务器侧会把"未变化"的请求直接丢弃，
+  // 所以轮询几乎不产生流量，新启动的程序也能自动出现在底部。
+  Timer? _appListRefreshTimer;
   final RxBool _showBar = false.obs;
   final RxBool _keyHelpCollapsed =
       (bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y').obs;
@@ -569,6 +572,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   @override
   void initState() {
     _showBar.value = false;
+    _appListRefreshTimer =
+        Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      if (!(gFFI.canvasModel.isSingleAppMode || widget.isMobileMode)) return;
+      bind.sessionPeerOption(
+        sessionId: gFFI.sessionId,
+        name: 'get_window_list',
+        value: '',
+      );
+    });
     if (widget.isMobileMode) {
       if (!gFFI.ffiModel.touchMode) {
         gFFI.ffiModel.toggleTouchMode();
@@ -765,6 +778,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       await gFFI.invokeMethod("stop_service");
     }
     _timer?.cancel();
+    _appListRefreshTimer?.cancel();
     _collapseLongPressTimer?.cancel();
     _iosKeyboardWorkaroundTimer?.cancel();
     SystemChrome.setPreferredOrientations([]);
