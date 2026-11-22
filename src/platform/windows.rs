@@ -5277,9 +5277,12 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         }
     }
 
+    // Hide RustDesk's own helper windows. Only the executable name is checked:
+    // the window title legitimately contains "rustdesk" whenever the user has
+    // this repository (or any file under a "rustdesk" folder) open in an editor,
+    // and filtering on it dropped those applications from the program list.
     let proc_lower = proc_name.to_lowercase();
-    let title_lower = title.to_lowercase();
-    if proc_lower.contains("rustdesk") || title_lower.contains("rustdesk") {
+    if proc_lower.starts_with("rustdesk") {
         return TRUE;
     }
 

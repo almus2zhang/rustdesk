@@ -658,10 +658,12 @@ class FfiModel with ChangeNotifier {
     try {
       final String raw = evt['data'] ?? '[]';
       final List<dynamic> rawList = jsonDecode(raw);
+      // 只按可执行文件名排除 RustDesk 自己的窗口。
+      // 标题里经常合法地含 "rustdesk"（比如在编辑器里打开本项目目录时，
+      // 标题是 "<文件> - rustdesk - <编辑器>"），按标题过滤会把这类程序丢掉。
       final List<dynamic> list = rawList.where((item) {
         final n = (item['name'] ?? '').toString().toLowerCase();
-        final t = (item['title'] ?? '').toString().toLowerCase();
-        return !n.contains('rustdesk') && !t.contains('rustdesk');
+        return !n.startsWith('rustdesk');
       }).toList();
 
       final current = parent.target?.canvasModel.appWindowList.value ?? [];
