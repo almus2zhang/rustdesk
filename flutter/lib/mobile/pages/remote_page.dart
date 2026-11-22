@@ -604,7 +604,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       bind.sessionPeerOption(
           sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
       bind.sessionSetViewStyle(sessionId: sessionId, value: kRemoteViewStyleAdaptive);
-      gFFI.canvasModel.viewStyle.value = kRemoteViewStyleAdaptive;
+      gFFI.canvasModel.updateViewStyle();
     } else if (savedViewStyle.isNotEmpty) {
       bind.sessionSetViewStyle(sessionId: sessionId, value: savedViewStyle);
     }

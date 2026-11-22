@@ -5224,16 +5224,21 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         return TRUE;
     }
 
+    let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
     let is_iconic = IsIconic(hwnd) != 0;
-    if !is_iconic {
-        let mut rect = winapi::shared::windef::RECT { left: 0, top: 0, right: 0, bottom: 0 };
-        if GetWindowRect(hwnd, &mut rect) != 0 {
-            let width = rect.right - rect.left;
-            let height = rect.bottom - rect.top;
-            if width < 100 || height < 100 {
-                return TRUE;
-            }
-        }
+    if is_iconic {
+        let mut wp: winapi::um::winuser::WINDOWPLACEMENT = std::mem::zeroed();
+        wp.length = std::mem::size_of::<winapi::um::winuser::WINDOWPLACEMENT>() as u32;
+        winapi::um::winuser::GetWindowPlacement(hwnd, &mut wp);
+        rect = wp.rcNormalPosition;
+    } else if GetWindowRect(hwnd, &mut rect) == 0 {
+        return TRUE;
+    }
+
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if !is_iconic && (width < 100 || height < 100) {
+        return TRUE;
     }
 
     let mut proc_name = String::new();
