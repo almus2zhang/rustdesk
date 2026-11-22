@@ -973,19 +973,6 @@ class RecentPeerCard extends BasePeerCard {
     if (!isDesktop && peer.platform == kPeerPlatformWindows) {
       menuItems.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
-          isZh ? '📱 手机模式 (应用专注)' : '📱 Mobile Mode (App Focus)',
-          style: style?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold) ??
-              const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-        ),
-        proc: () {
-          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
-          connect(context, target, isMobileMode: true);
-        },
-        padding: menuPadding,
-        dismissOnClicked: true,
-      ));
-      menuItems.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
           isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
           style: style?.copyWith(color: Colors.blueAccent, fontWeight: FontWeight.bold) ??
               const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
@@ -1088,19 +1075,6 @@ class FavoritePeerCard extends BasePeerCard {
     if (!isDesktop && peer.platform == kPeerPlatformWindows) {
       menuItems.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
-          isZh ? '📱 手机模式 (应用专注)' : '📱 Mobile Mode (App Focus)',
-          style: style?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold) ??
-              const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-        ),
-        proc: () {
-          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
-          connect(context, target, isMobileMode: true);
-        },
-        padding: menuPadding,
-        dismissOnClicked: true,
-      ));
-      menuItems.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
           isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
           style: style?.copyWith(color: Colors.blueAccent, fontWeight: FontWeight.bold) ??
               const TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold),
@@ -1179,19 +1153,6 @@ class DiscoveredPeerCard extends BasePeerCard {
     final isZh = localeName.startsWith('zh');
 
     if (!isDesktop && peer.platform == kPeerPlatformWindows) {
-      menuItems.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
-          isZh ? '📱 手机模式 (应用专注)' : '📱 Mobile Mode (App Focus)',
-          style: style?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold) ??
-              const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-        ),
-        proc: () {
-          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
-          connect(context, target, isMobileMode: true);
-        },
-        padding: menuPadding,
-        dismissOnClicked: true,
-      ));
       menuItems.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
           isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
@@ -1298,19 +1259,6 @@ class AddressBookPeerCard extends BasePeerCard {
     final isZh = localeName.startsWith('zh');
 
     if (!isDesktop && peer.platform == kPeerPlatformWindows) {
-      menuItems.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
-          isZh ? '📱 手机模式 (应用专注)' : '📱 Mobile Mode (App Focus)',
-          style: style?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold) ??
-              const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-        ),
-        proc: () {
-          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
-          connect(context, target, isMobileMode: true);
-        },
-        padding: menuPadding,
-        dismissOnClicked: true,
-      ));
       menuItems.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
           isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
@@ -1488,19 +1436,6 @@ class MyGroupPeerCard extends BasePeerCard {
     final isZh = localeName.startsWith('zh');
 
     if (!isDesktop && peer.platform == kPeerPlatformWindows) {
-      menuItems.add(MenuEntryButton<String>(
-        childBuilder: (TextStyle? style) => Text(
-          isZh ? '📱 手机模式 (应用专注)' : '📱 Mobile Mode (App Focus)',
-          style: style?.copyWith(color: Colors.greenAccent, fontWeight: FontWeight.bold) ??
-              const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold),
-        ),
-        proc: () {
-          final target = peer.ip.isNotEmpty ? peer.ip : peer.id;
-          connect(context, target, isMobileMode: true);
-        },
-        padding: menuPadding,
-        dismissOnClicked: true,
-      ));
       menuItems.add(MenuEntryButton<String>(
         childBuilder: (TextStyle? style) => Text(
           isZh ? '🖥️ 接入副屏 (无线显示)' : '🖥️ Connect as Secondary Display',
