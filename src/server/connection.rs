@@ -4511,19 +4511,32 @@ impl Connection {
         if t.impl_key == "app_window:start_menu" {
             #[cfg(windows)]
             {
-                // The client already injects the Win key to open the Start menu.
-                // Here we only re-route capture: the Start menu opens on the
-                // taskbar monitor (primary), so drop the window crop and show
-                // the primary display instead of the cropped window.
-                log::info!("Single app mode: showing the Start menu on the primary display");
+                // Open the Start menu on the CURRENT display by clicking the
+                // taskbar's Windows button at that display's bottom-left. A
+                // simulated Win key would open it on the primary monitor, which
+                // is not the display we are streaming here.
+                let click_pt = {
+                    let displays =
+                        crate::server::display_service::try_get_displays().unwrap_or_default();
+                    displays.get(self.display_idx).map(|d| {
+                        let (ox, oy) = d.origin();
+                        let h = d.height() as i32;
+                        // Taskbar sits at the bottom; the Start button is at the
+                        // far left, roughly 20px in from the corner.
+                        (ox + 20, oy + h - 20)
+                    })
+                };
+                // Stop cropping to the selected app window, otherwise the Start
+                // menu (which lives outside the window) would not be captured.
                 crate::server::video_service::set_selected_window(0);
-                if self.display_idx != 0 {
-                    self.display_idx = 0;
-                    let mut misc = Misc::new();
-                    misc.set_follow_current_display(0);
-                    let mut msg = Message::new();
-                    msg.set_misc(misc);
-                    self.send(msg).await;
+                if let Some((x, y)) = click_pt {
+                    log::info!(
+                        "Single app mode: clicking the Start button at ({}, {}) on display {}",
+                        x,
+                        y,
+                        self.display_idx
+                    );
+                    crate::server::input_service::click_at(x, y);
                 }
                 if let Some(msg_out) = video_service::make_display_changed_msg(
                     self.display_idx,

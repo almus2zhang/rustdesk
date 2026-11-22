@@ -2296,13 +2296,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? 'Windows 开始菜单 (呼出软键盘)'
                   : 'Start Menu (Open Keyboard)',
               onPressed: () {
-                if (gFFI.ffiModel.pi.currentDisplay != 0) {
-                  _preStartMenuDisplay = gFFI.ffiModel.pi.currentDisplay;
-                  openMonitorInTheSameTab(0, gFFI, gFFI.ffiModel.pi);
-                }
-                gFFI.inputModel.inputKey('Meta', press: true);
-                // Ask the host to drop the single-app window crop and show the
-                // primary display, otherwise the Start menu stays off-screen.
+                // The host clicks the Start button at the bottom-left of the
+                // current (virtual) display, so the menu opens there instead of
+                // on the primary monitor.
                 bind.sessionPeerOption(
                   sessionId: gFFI.sessionId,
                   name: 'open_start_menu',

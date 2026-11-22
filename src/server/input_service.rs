@@ -1642,6 +1642,22 @@ pub fn is_enter(evt: &KeyEvent) -> bool {
     return false;
 }
 
+#[cfg(target_os = "windows")]
+pub fn click_at(x: i32, y: i32) {
+    // Left-click an absolute screen coordinate. Used by single-app mode to hit
+    // the taskbar's Start button on the virtual display so the Start menu opens
+    // on that display instead of the primary monitor.
+    std::thread::spawn(move || {
+        crate::platform::windows::try_change_desktop();
+        let mut en = ENIGO.lock().unwrap();
+        allow_err!(en.mouse_move_to(x, y));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        allow_err!(en.mouse_down(MouseButton::Left));
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        allow_err!(en.mouse_up(MouseButton::Left));
+    });
+}
+
 pub async fn lock_screen() {
     cfg_if::cfg_if! {
     if #[cfg(target_os = "linux")] {
