@@ -1650,11 +1650,11 @@ pub fn click_at(x: i32, y: i32) {
     std::thread::spawn(move || {
         crate::platform::windows::try_change_desktop();
         let mut en = ENIGO.lock().unwrap();
-        allow_err!(en.mouse_move_to(x, y));
+        en.mouse_move_to(x, y);
         std::thread::sleep(std::time::Duration::from_millis(20));
         allow_err!(en.mouse_down(MouseButton::Left));
         std::thread::sleep(std::time::Duration::from_millis(30));
-        allow_err!(en.mouse_up(MouseButton::Left));
+        en.mouse_up(MouseButton::Left);
     });
 }
 
