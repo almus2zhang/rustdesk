@@ -578,7 +578,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       if (!(gFFI.canvasModel.isSingleAppMode || widget.isMobileMode)) return;
       bind.sessionPeerOption(
         sessionId: gFFI.sessionId,
-        name: 'get_window_list',
+        name: 'get_window_list_auto',
         value: '',
       );
     });

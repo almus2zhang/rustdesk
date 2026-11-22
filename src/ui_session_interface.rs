@@ -444,9 +444,20 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn get_app_window_list(&self) {
+        self.send_app_window_query("app_window:query");
+    }
+
+    /// Same as [`get_app_window_list`] but marked as a background poll: the host
+    /// may skip the reply when nothing changed. Explicit requests (the single-app
+    /// picker) must not use this, they need a reply to open the dialog.
+    pub fn get_app_window_list_auto(&self) {
+        self.send_app_window_query("app_window:query:auto");
+    }
+
+    fn send_app_window_query(&self, impl_key: &str) {
         let mut misc = Misc::new();
         misc.set_toggle_privacy_mode(TogglePrivacyMode {
-            impl_key: "app_window:query".to_string(),
+            impl_key: impl_key.to_string(),
             on: false,
             ..Default::default()
         });

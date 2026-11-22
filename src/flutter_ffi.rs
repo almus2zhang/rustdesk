@@ -700,6 +700,10 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             session.get_app_window_list();
             return;
         }
+        if name == "get_window_list_auto" {
+            session.get_app_window_list_auto();
+            return;
+        }
         if name == "select_window" {
             let parts: Vec<&str> = value.split(':').collect();
             let hwnd = parts[0].parse::<u64>().unwrap_or(0);

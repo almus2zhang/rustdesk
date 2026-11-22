@@ -4413,14 +4413,14 @@ impl Connection {
     }
 
     async fn toggle_privacy_mode(&mut self, t: TogglePrivacyMode) {
-        if t.impl_key == "app_window:query" {
+        if t.impl_key == "app_window:query" || t.impl_key == "app_window:query:auto" {
+            // Only the background poll may be answered with silence: the
+            // single-app picker opens its dialog when the reply arrives, so an
+            // explicit "app_window:query" must always be answered.
+            let auto = t.impl_key == "app_window:query:auto";
             let windows = crate::platform::get_app_window_list();
             if let Ok(json_str) = serde_json::to_string(&windows) {
-                // The client polls this list so newly launched programs appear
-                // without a manual refresh. Only push when the list really
-                // changed: re-sending identical icon payloads would burn
-                // bandwidth for nothing.
-                if json_str == self.last_app_window_list {
+                if auto && json_str == self.last_app_window_list {
                     return;
                 }
                 self.last_app_window_list = json_str.clone();
