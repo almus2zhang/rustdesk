@@ -2818,6 +2818,10 @@ class CanvasModel with ChangeNotifier {
   int appCropTop = 0;
   int appCropRight = 0;
   int appCropBottom = 0;
+  // True while the host Start menu is open in single-app mode. The view then
+  // shows the whole display and no window resize is requested, otherwise the
+  // menu would be cropped away as soon as the canvas re-lays out.
+  bool startMenuOpen = false;
 
   int _lastCheckedW = 0;
   int _lastCheckedH = 0;
@@ -2928,6 +2932,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   void autoAdjustHeightIfUnderfilled(int curW, int curH) {
+    if (startMenuOpen) return;
     if (!isSingleAppMode || currentHwnd == 0 || curW <= 0 || curH <= 0) return;
     if (curW == _lastCheckedW && curH == _lastCheckedH) return;
 
@@ -2976,6 +2981,7 @@ class CanvasModel with ChangeNotifier {
     int? customCropB,
     int? hwndOverride,
   }) async {
+    if (startMenuOpen) return;
     final hwnd = hwndOverride ?? currentHwnd;
     if (hwnd == 0) return;
 

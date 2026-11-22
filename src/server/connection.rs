@@ -350,6 +350,10 @@ pub struct Connection {
     // the mode is left so the host screen does not stay at the phone's size.
     #[cfg(windows)]
     single_app_original_resolution: Option<(String, usize, usize)>,
+    // When the single-app Start menu was opened. While it is open, window
+    // resize requests are ignored so the client's canvas re-layout cannot crop
+    // the menu away.
+    start_menu_opened_at: Option<std::time::Instant>,
     // Last JSON payload sent for "app_window:query". The client polls the list
     // to pick up newly launched programs, and skipping identical payloads
     // keeps that polling essentially free.
@@ -545,6 +549,7 @@ impl Connection {
             single_app_vdd_added: false,
             #[cfg(windows)]
             single_app_original_resolution: None,
+            start_menu_opened_at: None,
             last_app_window_list: "".to_owned(),
             #[cfg(not(any(target_os = "ios")))]
             pressed_modifiers: Default::default(),
@@ -4070,8 +4075,24 @@ impl Connection {
         });
     }
 
+    /// True while the single-app Start menu is (still) open. The flag times out
+    /// so a menu the user simply dismissed cannot block window resizing forever.
+    fn start_menu_active(&mut self) -> bool {
+        const MAX_AGE: std::time::Duration = std::time::Duration::from_secs(60);
+        match self.start_menu_opened_at {
+            Some(t) if t.elapsed() < MAX_AGE => true,
+            Some(_) => {
+                self.start_menu_opened_at = None;
+                false
+            }
+            None => false,
+        }
+    }
+
     async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32, client_w: i32, client_h: i32) {
         log::info!("select_app_window: {} (target_size: {}x{}, client_size: {}x{})", hwnd, target_w, target_h, client_w, client_h);
+        // Picking a window means the Start menu interaction is over.
+        self.start_menu_opened_at = None;
         crate::server::video_service::set_selected_window(hwnd);
         // Exiting single-app mode (client sends select_window:0). Remove the
         // virtual display this session added, then fall back to the primary
@@ -4475,6 +4496,15 @@ impl Connection {
             return;
         }
         if t.impl_key.starts_with("app_window:resize:") {
+            // While the Start menu is open the view must stay on the whole
+            // display. The client re-sends resize requests whenever the canvas
+            // re-lays out (the soft keyboard collapsing, for example), and
+            // honouring them would crop the menu away and throw the user back
+            // to the previously selected window.
+            if self.start_menu_active() {
+                log::info!("Start menu is open, ignoring window resize request");
+                return;
+            }
             let rest = &t.impl_key["app_window:resize:".len()..];
             let parts: Vec<&str> = rest.split(':').collect();
             if parts.len() >= 3 {
@@ -4588,6 +4618,9 @@ impl Connection {
                 // Stop cropping to the selected app window, otherwise the Start
                 // menu (which lives outside the window) would not be captured.
                 crate::server::video_service::set_selected_window(0);
+                // Keep it that way until a window is picked again: the client
+                // resizes on every canvas re-layout and would crop it back.
+                self.start_menu_opened_at = Some(std::time::Instant::now());
                 if let Some((x, y)) = click_pt {
                     log::info!(
                         "Single app mode: clicking the Start button at ({}, {}) on display {}",

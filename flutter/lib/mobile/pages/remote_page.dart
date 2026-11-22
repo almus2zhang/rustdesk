@@ -2324,6 +2324,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   value: '',
                 );
                 _isStartMenuPushed = true;
+                // 开始菜单当"整屏"看待：清掉窗口裁剪让菜单完整显示，
+                // 期间也不再发 resize（模型里的 startMenuOpen 会拦住）。
+                gFFI.canvasModel.startMenuOpen = true;
+                gFFI.canvasModel.appCropLeft = 0;
+                gFFI.canvasModel.appCropTop = 0;
+                gFFI.canvasModel.appCropRight = 0;
+                gFFI.canvasModel.appCropBottom = 0;
+                gFFI.canvasModel.updateViewStyle(force: true);
                 openKeyboard();
                 _pushCanvasAboveKeyboardWhenVisible();
               },
@@ -2438,6 +2446,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   .platformAdditions['selected_window'] = hwnd;
                               gFFI.ffiModel.touchMode = true;
                               gFFI.canvasModel.isSingleAppMode = true;
+                              gFFI.canvasModel.startMenuOpen = false;
 
                               bind.sessionPeerOption(
                                 sessionId: gFFI.sessionId,
@@ -2545,6 +2554,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   );
                   gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
                   gFFI.canvasModel.isSingleAppMode = false;
+                  gFFI.canvasModel.startMenuOpen = false;
                   await bind.sessionPeerOption(
                     sessionId: gFFI.sessionId,
                     name: 'is_single_app_mode',
@@ -5118,6 +5128,7 @@ void showOptions(
                           value: '0');
                       gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
                       gFFI.canvasModel.isSingleAppMode = false;
+                      gFFI.canvasModel.startMenuOpen = false;
                       await bind.sessionPeerOption(
                           sessionId: gFFI.sessionId,
                           name: 'is_single_app_mode',
