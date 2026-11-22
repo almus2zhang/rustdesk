@@ -2269,6 +2269,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
       return Container(
         height: gFFI.canvasModel.singleAppDockHeight,
+        // 底部留出空白，把图标行整体上移，避开 Android 手势导航的误触区
+        padding: EdgeInsets.only(
+          bottom: gFFI.canvasModel.singleAppDockHeight -
+              gFFI.canvasModel.singleAppDockContentHeight,
+        ),
         decoration: BoxDecoration(
           color: const Color(0xEE161D28),
           border: const Border(

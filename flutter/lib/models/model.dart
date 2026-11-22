@@ -2827,10 +2827,20 @@ class CanvasModel with ChangeNotifier {
     _lastSyncedTargetH = 0;
   }
 
+  /// 底栏内容区高度（图标行本身的高度）。图标尺寸不变，仅决定这一行占多高。
+  double get singleAppDockContentHeight {
+    final dpr =
+        ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
+    return 130.0 / dpr; // 约 42-45 逻辑像素（130 物理像素）
+  }
+
+  /// 底栏总高度 = 内容区 + 底部留白。
+  /// 内容整体上移，让横向滑动落在图标行上，避免手指压到
+  /// Android 底部手势条导致误触窗口/任务切换。
   double get singleAppDockHeight {
     final dpr =
         ui.window.devicePixelRatio > 0 ? ui.window.devicePixelRatio : 1.0;
-    return 130.0 / dpr; // 紧凑型底栏高度（约 42-45 逻辑像素，130 物理像素）
+    return 190.0 / dpr; // 130 内容 + 60 物理像素留白（约 20 逻辑像素）
   }
 
   int get currentHwnd {
