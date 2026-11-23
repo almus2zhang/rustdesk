@@ -115,6 +115,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   // 所以轮询几乎不产生流量，新启动的程序也能自动出现在底部。
   Timer? _appListRefreshTimer;
   final RxBool _showBar = false.obs;
+  // 单程序模式底栏三点菜单，悬浮按钮也用它弹出同一份菜单。
+  final GlobalKey<PopupMenuButtonState<String>> _dockMenuKey =
+      GlobalKey<PopupMenuButtonState<String>>();
   final RxBool _keyHelpCollapsed =
       (bind.mainGetLocalOption(key: 'key_help_tools_collapsed') == 'Y').obs;
   final RxBool _isControlBarVertical = false.obs;
@@ -1055,7 +1058,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       }
       if (kbHeight > 50) {
         if (_isStartMenuPushed) {
-          gFFI.canvasModel.pushCanvasToRemoteBottomLeft(kbHeight);
+          // 开始菜单期间底栏也会显示在键盘正上方，画面要多让出底栏的高度，
+          // 否则底栏会盖住开始菜单底部。
+          gFFI.canvasModel.pushCanvasToRemoteBottomLeft(
+              kbHeight + gFFI.canvasModel.singleAppDockHeight);
         } else {
           gFFI.canvasModel.pushCanvasAboveKeyboard(kbHeight, alignLeft: true);
         }
@@ -1773,7 +1779,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 final isKeyboardVisible =
                     _showEdit || keyboardVisibilityController.isVisible;
 
-                if (_keyboardDismissMode.value == 'any') {
+                if (_isStartMenuPushed) {
+                  // 开始菜单交互期间保持软键盘：如果按下就收键盘，画面会立刻
+                  // 重新布局并把偏移还原，抬起时的坐标就落到别处，菜单项点不中。
+                  if (_showEdit && isText) {
+                    _mobileFocusNode.requestFocus();
+                  }
+                } else if (_keyboardDismissMode.value == 'any') {
                   // 触摸/按下即收回软键盘
                   if (isKeyboardVisible && !isText) {
                     _closeSoftKeyboard();
@@ -1833,7 +1845,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     }
                   }
 
-                  if (_keyboardDismissMode.value == 'tap') {
+                  if (_keyboardDismissMode.value == 'tap' && !_isStartMenuPushed) {
                     if (isKeyboardVisible && !isText) {
                       _closeSoftKeyboard();
                     }
@@ -2178,7 +2190,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ));
       final isSingleApp =
           gFFI.canvasModel.isSingleAppMode || widget.isMobileMode;
-      if (isSingleApp && !keyboardIsVisible) {
+      if (isSingleApp && (!keyboardIsVisible || _isStartMenuPushed)) {
         paints.add(Positioned(
           left: 0,
           right: 0,
@@ -2187,7 +2199,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
           child: _buildSingleAppDockBar(context),
         ));
       }
-      if (_showBar.value && gFFI.ffiModel.pi.displays.isNotEmpty) {
+      // 单程序模式不再显示浮动快捷控制栏（会和底部程序栏抢位置），
+      // 控制栏里的按钮统一收进底部程序栏的三点菜单。
+      if (_showBar.value &&
+          !isSingleApp &&
+          gFFI.ffiModel.pi.displays.isNotEmpty) {
         final fabPos = _getFabPosition(orientation, size, padding);
         paints
             .add(_buildFloatingControlBar(orientation, size, padding, fabPos));
@@ -2229,6 +2245,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   _closeSoftKeyboard();
                 } else if (_showGestureHelp) {
                   _showGestureHelp = false;
+                } else if (isSingleApp) {
+                  // 单程序模式没有浮动控制栏了，这个按钮直接弹出底栏三点菜单
+                  _dockMenuKey.currentState?.showButtonMenu();
                 } else {
                   _showBar.value = true;
                 }
@@ -2420,6 +2439,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               if (gFFI.canvasModel.currentSelectedHwnd == hwnd) {
                                 return;
                               }
+                              // 在底栏切换到别的程序：开始菜单交互结束，
+                              // 到这一步才把软键盘收回。
+                              _isStartMenuPushed = false;
+                              if (_showEdit ||
+                                  keyboardVisibilityController.isVisible) {
+                                _closeSoftKeyboard();
+                              }
                               gFFI.canvasModel.currentSelectedHwnd = hwnd;
                               gFFI.canvasModel.currentSelectedAppName = name;
                               gFFI.canvasModel.loadAppCrop(name);
@@ -2524,6 +2550,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
             ),
             // Right compact action menu
             PopupMenuButton<String>(
+              key: _dockMenuKey,
               icon:
                   const Icon(Icons.more_vert, color: Colors.white70, size: 20),
               tooltip: localeName.startsWith('zh') ? '更多选项' : 'More Options',
@@ -2546,6 +2573,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   );
                 } else if (val == 'tune') {
                   _showSingleAppAdjustSheet(context);
+                } else if (val == 'display') {
+                  setState(() => _showEdit = false);
+                  showOptions(context, widget.id, gFFI.dialogManager);
+                } else if (val == 'keyboard') {
+                  if (_showEdit || keyboardVisibilityController.isVisible) {
+                    _closeSoftKeyboard();
+                  } else {
+                    openKeyboard();
+                  }
+                } else if (val == 'shortcut_keys') {
+                  _keyHelpCollapsed.value = !_keyHelpCollapsed.value;
+                  bind.mainSetLocalOption(
+                    key: 'key_help_tools_collapsed',
+                    value: _keyHelpCollapsed.value ? 'Y' : 'N',
+                  );
+                  if (mounted) setState(() {});
+                } else if (val == 'input_method') {
+                  gFFI.invokeMethod("show_input_method_picker", null);
+                } else if (val == 'mouse_touch') {
+                  gFFI.ffiModel.toggleTouchMode();
+                  bind.mainSetLocalOption(
+                    key: kOptionTouchMode,
+                    value: gFFI.ffiModel.touchMode ? 'Y' : 'N',
+                  );
+                  if (mounted) setState(() {});
+                } else if (val == 'close') {
+                  clientClose(sessionId, gFFI);
                 } else if (val == 'exit') {
                   await bind.sessionPeerOption(
                     sessionId: gFFI.sessionId,
@@ -2601,6 +2655,61 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
+                if (gFFI.ffiModel.keyboard) ...[
+                  const PopupMenuDivider(height: 1),
+                  // 原本浮动快捷控制栏里的按钮，单程序模式统一放到这里
+                  PopupMenuItem(
+                    value: 'display',
+                    child: _dockMenuRow(
+                        Icons.tv,
+                        localeName.startsWith('zh') ? '显示与画质' : 'Display'),
+                  ),
+                  PopupMenuItem(
+                    value: 'keyboard',
+                    child: _dockMenuRow(
+                        Icons.keyboard,
+                        localeName.startsWith('zh') ? '软键盘' : 'Keyboard'),
+                  ),
+                  PopupMenuItem(
+                    value: 'shortcut_keys',
+                    child: _dockMenuRow(
+                      Icons.keyboard_command_key,
+                      localeName.startsWith('zh')
+                          ? (_keyHelpCollapsed.value ? '显示快捷按键' : '隐藏快捷按键')
+                          : (_keyHelpCollapsed.value
+                              ? 'Show Shortcut Keys'
+                              : 'Hide Shortcut Keys'),
+                    ),
+                  ),
+                  if (isAndroid)
+                    PopupMenuItem(
+                      value: 'input_method',
+                      child: _dockMenuRow(
+                          Icons.language,
+                          localeName.startsWith('zh')
+                              ? '输入法'
+                              : 'Input Method'),
+                    ),
+                  PopupMenuItem(
+                    value: 'mouse_touch',
+                    child: _dockMenuRow(
+                      gFFI.ffiModel.touchMode ? Icons.mouse : Icons.touch_app,
+                      localeName.startsWith('zh')
+                          ? (gFFI.ffiModel.touchMode ? '切换为鼠标模式' : '切换为触屏模式')
+                          : (gFFI.ffiModel.touchMode
+                              ? 'Switch to Mouse Mode'
+                              : 'Switch to Touch Mode'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'close',
+                    child: _dockMenuRow(
+                      Icons.clear,
+                      localeName.startsWith('zh') ? '断开连接' : 'Disconnect',
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                ],
                 const PopupMenuDivider(height: 1),
                 PopupMenuItem(
                   value: 'exit',
@@ -2625,6 +2734,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         ),
       );
     });
+  }
+
+  Widget _dockMenuRow(IconData icon, String label,
+      {Color color = Colors.cyanAccent}) {
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(width: 10),
+        Text(label, style: const TextStyle(color: Colors.white, fontSize: 13)),
+      ],
+    );
   }
 
   IconData _resolveAppIcon(String name, String title) {
