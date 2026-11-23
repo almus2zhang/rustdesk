@@ -982,6 +982,11 @@ class _RawTouchGestureDetectorRegionState
     // kDoubleTapTimeout(300ms) 才胜出，点击（onTapUp 里才下发）就明显发顿。
     // 远端双击本来就是两次快速点击，去掉后每次点击立即下发，双击依然成立。
     final enableDoubleTap = isDesktop || isWebDesktop;
+    // 移动端触摸模式下，下面两个自定义识别器只会在手势竞技场里 hold
+    // 300ms 等待第二次点击，而它们的回调在触摸模式下都是空的
+    // （右键走长按、拖动走单指平移），所以直接不注册，点击立即下发。
+    // 移动端鼠标模式仍需要它们提供右键和左键拖动。
+    final enableMouseModeGestures = !isMobile || !ffiModel.touchMode;
     return <Type, GestureRecognizerFactory>{
       // Official
       TapGestureRecognizer:
@@ -1019,7 +1024,8 @@ class _RawTouchGestureDetectorRegionState
           ..onLongPressMoveUpdate = onLongPressMoveUpdate;
       }),
       // Customized
-      HoldTapMoveGestureRecognizer:
+      if (enableMouseModeGestures)
+        HoldTapMoveGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<HoldTapMoveGestureRecognizer>(
               () => HoldTapMoveGestureRecognizer(
                     supportedDevices: kTouchBasedDeviceKinds,
@@ -1029,8 +1035,9 @@ class _RawTouchGestureDetectorRegionState
                 ..onHoldDragUpdate = onHoldDragUpdate
                 ..onHoldDragCancel = onHoldDragCancel
                 ..onHoldDragEnd = onHoldDragEnd),
-      DoubleFinerTapGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<DoubleFinerTapGestureRecognizer>(
+      if (enableMouseModeGestures)
+        DoubleFinerTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<DoubleFinerTapGestureRecognizer>(
               () => DoubleFinerTapGestureRecognizer(
                     supportedDevices: kTouchBasedDeviceKinds,
                   ), (instance) {
