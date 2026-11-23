@@ -747,6 +747,7 @@ class FfiModel with ChangeNotifier {
         parent.target?.canvasModel.appWindowList.value = list;
       }
       _restoreSingleAppSelectionFromList(list);
+      _handleClosedOrReopenedWindows(sessionId, list);
       if (parent.target?.canvasModel.showWindowPickerModal != true) {
         return;
       }
@@ -921,24 +922,66 @@ class FfiModel with ChangeNotifier {
 
   _handleWindowClosed(SessionID sessionId) async {
     final cm = parent.target?.canvasModel;
+    if (cm == null) return;
+    final closedHwnd = cm.currentSelectedHwnd;
     parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-    // 当前程序关闭后先切回上一个还开着的程序，避免停在空窗口上。
-    final prev = cm?.previousOpenApp(cm?.currentSelectedHwnd ?? 0);
-    if (cm != null && prev != null) {
+    await _leaveClosedApp(sessionId, cm, closedHwnd);
+  }
+
+  /// 当前单程序窗口被关掉（主机通知，或列表里已经找不到它）后：优先切回上一
+  /// 个还开着的程序；否则退出单程序模式，并记住这个程序名，等它再次打开时
+  /// 自动回到单程序全屏。
+  Future<void> _leaveClosedApp(
+      SessionID sessionId, CanvasModel cm, int closedHwnd) async {
+    var name = cm.currentSelectedAppName;
+    if (name.isEmpty && closedHwnd != 0) {
+      // 程序名可能还没解析出来，按句柄从列表里反查一个，方便之后自动恢复。
+      for (final item in cm.appWindowList.value) {
+        if (item is Map &&
+            (int.tryParse('${item['hwnd']}') ?? 0) == closedHwnd) {
+          name = item['name']?.toString() ?? '';
+          break;
+        }
+      }
+    }
+    final prev = cm.previousOpenApp(
+        closedHwnd != 0 ? closedHwnd : cm.currentSelectedHwnd);
+    if (prev != null) {
       await cm.switchToApp(prev.key, prev.value);
       return;
     }
-    if (cm != null) {
-      cm.isSingleAppMode = false;
-      cm.startMenuOpen = false;
-    }
+    cm.isSingleAppMode = false;
+    cm.startMenuOpen = false;
+    // 顺序不能反：退出单程序模式会清掉待恢复标记。
+    cm.markAppClosedForAutoReopen(name);
     // 没有可切的程序就退回桌面：必须让主机也退出单程序模式，否则它会继续
     // 采集那块已经没有窗口的虚拟屏，画面就是全黑。
     await bind.sessionPeerOption(
         sessionId: sessionId, name: 'select_window', value: '0');
     await bind.sessionPeerOption(
         sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
-    await cm?.updateViewStyle(force: true);
+    await cm.updateViewStyle(force: true);
+  }
+
+  /// 主机没发（或来不及发）window_closed 时，用窗口列表兜底：当前选中的程序
+  /// 不见了就按关闭处理，关掉的程序重新出现就自动切回去。
+  void _handleClosedOrReopenedWindows(
+      SessionID sessionId, List<dynamic> list) {
+    final cm = parent.target?.canvasModel;
+    if (cm == null || list.isEmpty || cm.startMenuOpen) return;
+    if (cm.isSingleAppMode) {
+      final hwnd = cm.currentHwnd;
+      if (hwnd == 0) return;
+      if (cm.recentlySwitchedApp) return;
+      final stillThere = list.any((item) =>
+          item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd);
+      if (!stillThere) {
+        parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
+        _leaveClosedApp(sessionId, cm, hwnd);
+      }
+      return;
+    }
+    cm.tryAutoReopen(list);
   }
 
   _handlePrinterRequest(
@@ -2894,6 +2937,10 @@ class CanvasModel with ChangeNotifier {
       if (ffiModel != null && !ffiModel.touchMode) {
         ffiModel.touchMode = true;
       }
+    } else {
+      // 主动退出单程序模式（或连接结束）时，不再自动回到之前关掉的程序。
+      _autoReopenPending = false;
+      _closedAppName = '';
     }
   }
 
@@ -3065,6 +3112,59 @@ class CanvasModel with ChangeNotifier {
   // app when the current one is closed by the user.
   final List<MapEntry<int, String>> _recentApps = [];
 
+  // Name of the app whose window was closed, so it can be selected again
+  // automatically once the app is opened again.
+  String _closedAppName = '';
+  bool _autoReopenPending = false;
+  DateTime? _autoReopenArmedAt;
+  // 刚切过程序的短时间内不做"窗口消失"判断，避免列表还没刷新就误判。
+  DateTime? _lastAppSwitchAt;
+
+  void markAppClosedForAutoReopen(String name) {
+    if (name.isEmpty) {
+      _autoReopenPending = false;
+      return;
+    }
+    _closedAppName = name;
+    _autoReopenPending = true;
+    _autoReopenArmedAt = DateTime.now();
+  }
+
+  /// 之前关掉的程序重新出现在列表里时，自动回到它的单程序全屏。
+  bool tryAutoReopen(List<dynamic> list) {
+    if (!_autoReopenPending || _closedAppName.isEmpty || isSingleAppMode) {
+      return false;
+    }
+    // 刚关掉的那几秒里窗口列表还是旧的，里面仍然有它；等下一轮列表再判断，
+    // 否则会立刻切回一个已经消失的窗口，形成"关闭→切回→又关闭"的循环。
+    final armed = _autoReopenArmedAt;
+    if (armed != null &&
+        DateTime.now().difference(armed).inSeconds < 6) {
+      return false;
+    }
+    for (final item in list) {
+      if (item is! Map) continue;
+      if (item['name']?.toString() != _closedAppName) continue;
+      final hwnd = int.tryParse('${item['hwnd']}') ?? 0;
+      if (hwnd == 0) continue;
+      _autoReopenPending = false;
+      switchToApp(hwnd, _closedAppName);
+      return true;
+    }
+    return false;
+  }
+
+  /// 退出开始菜单态：回到开始菜单之前选中的那个程序。
+  Future<void> returnToSelectedApp() async {
+    startMenuOpen = false;
+    final hwnd = currentHwnd;
+    if (hwnd != 0 && isSingleAppMode) {
+      await switchToApp(hwnd, currentSelectedAppName);
+      return;
+    }
+    await updateViewStyle(force: true);
+  }
+
   void rememberApp(int hwnd, String name) {
     if (hwnd == 0) return;
     _recentApps.removeWhere((e) => e.key == hwnd);
@@ -3085,10 +3185,18 @@ class CanvasModel with ChangeNotifier {
     return null;
   }
 
+  /// 刚切过程序的一小段时间内不做"窗口消失"的判断，避免窗口列表还没刷新
+  /// 就把刚切过去的程序当成已关闭。
+  bool get recentlySwitchedApp {
+    final at = _lastAppSwitchAt;
+    return at != null && DateTime.now().difference(at).inSeconds < 8;
+  }
+
   /// Select [hwnd] in single-app mode: remember it, restore its own scale and
   /// crop, then ask the host to move the window onto the phone-sized display.
   Future<void> switchToApp(int hwnd, String name) async {
     if (hwnd == 0) return;
+    _lastAppSwitchAt = DateTime.now();
     rememberApp(hwnd, name);
     currentSelectedHwnd = hwnd;
     currentSelectedAppName = name;

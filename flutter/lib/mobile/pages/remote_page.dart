@@ -825,6 +825,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void onSoftKeyboardChanged(bool visible) {
     if (!visible) {
+      final wasStartMenu = _isStartMenuPushed;
       _isStartMenuPushed = false;
       if (_preStartMenuDisplay != null) {
         final d = _preStartMenuDisplay!;
@@ -850,6 +851,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         });
       }
       gFFI.canvasModel.restoreMobileOffsetAfterSoftKeyboard();
+      if (wasStartMenu) {
+        // 收起软键盘就等于退出开始菜单：直接回到开始菜单之前选中的程序，
+        // 远端那个开始菜单也会随之被切换掉的窗口关掉。
+        gFFI.canvasModel.returnToSelectedApp();
+      }
 
       // Workaround for iOS: physical keyboard input fails after virtual keyboard is hidden
       // https://github.com/flutter/flutter/issues/39900
@@ -2334,6 +2340,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   ? 'Windows 开始菜单 (呼出软键盘)'
                   : 'Start Menu (Open Keyboard)',
               onPressed: () {
+                if (_isStartMenuPushed) {
+                  // 再点一次等于取消：收起软键盘并回到开始菜单之前的程序，
+                  // 远端那个开始菜单会随窗口切换一起关掉。
+                  _isStartMenuPushed = false;
+                  gFFI.canvasModel.startMenuOpen = false;
+                  _closeSoftKeyboard();
+                  gFFI.canvasModel.returnToSelectedApp();
+                  return;
+                }
                 // The host clicks the Start button at the bottom-left of the
                 // current (virtual) display, so the menu opens there instead of
                 // on the primary monitor.
