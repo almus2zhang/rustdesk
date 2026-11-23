@@ -227,6 +227,8 @@ pub struct AppWindowInfo {
     pub height: i32,
     #[serde(default)]
     pub icon: String,
+    #[serde(default)]
+    pub is_minimized: bool,
 }
 
 #[cfg(not(windows))]

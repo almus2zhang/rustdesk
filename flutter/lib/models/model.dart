@@ -677,18 +677,6 @@ class FfiModel with ChangeNotifier {
         name: 'get_window_list_auto',
         value: '',
       );
-      // 兜底：如果两秒后画面仍然明显比目标尺寸窄（"小窗口"），再补发一次，
-      // 避免一次时序问题就让用户必须手动切程序。
-      Future.delayed(const Duration(seconds: 2), () {
-        final cm2 = parent.target?.canvasModel;
-        final img = parent.target?.imageModel.image;
-        if (cm2 == null || img == null || img.width <= 0) return;
-        if (!cm2.isSingleAppMode || cm2.startMenuOpen) return;
-        final targetW = cm2.calculateRemoteWindowTargetSize()['targetW'] ?? 0;
-        if (targetW <= 0 || img.width >= targetW - 10) return;
-        final hwnd2 = cm2.currentHwnd;
-        if (hwnd2 != 0) cm2.switchToApp(hwnd2, cm2.currentSelectedAppName);
-      });
     }
 
     final image = parent.target?.imageModel.image;
@@ -737,7 +725,8 @@ class FfiModel with ChangeNotifier {
       if (isIdentical) {
         for (int i = 0; i < list.length; i++) {
           if (current[i]['hwnd'] != list[i]['hwnd'] ||
-              current[i]['title'] != list[i]['title']) {
+              current[i]['title'] != list[i]['title'] ||
+              current[i]['is_minimized'] != list[i]['is_minimized']) {
             isIdentical = false;
             break;
           }
@@ -748,6 +737,7 @@ class FfiModel with ChangeNotifier {
       }
       _restoreSingleAppSelectionFromList(list);
       _handleClosedOrReopenedWindows(sessionId, list);
+      _updateSelectedAppMinimized(list);
       if (parent.target?.canvasModel.showWindowPickerModal != true) {
         return;
       }
@@ -920,47 +910,38 @@ class FfiModel with ChangeNotifier {
     }
   }
 
-  _handleWindowClosed(SessionID sessionId) async {
+  _handleWindowClosed(SessionID sessionId) {
     final cm = parent.target?.canvasModel;
     if (cm == null) return;
-    final closedHwnd = cm.currentSelectedHwnd;
-    parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-    await _leaveClosedApp(sessionId, cm, closedHwnd);
+    _showAppGridForClosedApp(cm);
   }
 
-  /// 当前单程序窗口被关掉（主机通知，或列表里已经找不到它）后：优先切回上一
-  /// 个还开着的程序；否则退出单程序模式，并记住这个程序名，等它再次打开时
-  /// 自动回到单程序全屏。
-  Future<void> _leaveClosedApp(
-      SessionID sessionId, CanvasModel cm, int closedHwnd) async {
-    var name = cm.currentSelectedAppName;
-    if (name.isEmpty && closedHwnd != 0) {
-      // 程序名可能还没解析出来，按句柄从列表里反查一个，方便之后自动恢复。
-      for (final item in cm.appWindowList.value) {
-        if (item is Map &&
-            (int.tryParse('${item['hwnd']}') ?? 0) == closedHwnd) {
-          name = item['name']?.toString() ?? '';
-          break;
-        }
-      }
-    }
-    final prev = cm.previousOpenApp(
-        closedHwnd != 0 ? closedHwnd : cm.currentSelectedHwnd);
-    if (prev != null) {
-      await cm.switchToApp(prev.key, prev.value);
+  /// 选中的程序退出/被切走后，不再自动切到上一个程序或直接退回桌面，
+  /// 而是保留在当前会话，把程序图标列表盖到主画面上让用户自己选。
+  void _showAppGridForClosedApp(CanvasModel cm) {
+    cm.startMenuOpen = false;
+    cm.selectedAppMinimized.value = false;
+    cm.selectedAppClosed.value = true;
+  }
+
+  /// 记录当前单程序窗口是否已最小化，客户端据此在主画面显示程序图标列表。
+  void _updateSelectedAppMinimized(List<dynamic> list) {
+    final cm = parent.target?.canvasModel;
+    if (cm == null) return;
+    final hwnd = cm.currentHwnd;
+    if (!cm.isSingleAppMode || cm.startMenuOpen || hwnd == 0) {
+      cm.selectedAppMinimized.value = false;
       return;
     }
-    cm.isSingleAppMode = false;
-    cm.startMenuOpen = false;
-    // 顺序不能反：退出单程序模式会清掉待恢复标记。
-    cm.markAppClosedForAutoReopen(name);
-    // 没有可切的程序就退回桌面：必须让主机也退出单程序模式，否则它会继续
-    // 采集那块已经没有窗口的虚拟屏，画面就是全黑。
-    await bind.sessionPeerOption(
-        sessionId: sessionId, name: 'select_window', value: '0');
-    await bind.sessionPeerOption(
-        sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
-    await cm.updateViewStyle(force: true);
+    var minimized = false;
+    for (final item in list) {
+      if (item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd) {
+        final v = item['is_minimized'];
+        minimized = v == true || v == 1 || v == 'true';
+        break;
+      }
+    }
+    cm.selectedAppMinimized.value = minimized;
   }
 
   /// 主机没发（或来不及发）window_closed 时，用窗口列表兜底：当前选中的程序
@@ -976,8 +957,7 @@ class FfiModel with ChangeNotifier {
       final stillThere = list.any((item) =>
           item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd);
       if (!stillThere) {
-        parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-        _leaveClosedApp(sessionId, cm, hwnd);
+        _showAppGridForClosedApp(cm);
       }
       return;
     }
@@ -2931,7 +2911,15 @@ class CanvasModel with ChangeNotifier {
   }
 
   set isSingleAppMode(bool value) {
+    final changed = _isSingleAppMode != value;
     _isSingleAppMode = value;
+    // 模式切换时清掉最小化标记，否则上次退出前留下的 true 会在下一次
+    // 进入单程序模式时让程序图标覆盖层误盖住正常的画面
+    // （要等下一次窗口列表到达才会被纠正）。
+    if (changed) {
+      selectedAppMinimized.value = false;
+      selectedAppClosed.value = false;
+    }
     if (value) {
       final ffiModel = parent.target?.ffiModel;
       if (ffiModel != null && !ffiModel.touchMode) {
@@ -2946,6 +2934,11 @@ class CanvasModel with ChangeNotifier {
 
   // Single App Mode & Dock state
   final Rx<List<dynamic>> appWindowList = Rx<List<dynamic>>([]);
+  // 当前单程序窗口是否已最小化（主机窗口列表里的 is_minimized）。
+  // 最小化时主机采不到画面，客户端改为显示程序图标列表。
+  final RxBool selectedAppMinimized = false.obs;
+  // 当前单程序窗口已退出，主画面同样改为显示程序图标列表。
+  final RxBool selectedAppClosed = false.obs;
   bool showWindowPickerModal = false;
   String currentSelectedAppName = '';
   int currentSelectedHwnd = 0;
@@ -3203,6 +3196,8 @@ class CanvasModel with ChangeNotifier {
     loadAppCrop(name);
     isSingleAppMode = true;
     startMenuOpen = false;
+    selectedAppMinimized.value = false;
+    selectedAppClosed.value = false;
     parent.target?.ffiModel.touchMode = true;
     parent.target?.ffiModel.pi.platformAdditions['selected_window'] = hwnd;
     final dims = calculateRemoteWindowTargetSize();
@@ -3227,6 +3222,23 @@ class CanvasModel with ChangeNotifier {
       value: 'Y',
     );
     await updateViewStyle(force: true);
+    // 主机第一次收到选择时，手机尺寸的虚拟屏可能还没被枚举出来，窗口不会被
+    // 搬过去（表现为画面尺寸不对，要再切一次程序才恢复）。2.5 秒后按当时的
+    // 显示信息重新算一次尺寸再发，等价于用户手动再切一次。
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (currentSelectedHwnd != hwnd) return;
+      if (!isSingleAppMode || startMenuOpen) return;
+      final retry = calculateRemoteWindowTargetSize();
+      final retryW = retry['targetW'] ?? targetW;
+      final retryH = retry['targetH'] ?? targetH;
+      final retryPhoneW = retry['phoneW'] ?? phoneW;
+      final retryPhoneH = retry['phoneH'] ?? phoneH;
+      bind.sessionPeerOption(
+        sessionId: sessionId,
+        name: 'select_window',
+        value: '$hwnd:$modeStr:$retryW:$retryH:$retryPhoneW:$retryPhoneH',
+      );
+    });
   }
 
   Future<void> syncCurrentAppWindowSize({
@@ -3669,6 +3681,8 @@ class CanvasModel with ChangeNotifier {
     _offsetBeforeMobileSoftKeyboard = null;
     _scaleBeforeMobileSoftKeyboard = null;
     _isSingleAppMode = false;
+    selectedAppMinimized.value = false;
+    selectedAppClosed.value = false;
   }
 
   updateScrollPercent() {
