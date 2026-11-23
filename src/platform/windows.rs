@@ -4940,10 +4940,6 @@ pub struct AppWindowInfo {
     pub height: i32,
     #[serde(default)]
     pub icon: String,
-    /// The window is minimized. Old clients can't capture it, so they show the
-    /// program list instead of a black or frozen picture.
-    #[serde(default)]
-    pub is_minimized: bool,
 }
 
 extern "system" {
@@ -5301,7 +5297,6 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         width,
         height,
         icon,
-        is_minimized: is_iconic,
     });
     TRUE
 }
