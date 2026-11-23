@@ -14,6 +14,10 @@ import 'package:flutter_hbb/models/input_model.dart';
 
 import './gestures.dart';
 
+/// 单指滑动滚动到远端的灵敏度：手指移动 1px 对应多少个滚动单位。
+/// 原来是 2.2，实测偏快，调到 1.6。
+const double kOneFingerScrollSpeed = 1.6;
+
 class RawKeyFocusScope extends StatelessWidget {
   final FocusNode? focusNode;
   final ValueChanged<bool>? onFocusChange;
@@ -130,6 +134,9 @@ class _RawTouchGestureDetectorRegionState
   TwoFingerModeState _twoFingerState = TwoFingerModeState.undecided;
   Offset _twoFingerTotalFocalDelta = Offset.zero;
   Timer? _twoFingerHoldTimer;
+  // 单程序模式下双指手势可能是"捏合缩放"也可能是"双指滚动平移"，
+  // 这次手势一旦出现过明显的两指间距变化，就按缩放处理。
+  bool _twoFingerPinching = false;
 
   bool get _isHighRes {
     final media = MediaQuery.of(context);
@@ -483,9 +490,10 @@ class _RawTouchGestureDetectorRegionState
     }
     if (handleTouch && ffiModel.touchPanMode.value == 'scroll') {
       // Smooth & responsive follow-the-finger drag scroll:
-      // Multiplier 2.2 for natural mobile viewport scroll speed, non-blocking FFI dispatch
-      _oneFingerScrollX += d.delta.dx * 2.2;
-      _oneFingerScrollY += d.delta.dy * 2.2;
+      // kOneFingerScrollSpeed tunes how far the remote view scrolls per finger
+      // pixel, non-blocking FFI dispatch.
+      _oneFingerScrollX += d.delta.dx * kOneFingerScrollSpeed;
+      _oneFingerScrollY += d.delta.dy * kOneFingerScrollSpeed;
 
       final sendX = _oneFingerScrollX.truncate();
       final sendY = _oneFingerScrollY.truncate();
@@ -537,8 +545,9 @@ class _RawTouchGestureDetectorRegionState
         final vy = d.velocity.pixelsPerSecond.dy;
         final vx = d.velocity.pixelsPerSecond.dx;
         if (vy.abs() > 100 || vx.abs() > 100) {
-          double curVx = vx * 0.016 * 2.0;
-          double curVy = vy * 0.016 * 2.0;
+          // 惯性初速跟随滑动灵敏度，保持拖拽与滑动的比例一致
+          double curVx = vx * 0.016 * kOneFingerScrollSpeed * 0.9;
+          double curVy = vy * 0.016 * kOneFingerScrollSpeed * 0.9;
           _oneFingerInertiaTimer =
               Timer.periodic(const Duration(milliseconds: 16), (timer) {
             curVx *= 0.94;
@@ -616,6 +625,7 @@ class _RawTouchGestureDetectorRegionState
     _remoteScaleAccumulator = 0.0;
     _hasRemoteScaleBaseline = false;
     _remoteScaleDirection = 0;
+    _twoFingerPinching = false;
 
     if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
       // Ctrl+wheel zooms around the cursor. Put the cursor at the pinch
@@ -643,10 +653,19 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
 
-    if (ffi.canvasModel.isSingleAppMode &&
+    final singleAppTwoFinger = ffi.canvasModel.isSingleAppMode &&
         ffiModel.touchMode &&
-        !ffi.canvasModel.allowSingleAppZoom) {
-      // 单程序触屏模式且未允许缩放：直接作为双指滚轮滚动，完全禁止缩放与拖动画布
+        !ffi.canvasModel.allowSingleAppZoom;
+    if (singleAppTwoFinger &&
+        !_twoFingerPinching &&
+        (d.scale - 1).abs() > 0.06) {
+      // 两指间距明显变化 → 这次手势是捏合缩放，不再当滚动处理。
+      // Ctrl+滚轮以光标为中心缩放，先把光标挪到双指中点。
+      _twoFingerPinching = true;
+      await ffi.cursorModel.move(d.localFocalPoint.dx, d.localFocalPoint.dy);
+    }
+    if (singleAppTwoFinger && !_twoFingerPinching) {
+      // 单程序触屏模式且未允许缩放：双指平移作为滚轮滚动，禁止缩放与拖动画布
       _twoFingerScrollX += d.focalPointDelta.dx;
       _twoFingerScrollY += d.focalPointDelta.dy;
 
@@ -678,7 +697,9 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
 
-    if (handleTouch && ffiModel.touchZoomMode.value == 'remote') {
+    if (handleTouch &&
+        (ffiModel.touchZoomMode.value == 'remote' ||
+            (singleAppTwoFinger && _twoFingerPinching))) {
       // 1. Establish clean initial baseline on the first frame of 2-finger contact
       if (!_hasRemoteScaleBaseline) {
         _scale = d.scale;
@@ -861,7 +882,8 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if ((isDesktop || isWebDesktop) ||
-        (handleTouch && ffiModel.touchZoomMode.value == 'remote')) {
+        (handleTouch && ffiModel.touchZoomMode.value == 'remote') ||
+        _twoFingerPinching) {
       if (!widget.isCamera) {
         await bind.sessionSendPointer(
             sessionId: sessionId,
@@ -870,7 +892,9 @@ class _RawTouchGestureDetectorRegionState
                     .toJson()));
       }
     }
-    final bool wasScrolling = _twoFingerState == TwoFingerModeState.scrolling;
+    final bool wasScrolling =
+        _twoFingerState == TwoFingerModeState.scrolling && !_twoFingerPinching;
+    _twoFingerPinching = false;
     _scale = 1;
     _twoFingerState = TwoFingerModeState.undecided;
     _twoFingerTotalFocalDelta = Offset.zero;
