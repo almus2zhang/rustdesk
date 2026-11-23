@@ -820,6 +820,8 @@ class FfiModel with ChangeNotifier {
                               parent.target?.canvasModel
                                   .currentSelectedAppName = name;
                               parent.target?.canvasModel.loadAppCrop(name);
+                              parent.target?.canvasModel
+                                  .rememberApp(int.tryParse(hwnd) ?? 0, name);
 
                               final dims = parent.target?.canvasModel
                                   .calculateRemoteWindowTargetSize();
@@ -875,11 +877,25 @@ class FfiModel with ChangeNotifier {
   }
 
   _handleWindowClosed(SessionID sessionId) async {
+    final cm = parent.target?.canvasModel;
     parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-    parent.target?.canvasModel.isSingleAppMode = false;
+    // 当前程序关闭后先切回上一个还开着的程序，避免停在空窗口上。
+    final prev = cm?.previousOpenApp(cm?.currentSelectedHwnd ?? 0);
+    if (cm != null && prev != null) {
+      await cm.switchToApp(prev.key, prev.value);
+      return;
+    }
+    if (cm != null) {
+      cm.isSingleAppMode = false;
+      cm.startMenuOpen = false;
+    }
+    // 没有可切的程序就退回桌面：必须让主机也退出单程序模式，否则它会继续
+    // 采集那块已经没有窗口的虚拟屏，画面就是全黑。
+    await bind.sessionPeerOption(
+        sessionId: sessionId, name: 'select_window', value: '0');
     await bind.sessionPeerOption(
         sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
-    await parent.target?.canvasModel.updateViewStyle();
+    await cm?.updateViewStyle(force: true);
   }
 
   _handlePrinterRequest(
@@ -3047,6 +3063,68 @@ class CanvasModel with ChangeNotifier {
       name: 'select_window',
       value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
     );
+  }
+
+  // Recently selected apps (newest first), used to fall back to the previous
+  // app when the current one is closed by the user.
+  final List<MapEntry<int, String>> _recentApps = [];
+
+  void rememberApp(int hwnd, String name) {
+    if (hwnd == 0) return;
+    _recentApps.removeWhere((e) => e.key == hwnd);
+    _recentApps.insert(0, MapEntry(hwnd, name));
+    if (_recentApps.length > 8) _recentApps.removeLast();
+  }
+
+  /// The most recently selected app that is still present in the window list,
+  /// excluding [excludeHwnd].
+  MapEntry<int, String>? previousOpenApp(int excludeHwnd) {
+    final list = appWindowList.value;
+    bool isOpen(int hwnd) => list.any((item) =>
+        item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd);
+    for (final app in _recentApps) {
+      if (app.key == excludeHwnd || !isOpen(app.key)) continue;
+      return app;
+    }
+    return null;
+  }
+
+  /// Select [hwnd] in single-app mode: remember it, restore its own scale and
+  /// crop, then ask the host to move the window onto the phone-sized display.
+  Future<void> switchToApp(int hwnd, String name) async {
+    if (hwnd == 0) return;
+    rememberApp(hwnd, name);
+    currentSelectedHwnd = hwnd;
+    currentSelectedAppName = name;
+    loadAppCrop(name);
+    isSingleAppMode = true;
+    startMenuOpen = false;
+    parent.target?.ffiModel.touchMode = true;
+    parent.target?.ffiModel.pi.platformAdditions['selected_window'] = hwnd;
+    final dims = calculateRemoteWindowTargetSize();
+    final targetW = dims['targetW'] ?? 700;
+    final targetH = dims['targetH'] ?? 1300;
+    final phoneW = dims['phoneW'] ?? 0;
+    final phoneH = dims['phoneH'] ?? 0;
+    final directMode =
+        bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+    final modeStr = directMode ? 'direct' : 'crop';
+    _resyncedTargetW = targetW;
+    _resyncedTargetH = targetH;
+    _lastSyncedTargetH = targetH;
+    _lastCheckedW = 0;
+    _lastCheckedH = 0;
+    await bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'select_window',
+      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
+    );
+    await bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'is_single_app_mode',
+      value: 'Y',
+    );
+    await updateViewStyle(force: true);
   }
 
   Future<void> syncCurrentAppWindowSize({

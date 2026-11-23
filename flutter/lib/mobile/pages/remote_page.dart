@@ -2435,7 +2435,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               : displayName,
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
-                            onTap: () {
+                            onTap: () async {
                               if (gFFI.canvasModel.currentSelectedHwnd == hwnd) {
                                 return;
                               }
@@ -2446,45 +2446,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   keyboardVisibilityController.isVisible) {
                                 _closeSoftKeyboard();
                               }
-                              gFFI.canvasModel.currentSelectedHwnd = hwnd;
-                              gFFI.canvasModel.currentSelectedAppName = name;
-                              gFFI.canvasModel.loadAppCrop(name);
-
-                              final directMode = bind.mainGetLocalOption(
-                                      key: 'direct_window_capture') !=
-                                  'N';
-                              final modeStr = directMode ? 'direct' : 'crop';
-
+                              await gFFI.canvasModel.switchToApp(hwnd, name);
                               final dims = gFFI.canvasModel
                                   .calculateRemoteWindowTargetSize();
                               final targetW = dims['targetW'] ?? 700;
                               final targetH = dims['targetH'] ?? 1300;
-
-                              int phoneW = 1260;
-                              int phoneH = 2800;
-                              if (WidgetsBinding.instance.platformDispatcher.views.isNotEmpty) {
-                                final view = WidgetsBinding.instance.platformDispatcher.views.first;
-                                phoneW = view.physicalSize.width.round();
-                                phoneH = view.physicalSize.height.round();
-                              }
-
-                              gFFI.ffiModel.pi
-                                  .platformAdditions['selected_window'] = hwnd;
-                              gFFI.ffiModel.touchMode = true;
-                              gFFI.canvasModel.isSingleAppMode = true;
-                              gFFI.canvasModel.startMenuOpen = false;
-
-                              bind.sessionPeerOption(
-                                sessionId: gFFI.sessionId,
-                                name: 'select_window',
-                                value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
-                              );
-                              bind.sessionPeerOption(
-                                sessionId: gFFI.sessionId,
-                                name: 'is_single_app_mode',
-                                value: 'Y',
-                              );
-                              gFFI.canvasModel.updateViewStyle(force: true);
                               BotToast.showText(
                                 text: localeName.startsWith('zh')
                                     ? '已切至: $displayName (${targetW}x$targetH)'
