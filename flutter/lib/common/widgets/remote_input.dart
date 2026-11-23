@@ -954,6 +954,10 @@ class _RawTouchGestureDetectorRegionState
         };
 
   makeGestures(BuildContext context) {
+    // 移动端不注册双击识别器：它在手势竞技场里会让单击一直等到
+    // kDoubleTapTimeout(300ms) 才胜出，点击（onTapUp 里才下发）就明显发顿。
+    // 远端双击本来就是两次快速点击，去掉后每次点击立即下发，双击依然成立。
+    final enableDoubleTap = isDesktop || isWebDesktop;
     return <Type, GestureRecognizerFactory>{
       // Official
       TapGestureRecognizer:
@@ -969,15 +973,16 @@ class _RawTouchGestureDetectorRegionState
           }
           ..onTap = onTap;
       }),
-      DoubleTapGestureRecognizer:
-          GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
-              () => DoubleTapGestureRecognizer(
-                    supportedDevices: kTouchBasedDeviceKinds,
-                  ), (instance) {
-        instance
-          ..onDoubleTapDown = onDoubleTapDown
-          ..onDoubleTap = onDoubleTap;
-      }),
+      if (enableDoubleTap)
+        DoubleTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+                () => DoubleTapGestureRecognizer(
+                      supportedDevices: kTouchBasedDeviceKinds,
+                    ), (instance) {
+          instance
+            ..onDoubleTapDown = onDoubleTapDown
+            ..onDoubleTap = onDoubleTap;
+        }),
       LongPressGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
               () => LongPressGestureRecognizer(
