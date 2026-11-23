@@ -653,6 +653,52 @@ class FfiModel with ChangeNotifier {
     }
   }
 
+  bool _singleAppResyncedOnFirstFrame = false;
+
+  /// A session that starts already in single-app mode inherits the window size
+  /// left by the previous session. The selection must be re-sent only after the
+  /// first frame: sending it during login races with the host's display
+  /// initialisation, which then overrides it (small image, sometimes even a
+  /// "remote desktop closed" prompt).
+  void _resyncSingleAppOnFirstFrame(SessionID sessionId) {
+    void run() {
+      if (_singleAppResyncedOnFirstFrame) return;
+      final cm = parent.target?.canvasModel;
+      if (cm == null || !cm.isSingleAppMode) return;
+      final hwnd = cm.currentHwnd;
+      if (hwnd == 0) return;
+      _singleAppResyncedOnFirstFrame = true;
+      // 走和用户手动切换程序完全相同的路径，那条路径是验证有效的。
+      cm.switchToApp(hwnd, cm.currentSelectedAppName);
+      // The host only reports the window handle, so pull the list to restore
+      // this app's own scale and crop once its name is known.
+      bind.sessionPeerOption(
+        sessionId: sessionId,
+        name: 'get_window_list_auto',
+        value: '',
+      );
+      // 兜底：如果两秒后画面仍然明显比目标尺寸窄（"小窗口"），再补发一次，
+      // 避免一次时序问题就让用户必须手动切程序。
+      Future.delayed(const Duration(seconds: 2), () {
+        final cm2 = parent.target?.canvasModel;
+        final img = parent.target?.imageModel.image;
+        if (cm2 == null || img == null || img.width <= 0) return;
+        if (!cm2.isSingleAppMode || cm2.startMenuOpen) return;
+        final targetW = cm2.calculateRemoteWindowTargetSize()['targetW'] ?? 0;
+        if (targetW <= 0 || img.width >= targetW - 10) return;
+        final hwnd2 = cm2.currentHwnd;
+        if (hwnd2 != 0) cm2.switchToApp(hwnd2, cm2.currentSelectedAppName);
+      });
+    }
+
+    final image = parent.target?.imageModel.image;
+    if (image != null && image.width > 0) {
+      run();
+      return;
+    }
+    parent.target?.imageModel.addCallbackOnFirstImage((_) => run());
+  }
+
   /// The host only reports the selected window handle, so a session that starts
   /// already in single-app mode does not know which app it shows: it falls back
   /// to the default scale and no crop. Once the window list arrives, look the
@@ -668,10 +714,7 @@ class FfiModel with ChangeNotifier {
       if ((int.tryParse('${item['hwnd']}') ?? 0) != hwnd) continue;
       final name = item['name']?.toString() ?? '';
       if (name.isEmpty) return;
-      cm.currentSelectedHwnd = hwnd;
-      cm.loadAppCrop(name);
-      cm.resyncSelectedAppWindow(hwndOverride: hwnd);
-      cm.updateViewStyle(force: true);
+      cm.switchToApp(hwnd, name);
       return;
     }
   }
@@ -1793,17 +1836,7 @@ class FfiModel with ChangeNotifier {
       if (parent.target?.canvasModel.isSingleAppMode == true) {
         await parent.target?.canvasModel.updateViewStyle();
         if (!isCache) {
-          // 连接一开始就处在单程序模式时，远端窗口还停在上次会话留下的尺寸，
-          // 和当前手机视口对不上，画面会显得偏小，要手动切一次程序才恢复。
-          // 这里直接按目标尺寸重发一次选择，等价于那次手动切换。
-          await parent.target?.canvasModel.resyncSelectedAppWindow();
-          // 立刻静默拉一次窗口列表：主机只报 hwnd，拿到列表后才能按程序名
-          // 恢复这台手机上为该程序设定的放大倍率与裁边。
-          bind.sessionPeerOption(
-            sessionId: sessionId,
-            name: 'get_window_list_auto',
-            value: '',
-          );
+          _resyncSingleAppOnFirstFrame(sessionId);
         }
       }
     }
@@ -2091,6 +2124,8 @@ class FfiModel with ChangeNotifier {
         if (selWin != null && selWin != 0) {
           parent.target?.canvasModel.isSingleAppMode = true;
           parent.target?.canvasModel.updateViewStyle();
+          // 有些连接是登录后才把 selected_window 同步过来的，这里补一次恢复。
+          _resyncSingleAppOnFirstFrame(sessionId);
         } else if (_pi.platformAdditions.containsKey('selected_window')) {
           parent.target?.canvasModel.isSingleAppMode = false;
           parent.target?.canvasModel.updateViewStyle();
@@ -3026,45 +3061,6 @@ class CanvasModel with ChangeNotifier {
     }
   }
 
-  // Target size last pushed to the host by [resyncSelectedAppWindow]. Used to
-  // skip pushing the same size twice, so a later peer info update (or a per-app
-  // scale/crop that turns out to be the default) cannot undo a size the user
-  // tuned by hand.
-  int _resyncedTargetW = 0;
-  int _resyncedTargetH = 0;
-
-  /// Re-apply the currently selected window to the host with the target size
-  /// computed from the phone viewport.
-  ///
-  /// A session that starts already in single-app mode inherits the window size
-  /// left by the previous session, which no longer matches the phone viewport,
-  /// so the remote image shows up smaller than expected until the user switches
-  /// apps once. Sending the same selection the dock bar sends on tap fixes it.
-  Future<void> resyncSelectedAppWindow({int? hwndOverride}) async {
-    if (startMenuOpen) return;
-    final hwnd = hwndOverride ?? currentHwnd;
-    if (hwnd <= 0) return;
-    final dims = calculateRemoteWindowTargetSize();
-    final targetW = dims['targetW'] ?? 700;
-    final targetH = dims['targetH'] ?? 1300;
-    if (_resyncedTargetW == targetW && _resyncedTargetH == targetH) return;
-    _resyncedTargetW = targetW;
-    _resyncedTargetH = targetH;
-    final phoneW = dims['phoneW'] ?? 0;
-    final phoneH = dims['phoneH'] ?? 0;
-    final directMode =
-        bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
-    final modeStr = directMode ? 'direct' : 'crop';
-    _lastSyncedTargetH = targetH;
-    _lastCheckedW = 0;
-    _lastCheckedH = 0;
-    await bind.sessionPeerOption(
-      sessionId: sessionId,
-      name: 'select_window',
-      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
-    );
-  }
-
   // Recently selected apps (newest first), used to fall back to the previous
   // app when the current one is closed by the user.
   final List<MapEntry<int, String>> _recentApps = [];
@@ -3109,8 +3105,6 @@ class CanvasModel with ChangeNotifier {
     final directMode =
         bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
     final modeStr = directMode ? 'direct' : 'crop';
-    _resyncedTargetW = targetW;
-    _resyncedTargetH = targetH;
     _lastSyncedTargetH = targetH;
     _lastCheckedW = 0;
     _lastCheckedH = 0;
