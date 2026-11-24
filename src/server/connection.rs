@@ -4089,7 +4089,14 @@ impl Connection {
         }
     }
 
-    async fn select_app_window(&mut self, hwnd: usize, target_w: i32, target_h: i32, client_w: i32, client_h: i32) {
+    async fn select_app_window(&mut self, hwnd: usize, mut target_w: i32, mut target_h: i32, client_w: i32, client_h: i32) {
+        // 严格 16 像素对齐，确保硬件编码器（如 Intel QSV）能够正常编码不抛出 Invalid FrameType
+        if target_w > 0 {
+            target_w = ((target_w + 15) / 16) * 16;
+        }
+        if target_h > 0 {
+            target_h = ((target_h + 15) / 16) * 16;
+        }
         log::info!("select_app_window: {} (target_size: {}x{}, client_size: {}x{})", hwnd, target_w, target_h, client_w, client_h);
         // Picking a window means the Start menu interaction is over.
         self.start_menu_opened_at = None;

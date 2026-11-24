@@ -539,8 +539,8 @@ fn get_capturer_monitor(
         if sel_hwnd != 0 && !get_temp_full_screen() {
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                 origin = (wx, wy);
-                width = ((ww as usize) / 2) * 2;
-                height = ((wh as usize) / 2) * 2;
+                width = (((ww as usize) / 16) * 16).max(16);
+                height = (((wh as usize) / 16) * 16).max(16);
             }
         }
     }
@@ -762,8 +762,8 @@ fn run(vs: VideoService) -> ResultType<()> {
         let sel_hwnd = get_selected_window();
         if sel_hwnd != 0 && !get_temp_full_screen() {
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
-                let cur_w = ((ww as usize) / 2) * 2;
-                let cur_h = ((wh as usize) / 2) * 2;
+                let cur_w = (((ww as usize) / 16) * 16).max(16);
+                let cur_h = (((wh as usize) / 16) * 16).max(16);
                 if cur_w > 0 && cur_h > 0 {
                     c.width = cur_w;
                     c.height = cur_h;
@@ -1804,8 +1804,8 @@ pub fn make_display_changed_msg(
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                 display.x = wx;
                 display.y = wy;
-                display.width = ((ww / 2) * 2) as i32;
-                display.height = ((wh / 2) * 2) as i32;
+                display.width = (((ww / 16) * 16).max(16)) as i32;
+                display.height = (((wh / 16) * 16).max(16)) as i32;
             }
         }
     }

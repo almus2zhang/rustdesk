@@ -5444,8 +5444,8 @@ pub fn capture_window_bitmap(hwnd: usize, direct_mode: bool) -> Option<(i32, i32
         if w <= 0 || h <= 0 || wx < -10000 || wy < -10000 {
             return None;
         }
-        let w_even = ((w as usize) / 2) * 2;
-        let h_even = ((h as usize) / 2) * 2;
+        let w_even = (((w as usize) / 16) * 16).max(16);
+        let h_even = (((h as usize) / 16) * 16).max(16);
         if w_even == 0 || h_even == 0 {
             return None;
         }

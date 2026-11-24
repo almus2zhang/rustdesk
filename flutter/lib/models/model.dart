@@ -3063,8 +3063,9 @@ class CanvasModel with ChangeNotifier {
     int targetW = effectiveW + cL + cR;
     int targetH = effectiveH + cT + cB;
 
-    if (targetW % 2 != 0) targetW += 1;
-    if (targetH % 2 != 0) targetH += 1;
+    // 严格按 16 像素（H.264 / HEVC 宏块尺寸）向上对齐，确保硬件编码器（Intel QSV/NVENC/AMF）稳定不报错
+    targetW = ((targetW + 15) ~/ 16) * 16;
+    targetH = ((targetH + 15) ~/ 16) * 16;
 
     return {
       'targetW': max(100, targetW),
