@@ -507,9 +507,30 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn resize_app_window(&self, hwnd: u64, w: i32, h: i32) {
+        self.resize_app_window_with_mode(hwnd, w, h, "");
+    }
+
+    pub fn resize_app_window_with_mode(&self, hwnd: u64, w: i32, h: i32, mode: &str) {
+        let mut misc = Misc::new();
+        let key = if mode.is_empty() {
+            format!("app_window:resize:{}:{}:{}", hwnd, w, h)
+        } else {
+            format!("app_window:resize:{}:{}:{}:{}", hwnd, w, h, mode)
+        };
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: key,
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
+    pub fn set_single_app_temp_full_screen(&self, enable: bool) {
         let mut misc = Misc::new();
         misc.set_toggle_privacy_mode(TogglePrivacyMode {
-            impl_key: format!("app_window:resize:{}:{}:{}", hwnd, w, h),
+            impl_key: format!("app_window:temp_full:{}", if enable { "1" } else { "0" }),
             on: false,
             ..Default::default()
         });

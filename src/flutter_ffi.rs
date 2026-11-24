@@ -731,10 +731,16 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
                 let hwnd = parts[0].parse::<u64>().unwrap_or(0);
                 let w = parts[1].parse::<i32>().unwrap_or(0);
                 let h = parts[2].parse::<i32>().unwrap_or(0);
+                let mode = if parts.len() >= 4 { parts[3] } else { "" };
                 if hwnd != 0 && w > 0 && h > 0 {
-                    session.resize_app_window(hwnd, w, h);
+                    session.resize_app_window_with_mode(hwnd, w, h, mode);
                 }
             }
+            return;
+        }
+        if name == "temp_full_screen" {
+            let enable = value == "1" || value == "Y" || value == "true";
+            session.set_single_app_temp_full_screen(enable);
             return;
         }
         if name == "secondary_display" {

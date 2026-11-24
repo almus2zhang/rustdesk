@@ -82,6 +82,7 @@ lazy_static::lazy_static! {
     static ref SCREENSHOTS: Mutex<HashMap<usize, Screenshot>> = Default::default();
     static ref SELECTED_WINDOW: Arc<std::sync::atomic::AtomicUsize> = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     static ref DIRECT_WINDOW_CAPTURE: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    static ref TEMP_FULL_SCREEN: Arc<std::sync::atomic::AtomicBool> = Arc::new(std::sync::atomic::AtomicBool::new(false));
 }
 
 pub fn set_last_server_perf(cap: f64, conv: f64, enc: f64, driver_id: u8) {
@@ -144,6 +145,14 @@ pub fn set_direct_window_capture(direct: bool) {
 
 pub fn get_direct_window_capture() -> bool {
     DIRECT_WINDOW_CAPTURE.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+pub fn set_temp_full_screen(val: bool) {
+    TEMP_FULL_SCREEN.store(val, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn get_temp_full_screen() -> bool {
+    TEMP_FULL_SCREEN.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 struct Screenshot {
@@ -969,7 +978,7 @@ fn run(vs: VideoService) -> ResultType<()> {
         #[cfg(windows)]
         {
             let sel_hwnd = get_selected_window();
-            if sel_hwnd != 0 {
+            if sel_hwnd != 0 && !get_temp_full_screen() {
                 let direct_mode = get_direct_window_capture();
                 if let Some((wx, wy, cur_w, cur_h, win_data)) = crate::platform::capture_window_bitmap(sel_hwnd, direct_mode) {
                     window_not_found_count = 0;

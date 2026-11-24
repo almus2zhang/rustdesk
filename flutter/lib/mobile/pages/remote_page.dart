@@ -2565,17 +2565,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           : 'Returned to Single App View (Touch mode)',
                     );
                   } else {
-                    gFFI.canvasModel.isSingleAppTempFullScreen = true;
-                    gFFI.ffiModel.touchMode = false;
-                    bind.mainSetLocalOption(
-                      key: kOptionTouchMode,
-                      value: 'N',
-                    );
-                    await gFFI.canvasModel.updateViewStyle(force: true);
+                    await gFFI.canvasModel.setSingleAppTempFullScreen(true);
                     BotToast.showText(
                       text: localeName.startsWith('zh')
-                          ? '已进入全屏视图 (鼠标模式，支持双指缩放)'
-                          : 'Entered Full Screen View (Mouse mode, pinch zoom enabled)',
+                          ? '已进入全屏桌面视图 (鼠标模式，双指自由缩放)'
+                          : 'Entered Full Desktop View (Mouse mode, pinch zoom enabled)',
                     );
                   }
                   if (mounted) setState(() {});
@@ -3229,6 +3223,117 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 );
                               },
                             ),
+                          ),
+                        ],
+                      );
+                    }),
+                    const Divider(color: Colors.white24, height: 24),
+
+                    // Window Capture Mode
+                    Text(
+                      localeName.startsWith('zh')
+                          ? '窗口获取方式 (可按程序独立指定)'
+                          : 'Window Capture Mode (Per-App Configurable)',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent),
+                    ),
+                    const SizedBox(height: 6),
+                    Builder(builder: (context) {
+                      final appCfg = cm.getAppCaptureModeConfig(appName);
+                      final globalDirect = bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+
+                      Widget buildModeOption({
+                        required String title,
+                        required String subtitle,
+                        required String modeKey,
+                        required IconData icon,
+                      }) {
+                        final isSelected = appCfg == modeKey;
+                        return InkWell(
+                          onTap: () async {
+                            setSheetState(() {});
+                            await cm.setAppCaptureModeConfig(modeKey, appName);
+                            await cm.syncCurrentAppWindowSize();
+                            await cm.updateViewStyle(force: true);
+                            BotToast.showText(
+                              text: localeName.startsWith('zh')
+                                  ? (appName.isEmpty ? '已更新窗口获取方式' : '程序 $appName 已设为: $title')
+                                  : 'Updated capture mode to $title',
+                            );
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.symmetric(vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0x2B00E5FF) : const Color(0x14FFFFFF),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                width: isSelected ? 1.2 : 0.6,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(icon, size: 20, color: isSelected ? Colors.cyanAccent : Colors.white70),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                          color: isSelected ? Colors.cyanAccent : Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 1),
+                                      Text(
+                                        subtitle,
+                                        style: const TextStyle(fontSize: 10, color: Colors.white54),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (isSelected)
+                                  const Icon(Icons.check_circle, size: 18, color: Colors.cyanAccent),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return Column(
+                        children: [
+                          if (appName.isNotEmpty)
+                            buildModeOption(
+                              title: localeName.startsWith('zh')
+                                  ? '跟随统一设置 (默认: ${globalDirect ? "从程序直接获取" : "从桌面裁剪画面"})'
+                                  : 'Inherit Global (${globalDirect ? "Direct" : "Crop"})',
+                              subtitle: localeName.startsWith('zh')
+                                  ? '未单独指定，使用全局默认设置'
+                                  : 'Use global default setting',
+                              modeKey: 'inherit',
+                              icon: Icons.sync,
+                            ),
+                          buildModeOption(
+                            title: localeName.startsWith('zh') ? '从程序直接获取窗口' : 'Direct Window Capture',
+                            subtitle: localeName.startsWith('zh')
+                                ? '独立隔离无遮挡，微调裁边时右侧平滑自适应延伸补齐'
+                                : 'Isolated capture, smooth edge resizing',
+                            modeKey: 'direct',
+                            icon: Icons.crop_free,
+                          ),
+                          buildModeOption(
+                            title: localeName.startsWith('zh') ? '从桌面裁剪画面 (虚拟屏整屏适配)' : 'Crop from Desktop',
+                            subtitle: localeName.startsWith('zh')
+                                ? '适合 Notepad++ 等限制高度的原生 Win32 窗口，无缝撑满全屏'
+                                : 'Best for Win32 apps with fixed max-height constraints',
+                            modeKey: 'crop',
+                            icon: Icons.desktop_windows_outlined,
                           ),
                         ],
                       );

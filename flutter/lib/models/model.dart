@@ -855,9 +855,8 @@ class FfiModel with ChangeNotifier {
                             ),
                             onTap: () async {
                               close();
-                              final directMode = bind.mainGetLocalOption(
-                                      key: 'direct_window_capture') !=
-                                  'N';
+                              final directMode = parent.target?.canvasModel.isDirectModeEffective(name) ??
+                                  (bind.mainGetLocalOption(key: 'direct_window_capture') != 'N');
                               final modeStr = directMode ? 'direct' : 'crop';
                               parent.target?.canvasModel.currentSelectedHwnd =
                                   int.tryParse(hwnd) ?? 0;
@@ -2901,7 +2900,7 @@ class CanvasModel with ChangeNotifier {
         final cL = appCropLeft;
         final cR = appCropRight;
         final imgW = parent.target?.imageModel.image?.width ?? 0;
-        final curW = (imgW > 0 && (imgW - targetW).abs() <= 10) ? imgW : targetW;
+        final curW = imgW > 0 ? imgW : targetW;
         final visibleW = max(1, curW - cL - cR);
         if (size.width > 0 && visibleW > 0) {
           _scale = size.width / visibleW;
@@ -3172,17 +3171,80 @@ class CanvasModel with ChangeNotifier {
   Future<void> returnToSelectedApp() async {
     startMenuOpen = false;
     isSingleAppTempFullScreen = false;
-    final hwnd = currentHwnd;
-    if (hwnd != 0 && isSingleAppMode) {
-      await switchToApp(hwnd, currentSelectedAppName);
-      return;
-    }
     parent.target?.ffiModel.touchMode = true;
     bind.mainSetLocalOption(
       key: kOptionTouchMode,
       value: 'Y',
     );
+    await bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'temp_full_screen',
+      value: '0',
+    );
+    final hwnd = currentHwnd;
+    if (hwnd != 0 && isSingleAppMode) {
+      await switchToApp(hwnd, currentSelectedAppName);
+      return;
+    }
     await updateViewStyle(force: true);
+  }
+
+  /// 进入或退出临时全屏视图（支持两指自由缩放，全屏桌面流，鼠标操控）
+  Future<void> setSingleAppTempFullScreen(bool enable) async {
+    isSingleAppTempFullScreen = enable;
+    if (enable) {
+      final ffiModel = parent.target?.ffiModel;
+      if (ffiModel != null && ffiModel.touchMode) {
+        ffiModel.touchMode = false;
+      }
+      bind.mainSetLocalOption(key: kOptionTouchMode, value: 'N');
+    } else {
+      final ffiModel = parent.target?.ffiModel;
+      if (ffiModel != null && !ffiModel.touchMode) {
+        ffiModel.touchMode = true;
+      }
+      bind.mainSetLocalOption(key: kOptionTouchMode, value: 'Y');
+    }
+    await bind.sessionPeerOption(
+      sessionId: sessionId,
+      name: 'temp_full_screen',
+      value: enable ? '1' : '0',
+    );
+    await updateViewStyle(force: true);
+  }
+
+  /// 获取指定程序的捕获模式配置：'inherit' | 'direct' | 'crop'
+  String getAppCaptureModeConfig([String? appName]) {
+    final name = (appName != null && appName.isNotEmpty) ? appName : currentSelectedAppName;
+    if (name.isNotEmpty) {
+      final val = bind.mainGetLocalOption(key: 'direct_window_capture_$name');
+      if (val == 'direct' || val == 'crop' || val == 'Y' || val == 'N') {
+        return (val == 'direct' || val == 'Y') ? 'direct' : 'crop';
+      }
+    }
+    return 'inherit';
+  }
+
+  /// 设置指定程序的捕获模式配置：'inherit' | 'direct' | 'crop'
+  Future<void> setAppCaptureModeConfig(String mode, [String? appName]) async {
+    final name = (appName != null && appName.isNotEmpty) ? appName : currentSelectedAppName;
+    if (name.isNotEmpty) {
+      if (mode == 'inherit') {
+        await bind.mainSetLocalOption(key: 'direct_window_capture_$name', value: '');
+      } else {
+        await bind.mainSetLocalOption(key: 'direct_window_capture_$name', value: mode);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// 计算当前程序最终生效的 directMode（true 为直接获取 direct，false 为从桌面裁剪 crop）
+  bool isDirectModeEffective([String? appName]) {
+    final cfg = getAppCaptureModeConfig(appName);
+    if (cfg == 'direct') return true;
+    if (cfg == 'crop') return false;
+    // 跟随统一设置
+    return bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
   }
 
   void rememberApp(int hwnd, String name) {
@@ -3235,8 +3297,7 @@ class CanvasModel with ChangeNotifier {
     final targetH = dims['targetH'] ?? 1300;
     final phoneW = dims['phoneW'] ?? 0;
     final phoneH = dims['phoneH'] ?? 0;
-    final directMode =
-        bind.mainGetLocalOption(key: 'direct_window_capture') != 'N';
+    final directMode = isDirectModeEffective(name);
     final modeStr = directMode ? 'direct' : 'crop';
     _lastSyncedTargetH = targetH;
     _lastCheckedW = 0;
@@ -3284,10 +3345,13 @@ class CanvasModel with ChangeNotifier {
     _lastCheckedW = 0;
     _lastCheckedH = 0;
 
+    final directMode = isDirectModeEffective(currentSelectedAppName);
+    final modeStr = directMode ? 'direct' : 'crop';
+
     await bind.sessionPeerOption(
       sessionId: sessionId,
       name: 'resize_app_window',
-      value: '$hwnd:$targetW:$targetH',
+      value: '$hwnd:$targetW:$targetH:$modeStr',
     );
   }
 

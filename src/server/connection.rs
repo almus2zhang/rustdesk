@@ -4094,6 +4094,7 @@ impl Connection {
         // Picking a window means the Start menu interaction is over.
         self.start_menu_opened_at = None;
         crate::server::video_service::set_selected_window(hwnd);
+        crate::server::video_service::set_temp_full_screen(false);
         // Exiting single-app mode (client sends select_window:0). Remove the
         // virtual display this session added, then fall back to the primary
         // display so the main screen keeps its original resolution.
@@ -4495,6 +4496,17 @@ impl Connection {
             self.select_app_window(hwnd, target_w, target_h, client_w, client_h).await;
             return;
         }
+        if t.impl_key.starts_with("app_window:temp_full:") {
+            let rest = &t.impl_key["app_window:temp_full:".len()..];
+            let enable = rest.trim() == "1" || rest.trim() == "Y" || rest.trim() == "true";
+            log::info!("Single app temp full screen set to {}", enable);
+            crate::server::video_service::set_temp_full_screen(enable);
+            if let Some(msg_out) = video_service::make_display_changed_msg(self.display_idx, None, self.video_source()) {
+                self.send(msg_out).await;
+            }
+            self.refresh_video_display(Some(self.display_idx));
+            return;
+        }
         if t.impl_key.starts_with("app_window:resize:") {
             // While the Start menu is open the view must stay on the whole
             // display. The client re-sends resize requests whenever the canvas
@@ -4511,6 +4523,10 @@ impl Connection {
                 let hwnd = parts[0].parse::<usize>().unwrap_or(0);
                 let w = parts[1].parse::<i32>().unwrap_or(0);
                 let h = parts[2].parse::<i32>().unwrap_or(0);
+                if parts.len() >= 4 && !parts[3].is_empty() {
+                    let direct = parts[3] != "crop" && parts[3] != "N" && parts[3] != "0";
+                    crate::server::video_service::set_direct_window_capture(direct);
+                }
                 if hwnd != 0 && w > 0 && h > 0 {
                     crate::server::video_service::set_selected_window(hwnd);
                     #[cfg(windows)]
