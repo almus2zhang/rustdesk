@@ -3184,6 +3184,192 @@ pub(super) fn change_resolution_directly(
     }
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+struct Luid {
+    low_part: u32,
+    high_part: i32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct DisplayConfigDeviceInfoHeader {
+    r#type: u32,
+    size: u32,
+    adapter_id: Luid,
+    id: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct DisplayConfigSourceDpiScaleGet {
+    header: DisplayConfigDeviceInfoHeader,
+    min_scale_rel: i32,
+    cur_scale_rel: i32,
+    max_scale_rel: i32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct DisplayConfigSourceDpiScaleSet {
+    header: DisplayConfigDeviceInfoHeader,
+    scale_rel: i32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct DisplayConfigSourceDeviceName {
+    header: DisplayConfigDeviceInfoHeader,
+    view_gdi_device_name: [u16; 32],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+struct DisplayConfigPathSourceInfo {
+    adapter_id: Luid,
+    id: u32,
+    mode_info_idx: u32,
+    status_flags: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+struct DisplayConfigPathTargetInfo {
+    adapter_id: Luid,
+    id: u32,
+    mode_info_idx: u32,
+    output_technology: u32,
+    rotation: u32,
+    scaling: u32,
+    refresh_rate_numerator: u32,
+    refresh_rate_denominator: u32,
+    scan_line_ordering: u32,
+    target_available: i32,
+    status_flags: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+struct DisplayConfigPathInfo {
+    source_info: DisplayConfigPathSourceInfo,
+    target_info: DisplayConfigPathTargetInfo,
+    flags: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+struct DisplayConfigModeInfo {
+    info_type: u32,
+    id: u32,
+    adapter_id: Luid,
+    dummy: [u8; 64],
+}
+
+const DPI_SCALE_VALS: [u32; 12] = [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500];
+
+pub fn set_display_dpi_scale(dev_name: &str, target_dpi_percent: u32) -> ResultType<()> {
+    unsafe {
+        let user32 = winapi::um::libloaderapi::LoadLibraryA(b"user32.dll\0".as_ptr() as _);
+        if user32.is_null() {
+            bail!("Failed to load user32.dll");
+        }
+        let get_buf_fn: Option<unsafe extern "system" fn(u32, *mut u32, *mut u32) -> i32> =
+            std::mem::transmute(winapi::um::libloaderapi::GetProcAddress(user32, b"GetDisplayConfigBufferSizes\0".as_ptr() as _));
+        let query_cfg_fn: Option<unsafe extern "system" fn(u32, *mut u32, *mut DisplayConfigPathInfo, *mut u32, *mut DisplayConfigModeInfo, *mut u32) -> i32> =
+            std::mem::transmute(winapi::um::libloaderapi::GetProcAddress(user32, b"QueryDisplayConfig\0".as_ptr() as _));
+        let get_info_fn: Option<unsafe extern "system" fn(*mut DisplayConfigDeviceInfoHeader) -> i32> =
+            std::mem::transmute(winapi::um::libloaderapi::GetProcAddress(user32, b"DisplayConfigGetDeviceInfo\0".as_ptr() as _));
+        let set_info_fn: Option<unsafe extern "system" fn(*mut DisplayConfigDeviceInfoHeader) -> i32> =
+            std::mem::transmute(winapi::um::libloaderapi::GetProcAddress(user32, b"DisplayConfigSetDeviceInfo\0".as_ptr() as _));
+
+        let (get_buf, query_cfg, get_info, set_info) = match (get_buf_fn, query_cfg_fn, get_info_fn, set_info_fn) {
+            (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+            _ => bail!("DPI configuration APIs not supported on this Windows version"),
+        };
+
+        let mut num_path: u32 = 0;
+        let mut num_mode: u32 = 0;
+        if get_buf(2, &mut num_path, &mut num_mode) != 0 || num_path == 0 {
+            bail!("GetDisplayConfigBufferSizes failed");
+        }
+
+        let mut paths: Vec<DisplayConfigPathInfo> = vec![Default::default(); num_path as usize];
+        let mut modes: Vec<DisplayConfigModeInfo> = vec![std::mem::zeroed(); num_mode as usize];
+
+        if query_cfg(2, &mut num_path, paths.as_mut_ptr(), &mut num_mode, modes.as_mut_ptr(), std::ptr::null_mut()) != 0 {
+            bail!("QueryDisplayConfig failed");
+        }
+
+        let target_idx = DPI_SCALE_VALS.iter().position(|&v| v == target_dpi_percent)
+            .unwrap_or_else(|| {
+                let mut best = 0;
+                let mut min_diff = i32::MAX;
+                for (idx, &v) in DPI_SCALE_VALS.iter().enumerate() {
+                    let diff = (v as i32 - target_dpi_percent as i32).abs();
+                    if diff < min_diff {
+                        min_diff = diff;
+                        best = idx;
+                    }
+                }
+                best
+            });
+
+        let mut applied = false;
+        for p in paths.iter().take(num_path as usize) {
+            let mut name_pkt: DisplayConfigSourceDeviceName = std::mem::zeroed();
+            name_pkt.header.r#type = 1;
+            name_pkt.header.size = std::mem::size_of::<DisplayConfigSourceDeviceName>() as u32;
+            name_pkt.header.adapter_id = p.source_info.adapter_id;
+            name_pkt.header.id = p.source_info.id;
+            if get_info(&mut name_pkt.header) == 0 {
+                let gdi_name = String::from_utf16_lossy(&name_pkt.view_gdi_device_name);
+                let gdi_clean = gdi_name.trim_matches('\0');
+                if !dev_name.is_empty() && !dev_name.eq_ignore_ascii_case(gdi_clean) {
+                    continue;
+                }
+            } else if !dev_name.is_empty() {
+                continue;
+            }
+
+            let mut dpi_get: DisplayConfigSourceDpiScaleGet = std::mem::zeroed();
+            dpi_get.header.r#type = (-3i32) as u32;
+            dpi_get.header.size = std::mem::size_of::<DisplayConfigSourceDpiScaleGet>() as u32;
+            dpi_get.header.adapter_id = p.source_info.adapter_id;
+            dpi_get.header.id = p.source_info.id;
+
+            if get_info(&mut dpi_get.header) != 0 {
+                continue;
+            }
+
+            let scale_rel = target_idx as i32 + dpi_get.min_scale_rel;
+            let clamped_rel = scale_rel.clamp(dpi_get.min_scale_rel, dpi_get.max_scale_rel);
+
+            let mut dpi_set: DisplayConfigSourceDpiScaleSet = std::mem::zeroed();
+            dpi_set.header.r#type = (-4i32) as u32;
+            dpi_set.header.size = std::mem::size_of::<DisplayConfigSourceDpiScaleSet>() as u32;
+            dpi_set.header.adapter_id = p.source_info.adapter_id;
+            dpi_set.header.id = p.source_info.id;
+            dpi_set.scale_rel = clamped_rel;
+
+            let res = set_info(&mut dpi_set.header);
+            log::info!(
+                "Set display DPI scale for '{}' to {}% (scale_rel {}): result={}",
+                dev_name, target_dpi_percent, clamped_rel, res
+            );
+            if res == 0 {
+                applied = true;
+                break;
+            }
+        }
+
+        if applied {
+            Ok(())
+        } else {
+            bail!("Could not apply DPI scale to display '{}'", dev_name)
+        }
+    }
+}
+
 pub fn get_display_position(name: &str) -> Option<(i32, i32)> {
     let device_name = str_to_device_name(name);
     unsafe {

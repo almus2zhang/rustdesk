@@ -85,6 +85,16 @@ pub fn change_resolution(name: &str, width: usize, height: usize) -> ResultType<
     change_resolution_directly(name, width, height)
 }
 
+#[cfg(windows)]
+pub fn set_display_dpi_scale(name: &str, dpi: u32) -> ResultType<()> {
+    windows::set_display_dpi_scale(name, dpi)
+}
+
+#[cfg(not(windows))]
+pub fn set_display_dpi_scale(_name: &str, _dpi: u32) -> ResultType<()> {
+    Ok(())
+}
+
 // Android
 #[cfg(target_os = "android")]
 pub fn get_active_username() -> String {

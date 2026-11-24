@@ -284,7 +284,15 @@ mod cpal_impl {
     fn get_device() -> ResultType<(Device, SupportedStreamConfig)> {
         let audio_input = super::get_audio_input();
         if !audio_input.is_empty() {
-            return get_audio_input(&audio_input);
+            match get_audio_input(&audio_input) {
+                Ok(res) => return Ok(res),
+                Err(e) => {
+                    log::warn!(
+                        "Configured audio input '{}' unavailable ({:?}), falling back to default output loopback",
+                        audio_input, e
+                    );
+                }
+            }
         }
         let device = HOST
             .default_output_device()
@@ -333,10 +341,16 @@ mod cpal_impl {
                 }
             }
         }
-        let device = device.unwrap_or(
-            HOST.default_input_device()
-                .with_context(|| "Failed to get default input device for loopback")?,
-        );
+        let device = match device {
+            Some(d) => d,
+            None => {
+                if !audio_input.is_empty() {
+                    bail!("Audio input device '{}' not found", audio_input);
+                }
+                HOST.default_input_device()
+                    .with_context(|| "Failed to get default input device for loopback")?
+            }
+        };
         log::info!("Input device: {}", device.name().unwrap_or("".to_owned()));
         let format = device
             .default_input_config()

@@ -722,7 +722,22 @@ pub fn session_peer_option(session_id: SessionID, name: String, value: String) {
             } else {
                 (0, 0)
             };
-            session.select_app_window_with_size_and_client(hwnd, direct, target_w, target_h, client_w, client_h);
+            let (desk_w, desk_h) = if parts.len() >= 8 {
+                (parts[6].parse::<i32>().unwrap_or(0), parts[7].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            let dpi = if parts.len() >= 9 {
+                parts[8].parse::<u32>().unwrap_or(0)
+            } else {
+                0
+            };
+            session.select_app_window_with_size_client_and_desk(hwnd, direct, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi);
+            return;
+        }
+        if name == "set_display_dpi" {
+            let dpi = value.trim().parse::<u32>().unwrap_or(100);
+            session.set_display_dpi(dpi);
             return;
         }
         if name == "resize_app_window" {

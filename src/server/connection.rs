@@ -4104,6 +4104,7 @@ impl Connection {
         client_h: i32,
         desk_w: i32,
         desk_h: i32,
+        dpi: u32,
     ) {
         // 严格 16 像素对齐，确保硬件编码器（如 Intel QSV）能够正常编码不抛出 Invalid FrameType
         if target_w > 0 {
@@ -4113,8 +4114,8 @@ impl Connection {
             target_h = ((target_h + 15) / 16) * 16;
         }
         log::info!(
-            "select_app_window: {} (target_size: {}x{}, client_size: {}x{}, desk_size: {}x{})",
-            hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h
+            "select_app_window: {} (target_size: {}x{}, client_size: {}x{}, desk_size: {}x{}, dpi: {})",
+            hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi
         );
         // Picking a window means the Start menu interaction is over.
         self.start_menu_opened_at = None;
@@ -4263,6 +4264,14 @@ impl Connection {
                     (t_idx, v_display_idx.is_some() && self.display_idx != t_idx, r_info)
                 };
                 switch_needed = switch_needed_here;
+
+                if dpi > 0 {
+                    if let Ok(displays) = crate::server::display_service::try_get_displays() {
+                        if let Some(d) = displays.get(target_idx) {
+                            crate::platform::set_display_dpi_scale(&d.name(), dpi).ok();
+                        }
+                    }
+                }
 
                 if switch_needed || self.display_idx != target_idx {
                     log::info!("Single app auto-routing to virtual display {} (current was {})", target_idx, self.display_idx);
@@ -4536,7 +4545,24 @@ impl Connection {
             } else {
                 (0, 0)
             };
-            self.select_app_window(hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h).await;
+            let dpi = if parts.len() >= 9 {
+                parts[8].parse::<u32>().unwrap_or(0)
+            } else {
+                0
+            };
+            self.select_app_window(hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi).await;
+            return;
+        }
+        if t.impl_key.starts_with("display:set_dpi:") {
+            let rest = &t.impl_key["display:set_dpi:".len()..];
+            let dpi = rest.trim().parse::<u32>().unwrap_or(100);
+            log::info!("Received display:set_dpi: {} for display {}", dpi, self.display_idx);
+            #[cfg(windows)]
+            {
+                let displays = crate::server::display_service::try_get_displays().unwrap_or_default();
+                let dev_name = displays.get(self.display_idx).map(|d| d.name()).unwrap_or_default();
+                crate::platform::set_display_dpi_scale(&dev_name, dpi).ok();
+            }
             return;
         }
         if t.impl_key.starts_with("app_window:temp_full:") {

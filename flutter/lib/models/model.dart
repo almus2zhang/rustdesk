@@ -3333,10 +3333,14 @@ class CanvasModel with ChangeNotifier {
       deskH = int.tryParse(resParts[1]) ?? 2160;
     }
 
+    final peerId = id.isNotEmpty ? id : (parent.target?.id ?? '');
+    final savedDpiStr = peerId.isNotEmpty ? bind.mainGetPeerOptionSync(id: peerId, key: 'custom-dpi-scale') : '';
+    final dpi = int.tryParse(savedDpiStr) ?? 100;
+
     await bind.sessionPeerOption(
       sessionId: sessionId,
       name: 'select_window',
-      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH:$deskW:$deskH',
+      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH:$deskW:$deskH:$dpi',
     );
     await bind.sessionPeerOption(
       sessionId: sessionId,

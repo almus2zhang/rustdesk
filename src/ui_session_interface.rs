@@ -488,16 +488,37 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn select_app_window_with_size_and_client(&self, hwnd: u64, direct_mode: bool, target_w: i32, target_h: i32, client_w: i32, client_h: i32) {
+        self.select_app_window_with_size_client_and_desk(hwnd, direct_mode, target_w, target_h, client_w, client_h, 0, 0, 0);
+    }
+
+    pub fn select_app_window_with_size_client_and_desk(&self, hwnd: u64, direct_mode: bool, target_w: i32, target_h: i32, client_w: i32, client_h: i32, desk_w: i32, desk_h: i32, dpi: u32) {
         let mode_str = if direct_mode { "direct" } else { "crop" };
         let mut misc = Misc::new();
+        let key = if dpi > 0 {
+            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi)
+        } else if desk_w > 0 && desk_h > 0 {
+            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h)
+        } else if client_w > 0 && client_h > 0 {
+            format!("app_window:select:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h)
+        } else if target_w > 0 && target_h > 0 {
+            format!("app_window:select:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h)
+        } else {
+            format!("app_window:select:{}:{}", hwnd, mode_str)
+        };
         misc.set_toggle_privacy_mode(TogglePrivacyMode {
-            impl_key: if client_w > 0 && client_h > 0 {
-                format!("app_window:select:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h)
-            } else if target_w > 0 && target_h > 0 {
-                format!("app_window:select:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h)
-            } else {
-                format!("app_window:select:{}:{}", hwnd, mode_str)
-            },
+            impl_key: key,
+            on: false,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        self.send(Data::Message(msg_out));
+    }
+
+    pub fn set_display_dpi(&self, dpi: u32) {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key: format!("display:set_dpi:{}", dpi),
             on: false,
             ..Default::default()
         });

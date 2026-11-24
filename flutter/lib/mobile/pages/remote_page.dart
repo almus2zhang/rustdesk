@@ -3294,6 +3294,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                       width: w,
                                       height: h,
                                     );
+                                    final savedDpi = bind.mainGetPeerOptionSync(id: cm.id.isNotEmpty ? cm.id : (gFFI.ffiModel.pi.id), key: 'custom-dpi-scale');
+                                    if (savedDpi.isNotEmpty) {
+                                      bind.sessionPeerOption(
+                                        sessionId: gFFI.sessionId,
+                                        name: 'set_display_dpi',
+                                        value: savedDpi,
+                                      );
+                                    }
                                     await cm.syncCurrentAppWindowSize();
                                     await cm.updateViewStyle(force: true);
                                     BotToast.showText(
@@ -6600,7 +6608,121 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
     child: Text(translate("Resolution")),
     onPressed: () {
       ffi.dialogManager.show((setState, close, ctx) {
+        void sendSavedDpiIfAny() {
+          final savedDpi = bind.mainGetPeerOptionSync(id: id, key: 'custom-dpi-scale');
+          if (savedDpi.isNotEmpty) {
+            bind.sessionPeerOption(
+              sessionId: ffi.sessionId,
+              name: 'set_display_dpi',
+              value: savedDpi,
+            );
+          }
+        }
+
         final children = <Widget>[
+          // Windows 屏幕缩放 (DPI) 滑块卡片（最顶上）
+          StatefulBuilder(
+            builder: (ctx, setDpiState) {
+              final savedDpiStr = bind.mainGetPeerOptionSync(id: id, key: 'custom-dpi-scale');
+              int curDpi = int.tryParse(savedDpiStr) ?? 100;
+              if (curDpi < 100 || curDpi > 250) curDpi = 100;
+
+              void applyDpi(int newDpi) {
+                setDpiState(() {
+                  curDpi = newDpi;
+                });
+                bind.mainSetPeerOptionSync(id: id, key: 'custom-dpi-scale', value: '$newDpi');
+                bind.sessionPeerOption(
+                  sessionId: ffi.sessionId,
+                  name: 'set_display_dpi',
+                  value: '$newDpi',
+                );
+                BotToast.showText(
+                  text: isZh ? '已将 Windows 系统 DPI 缩放设为 $newDpi%' : 'Set Windows DPI Scale to $newDpi%',
+                );
+              }
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0x1A00E5FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0x3300E5FF), width: 0.8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.display_settings, size: 18, color: Colors.cyanAccent),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            isZh ? 'Windows 屏幕缩放 (DPI)' : 'Windows DPI Scale',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.cyanAccent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '$curDpi%',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Quick preset buttons for 100%, 125%, 150%, 175%, 200%
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        for (final d in [100, 125, 150, 175, 200]) ...[
+                          InkWell(
+                            onTap: () => applyDpi(d),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: curDpi == d ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '$d%',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: curDpi == d ? FontWeight.bold : FontWeight.normal,
+                                  color: curDpi == d ? Colors.black : Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Slider(
+                      value: curDpi.toDouble().clamp(100.0, 250.0),
+                      min: 100,
+                      max: 250,
+                      divisions: 6,
+                      activeColor: Colors.cyanAccent,
+                      inactiveColor: Colors.white24,
+                      onChanged: (val) {
+                        final rounded = (val / 25).round() * 25;
+                        applyDpi(rounded);
+                      },
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const Divider(color: MyTheme.border),
           for (var e in resolutions)
             getRadio<String>(
               Text('${e.width}x${e.height}'),
@@ -6622,6 +6744,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 if (ffi.canvasModel.isSingleAppMode) {
                   ffi.canvasModel.setSingleAppResolution('${e.width}x${e.height}');
                 }
+                sendSavedDpiIfAny();
               },
             ),
           const Divider(color: MyTheme.border),
@@ -6655,6 +6778,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
               if (ffi.canvasModel.isSingleAppMode) {
                 ffi.canvasModel.setSingleAppResolution('${res1x.width}x${res1x.height}');
               }
+              sendSavedDpiIfAny();
             },
           ),
           ListTile(
@@ -6687,6 +6811,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
               if (ffi.canvasModel.isSingleAppMode) {
                 ffi.canvasModel.setSingleAppResolution('${res15x.width}x${res15x.height}');
               }
+              sendSavedDpiIfAny();
             },
           ),
           ListTile(
@@ -6719,6 +6844,7 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
               if (ffi.canvasModel.isSingleAppMode) {
                 ffi.canvasModel.setSingleAppResolution('${res2x.width}x${res2x.height}');
               }
+              sendSavedDpiIfAny();
             },
           ),
           ListTile(
