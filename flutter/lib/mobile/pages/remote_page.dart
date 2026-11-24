@@ -2361,6 +2361,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 // 开始菜单当"整屏"看待：清掉窗口裁剪让菜单完整显示，
                 // 期间也不再发 resize（模型里的 startMenuOpen 会拦住）。
                 gFFI.canvasModel.startMenuOpen = true;
+                gFFI.canvasModel.isSingleAppTempFullScreen = false;
                 gFFI.canvasModel.appCropLeft = 0;
                 gFFI.canvasModel.appCropTop = 0;
                 gFFI.canvasModel.appCropRight = 0;
@@ -2402,7 +2403,9 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         final name = item['name']?.toString() ?? '';
                         final hwnd =
                             int.tryParse(item['hwnd']?.toString() ?? '0') ?? 0;
-                        final isSelected = currentHwnd == hwnd;
+                        final isSelected =
+                            !gFFI.canvasModel.isSingleAppTempFullScreen &&
+                                currentHwnd == hwnd;
 
                         final displayName = name.replaceAll(
                             RegExp(r'\.exe$', caseSensitive: false), '');
@@ -2451,7 +2454,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           child: GestureDetector(
                             behavior: HitTestBehavior.opaque,
                             onTap: () async {
-                              if (gFFI.canvasModel.currentSelectedHwnd == hwnd) {
+                              final wasTempFullScreen =
+                                  gFFI.canvasModel.isSingleAppTempFullScreen;
+                              if (!wasTempFullScreen &&
+                                  gFFI.canvasModel.currentSelectedHwnd == hwnd) {
                                 return;
                               }
                               // 在底栏切换到别的程序：开始菜单交互结束，
@@ -2460,6 +2466,14 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                               if (_showEdit ||
                                   keyboardVisibilityController.isVisible) {
                                 _closeSoftKeyboard();
+                              }
+                              if (wasTempFullScreen) {
+                                gFFI.canvasModel.isSingleAppTempFullScreen = false;
+                                gFFI.ffiModel.touchMode = true;
+                                bind.mainSetLocalOption(
+                                  key: kOptionTouchMode,
+                                  value: 'Y',
+                                );
                               }
                               await gFFI.canvasModel.switchToApp(hwnd, name);
                               final dims = gFFI.canvasModel
@@ -2471,6 +2485,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     ? '已切至: $displayName (${targetW}x$targetH)'
                                     : 'Switched to $displayName (${targetW}x$targetH)',
                               );
+                              if (mounted) setState(() {});
                             },
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
@@ -2541,7 +2556,30 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 side: const BorderSide(color: Color(0x33FFFFFF), width: 0.8),
               ),
               onSelected: (val) async {
-                if (val == 'refresh') {
+                if (val == 'temp_full_screen') {
+                  if (gFFI.canvasModel.isSingleAppTempFullScreen) {
+                    await gFFI.canvasModel.returnToSelectedApp();
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已切回单程序视图 (触屏模式)'
+                          : 'Returned to Single App View (Touch mode)',
+                    );
+                  } else {
+                    gFFI.canvasModel.isSingleAppTempFullScreen = true;
+                    gFFI.ffiModel.touchMode = false;
+                    bind.mainSetLocalOption(
+                      key: kOptionTouchMode,
+                      value: 'N',
+                    );
+                    await gFFI.canvasModel.updateViewStyle(force: true);
+                    BotToast.showText(
+                      text: localeName.startsWith('zh')
+                          ? '已进入全屏视图 (鼠标模式，支持双指缩放)'
+                          : 'Entered Full Screen View (Mouse mode, pinch zoom enabled)',
+                    );
+                  }
+                  if (mounted) setState(() {});
+                } else if (val == 'refresh') {
                   bind.sessionPeerOption(
                     sessionId: gFFI.sessionId,
                     name: 'get_window_list',
@@ -2590,6 +2628,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
                   gFFI.canvasModel.isSingleAppMode = false;
                   gFFI.canvasModel.startMenuOpen = false;
+                  gFFI.canvasModel.isSingleAppTempFullScreen = false;
                   await bind.sessionPeerOption(
                     sessionId: gFFI.sessionId,
                     name: 'is_single_app_mode',
@@ -2604,6 +2643,33 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 }
               },
               itemBuilder: (ctx) => [
+                PopupMenuItem(
+                  value: 'temp_full_screen',
+                  child: Row(
+                    children: [
+                      Icon(
+                        gFFI.canvasModel.isSingleAppTempFullScreen
+                            ? Icons.fullscreen_exit
+                            : Icons.fullscreen,
+                        color: Colors.greenAccent,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        localeName.startsWith('zh')
+                            ? (gFFI.canvasModel.isSingleAppTempFullScreen
+                                ? '单程序视图'
+                                : '全屏视图')
+                            : (gFFI.canvasModel.isSingleAppTempFullScreen
+                                ? 'Single App View'
+                                : 'Full Screen View'),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(height: 1),
                 PopupMenuItem(
                   value: 'refresh',
                   child: Row(
@@ -5230,6 +5296,7 @@ void showOptions(
                       gFFI.ffiModel.pi.platformAdditions['selected_window'] = 0;
                       gFFI.canvasModel.isSingleAppMode = false;
                       gFFI.canvasModel.startMenuOpen = false;
+                      gFFI.canvasModel.isSingleAppTempFullScreen = false;
                       await bind.sessionPeerOption(
                           sessionId: gFFI.sessionId,
                           name: 'is_single_app_mode',

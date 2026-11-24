@@ -683,7 +683,7 @@ class FfiModel with ChangeNotifier {
         final cm2 = parent.target?.canvasModel;
         final img = parent.target?.imageModel.image;
         if (cm2 == null || img == null || img.width <= 0) return;
-        if (!cm2.isSingleAppMode || cm2.startMenuOpen) return;
+        if (!cm2.isSingleAppMode || cm2.startMenuOpen || cm2.isSingleAppTempFullScreen) return;
         final targetW = cm2.calculateRemoteWindowTargetSize()['targetW'] ?? 0;
         if (targetW <= 0 || img.width >= targetW - 10) return;
         final hwnd2 = cm2.currentHwnd;
@@ -952,6 +952,7 @@ class FfiModel with ChangeNotifier {
     }
     cm.isSingleAppMode = false;
     cm.startMenuOpen = false;
+    cm.isSingleAppTempFullScreen = false;
     // 顺序不能反：退出单程序模式会清掉待恢复标记。
     cm.markAppClosedForAutoReopen(name);
     // 没有可切的程序就退回桌面：必须让主机也退出单程序模式，否则它会继续
@@ -968,7 +969,7 @@ class FfiModel with ChangeNotifier {
   void _handleClosedOrReopenedWindows(
       SessionID sessionId, List<dynamic> list) {
     final cm = parent.target?.canvasModel;
-    if (cm == null || list.isEmpty || cm.startMenuOpen) return;
+    if (cm == null || list.isEmpty || cm.startMenuOpen || cm.isSingleAppTempFullScreen) return;
     if (cm.isSingleAppMode) {
       final hwnd = cm.currentHwnd;
       if (hwnd == 0) return;
@@ -2885,15 +2886,26 @@ class CanvasModel with ChangeNotifier {
       }
     }
     if (isSingleAppMode) {
-      final dims = calculateRemoteWindowTargetSize();
-      final targetW = dims['targetW'] ?? 700;
-      final cL = appCropLeft;
-      final cR = appCropRight;
-      final imgW = parent.target?.imageModel.image?.width ?? 0;
-      final curW = (imgW > 0 && (imgW - targetW).abs() <= 10) ? imgW : targetW;
-      final visibleW = max(1, curW - cL - cR);
-      if (size.width > 0 && visibleW > 0) {
-        _scale = size.width / visibleW;
+      if (isSingleAppTempFullScreen) {
+        if (size.width > 0 &&
+            size.height > 0 &&
+            displayWidth > 0 &&
+            displayHeight > 0) {
+          final s1 = size.width / displayWidth;
+          final s2 = size.height / displayHeight;
+          _scale = min(s1, s2);
+        }
+      } else {
+        final dims = calculateRemoteWindowTargetSize();
+        final targetW = dims['targetW'] ?? 700;
+        final cL = appCropLeft;
+        final cR = appCropRight;
+        final imgW = parent.target?.imageModel.image?.width ?? 0;
+        final curW = (imgW > 0 && (imgW - targetW).abs() <= 10) ? imgW : targetW;
+        final visibleW = max(1, curW - cL - cR);
+        if (size.width > 0 && visibleW > 0) {
+          _scale = size.width / visibleW;
+        }
       }
     }
     _resetCanvasOffset(displayWidth, displayHeight);
@@ -2911,6 +2923,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   bool _isSingleAppMode = false;
+  bool isSingleAppTempFullScreen = false;
 
   bool get isSingleAppMode {
     if (_isSingleAppMode) return true;
@@ -2938,6 +2951,7 @@ class CanvasModel with ChangeNotifier {
         ffiModel.touchMode = true;
       }
     } else {
+      isSingleAppTempFullScreen = false;
       // 主动退出单程序模式（或连接结束）时，不再自动回到之前关掉的程序。
       _autoReopenPending = false;
       _closedAppName = '';
@@ -3067,7 +3081,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   void autoAdjustHeightIfUnderfilled(int curW, int curH) {
-    if (startMenuOpen) return;
+    if (startMenuOpen || isSingleAppTempFullScreen) return;
     if (!isSingleAppMode || currentHwnd == 0 || curW <= 0 || curH <= 0) return;
     if (curW == _lastCheckedW && curH == _lastCheckedH) return;
 
@@ -3154,14 +3168,20 @@ class CanvasModel with ChangeNotifier {
     return false;
   }
 
-  /// 退出开始菜单态：回到开始菜单之前选中的那个程序。
+  /// 退出开始菜单态或全屏视图：回到之前选中的那个程序。
   Future<void> returnToSelectedApp() async {
     startMenuOpen = false;
+    isSingleAppTempFullScreen = false;
     final hwnd = currentHwnd;
     if (hwnd != 0 && isSingleAppMode) {
       await switchToApp(hwnd, currentSelectedAppName);
       return;
     }
+    parent.target?.ffiModel.touchMode = true;
+    bind.mainSetLocalOption(
+      key: kOptionTouchMode,
+      value: 'Y',
+    );
     await updateViewStyle(force: true);
   }
 
@@ -3203,7 +3223,12 @@ class CanvasModel with ChangeNotifier {
     loadAppCrop(name);
     isSingleAppMode = true;
     startMenuOpen = false;
+    isSingleAppTempFullScreen = false;
     parent.target?.ffiModel.touchMode = true;
+    bind.mainSetLocalOption(
+      key: kOptionTouchMode,
+      value: 'Y',
+    );
     parent.target?.ffiModel.pi.platformAdditions['selected_window'] = hwnd;
     final dims = calculateRemoteWindowTargetSize();
     final targetW = dims['targetW'] ?? 700;
@@ -3237,7 +3262,7 @@ class CanvasModel with ChangeNotifier {
     int? customCropB,
     int? hwndOverride,
   }) async {
-    if (startMenuOpen) return;
+    if (startMenuOpen || isSingleAppTempFullScreen) return;
     final hwnd = hwndOverride ?? currentHwnd;
     if (hwnd == 0) return;
 
@@ -3316,12 +3341,13 @@ class CanvasModel with ChangeNotifier {
   bool get isAlignToTopRight => isAlignToTopLeft;
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
-    if (isSingleAppMode) {
+    if (isSingleAppMode && !isSingleAppTempFullScreen) {
       _x = -appCropLeft * _scale;
       _y = -appCropTop * _scale;
       return;
     }
-    final alignTopLeft = isSingleAppMode && isAlignToTopLeft;
+    final alignTopLeft =
+        (isSingleAppMode && !isSingleAppTempFullScreen) && isAlignToTopLeft;
     final alignToTop = bind.mainGetLocalOption(key: 'align_to_top') == 'Y' ||
         bind.mainGetLocalOption(key: 'align_to_top_for_tablet') == 'Y';
     if (alignTopLeft) {
@@ -3438,7 +3464,7 @@ class CanvasModel with ChangeNotifier {
     if (size.width == 0 || size.height == 0) {
       return;
     }
-    if (isSingleAppMode && !allowSingleAppZoom) {
+    if (isSingleAppMode && !allowSingleAppZoom && !isSingleAppTempFullScreen) {
       return;
     }
 
@@ -3592,7 +3618,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   panX(double dx) {
-    if (isSingleAppMode && !allowSingleAppZoom) {
+    if (isSingleAppMode && !allowSingleAppZoom && !isSingleAppTempFullScreen) {
       return;
     }
     _x += dx;
@@ -3612,7 +3638,7 @@ class CanvasModel with ChangeNotifier {
   }
 
   panY(double dy) {
-    if (isSingleAppMode && !allowSingleAppZoom) {
+    if (isSingleAppMode && !allowSingleAppZoom && !isSingleAppTempFullScreen) {
       return;
     }
     _y += dy;
@@ -3624,14 +3650,18 @@ class CanvasModel with ChangeNotifier {
 
   // mobile only
   updateScale(double v, Offset focalPoint) {
-    if (isSingleAppMode && !allowSingleAppZoom) {
+    if (isSingleAppMode && !allowSingleAppZoom && !isSingleAppTempFullScreen) {
       return;
     }
     if (parent.target?.imageModel.image == null) return;
     final s = _scale;
     _scale *= v;
-    final maxs = parent.target?.imageModel.maxScale ?? 1;
-    final mins = parent.target?.imageModel.minScale ?? 1;
+    double maxs = parent.target?.imageModel.maxScale ?? 1;
+    double mins = parent.target?.imageModel.minScale ?? 1;
+    if (isSingleAppTempFullScreen) {
+      maxs = max(4.0, maxs * 2.5);
+      mins = min(mins, 0.1);
+    }
     if (_scale > maxs) _scale = maxs;
     if (_scale < mins) _scale = mins;
     // (focalPoint.dx - _x_1) / s1 + displayOriginX = (focalPoint.dx - _x_2) / s2 + displayOriginX
@@ -3649,6 +3679,7 @@ class CanvasModel with ChangeNotifier {
 
   // For reset canvas to the last view style
   reset() {
+    isSingleAppTempFullScreen = false;
     _scale = _lastViewStyle.scale;
     _devicePixelRatio = ui.window.devicePixelRatio;
     if (kIgnoreDpi && _lastViewStyle.style == kRemoteViewStyleOriginal) {

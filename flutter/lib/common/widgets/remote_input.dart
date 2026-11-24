@@ -633,6 +633,7 @@ class _RawTouchGestureDetectorRegionState
       await ffi.cursorModel.move(d.localFocalPoint.dx, d.localFocalPoint.dy);
     }
     if (ffi.canvasModel.isSingleAppMode &&
+        !ffi.canvasModel.isSingleAppTempFullScreen &&
         ffiModel.touchMode &&
         !ffi.canvasModel.allowSingleAppZoom) {
       _twoFingerState = TwoFingerModeState.scrolling;
@@ -654,6 +655,7 @@ class _RawTouchGestureDetectorRegionState
     }
 
     final singleAppTwoFinger = ffi.canvasModel.isSingleAppMode &&
+        !ffi.canvasModel.isSingleAppTempFullScreen &&
         ffiModel.touchMode &&
         !ffi.canvasModel.allowSingleAppZoom;
     if (singleAppTwoFinger &&
