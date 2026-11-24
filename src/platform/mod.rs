@@ -86,12 +86,12 @@ pub fn change_resolution(name: &str, width: usize, height: usize) -> ResultType<
 }
 
 #[cfg(windows)]
-pub fn set_display_dpi_scale(name: &str, dpi: u32) -> ResultType<()> {
+pub fn set_display_dpi_scale(name: &str, dpi: u32) -> hbb_common::ResultType<()> {
     windows::set_display_dpi_scale(name, dpi)
 }
 
 #[cfg(not(windows))]
-pub fn set_display_dpi_scale(_name: &str, _dpi: u32) -> ResultType<()> {
+pub fn set_display_dpi_scale(_name: &str, _dpi: u32) -> hbb_common::ResultType<()> {
     Ok(())
 }
 
