@@ -495,9 +495,9 @@ impl<T: InvokeUiSession> Session<T> {
         let mode_str = if direct_mode { "direct" } else { "crop" };
         let mut misc = Misc::new();
         let key = if dpi > 0 {
-            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi)
+            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h, dpi)
         } else if desk_w > 0 && desk_h > 0 {
-            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h)
+            format!("app_window:select:{}:{}:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h, desk_w, desk_h)
         } else if client_w > 0 && client_h > 0 {
             format!("app_window:select:{}:{}:{}:{}:{}:{}", hwnd, mode_str, target_w, target_h, client_w, client_h)
         } else if target_w > 0 && target_h > 0 {
