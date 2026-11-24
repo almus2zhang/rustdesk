@@ -3275,6 +3275,26 @@ class CanvasModel with ChangeNotifier {
     return at != null && DateTime.now().difference(at).inSeconds < 8;
   }
 
+  /// 获取当前远端单程序模式桌面分辨率（按 Peer 记忆，默认 2800x2160）
+  String get singleAppResolution {
+    final peerId = id.isNotEmpty ? id : (parent.target?.id ?? '');
+    if (peerId.isNotEmpty) {
+      final res = bind.mainGetPeerOptionSync(id: peerId, key: 'single_app_resolution');
+      if (res.isNotEmpty && res.contains('x')) {
+        return res;
+      }
+    }
+    return '2800x2160';
+  }
+
+  /// 记忆并设置当前远端单程序模式桌面分辨率
+  Future<void> setSingleAppResolution(String res) async {
+    final peerId = id.isNotEmpty ? id : (parent.target?.id ?? '');
+    if (peerId.isNotEmpty) {
+      bind.mainSetPeerOptionSync(id: peerId, key: 'single_app_resolution', value: res);
+    }
+  }
+
   /// Select [hwnd] in single-app mode: remember it, restore its own scale and
   /// crop, then ask the host to move the window onto the phone-sized display.
   Future<void> switchToApp(int hwnd, String name) async {
@@ -3303,10 +3323,20 @@ class CanvasModel with ChangeNotifier {
     _lastSyncedTargetH = targetH;
     _lastCheckedW = 0;
     _lastCheckedH = 0;
+
+    final curRes = singleAppResolution;
+    final resParts = curRes.split('x');
+    int deskW = 2800;
+    int deskH = 2160;
+    if (resParts.length >= 2) {
+      deskW = int.tryParse(resParts[0]) ?? 2800;
+      deskH = int.tryParse(resParts[1]) ?? 2160;
+    }
+
     await bind.sessionPeerOption(
       sessionId: sessionId,
       name: 'select_window',
-      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH',
+      value: '$hwnd:$modeStr:$targetW:$targetH:$phoneW:$phoneH:$deskW:$deskH',
     );
     await bind.sessionPeerOption(
       sessionId: sessionId,

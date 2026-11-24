@@ -3229,6 +3229,107 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     }),
                     const Divider(color: Colors.white24, height: 24),
 
+                    // Single App Remote Desktop Resolution
+                    Text(
+                      localeName.startsWith('zh')
+                          ? '远端桌面分辨率 (单程序模式记忆)'
+                          : 'Remote Desktop Resolution (Single App Memory)',
+                      style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.cyanAccent),
+                    ),
+                    const SizedBox(height: 6),
+                    Builder(builder: (context) {
+                      final curRes = cm.singleAppResolution;
+                      final resList = [
+                        {'label': '2800x2160 (默认推荐)', 'val': '2800x2160', 'w': 2800, 'h': 2160},
+                        {'label': '3840x2160 (4K超清)', 'val': '3840x2160', 'w': 3840, 'h': 2160},
+                        {'label': '2560x1440 (2K宽屏)', 'val': '2560x1440', 'w': 2560, 'h': 1440},
+                        {'label': '1920x1080 (1080P)', 'val': '1920x1080', 'w': 1920, 'h': 1080},
+                        {'label': '2800x2800 (超大方屏)', 'val': '2800x2800', 'w': 2800, 'h': 2800},
+                      ];
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0x1A00E5FF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0x3300E5FF), width: 0.8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.desktop_windows, color: Colors.cyanAccent, size: 16),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    localeName.startsWith('zh')
+                                        ? '当前记忆分辨率: $curRes'
+                                        : 'Current Memory: $curRes',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              for (final item in resList) ...[
+                                InkWell(
+                                  onTap: () async {
+                                    final val = item['val'] as String;
+                                    final w = item['w'] as int;
+                                    final h = item['h'] as int;
+                                    await cm.setSingleAppResolution(val);
+                                    setSheetState(() {});
+                                    bind.sessionChangeResolution(
+                                      sessionId: gFFI.sessionId,
+                                      display: gFFI.ffiModel.pi.currentDisplay,
+                                      width: w,
+                                      height: h,
+                                    );
+                                    await cm.syncCurrentAppWindowSize();
+                                    await cm.updateViewStyle(force: true);
+                                    BotToast.showText(
+                                      text: localeName.startsWith('zh')
+                                          ? '已切换并记忆单程序桌面分辨率: $val'
+                                          : 'Switched & saved single app resolution: $val',
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: curRes == item['val'] ? Colors.cyanAccent : const Color(0x33FFFFFF),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: curRes == item['val'] ? Colors.cyanAccent : Colors.white24,
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      item['label'] as String,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: curRes == item['val'] ? Colors.black : Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      );
+                    }),
+                    const Divider(color: Colors.white24, height: 24),
+
                     // Window Capture Mode
                     Text(
                       localeName.startsWith('zh')
@@ -6518,6 +6619,9 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                   key: 'custom-resolution',
                   value: '${e.width}x${e.height}',
                 );
+                if (ffi.canvasModel.isSingleAppMode) {
+                  ffi.canvasModel.setSingleAppResolution('${e.width}x${e.height}');
+                }
               },
             ),
           const Divider(color: MyTheme.border),
@@ -6548,6 +6652,9 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 key: 'custom-resolution',
                 value: '${res1x.width}x${res1x.height}',
               );
+              if (ffi.canvasModel.isSingleAppMode) {
+                ffi.canvasModel.setSingleAppResolution('${res1x.width}x${res1x.height}');
+              }
             },
           ),
           ListTile(
@@ -6577,6 +6684,9 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 key: 'custom-resolution',
                 value: '${res15x.width}x${res15x.height}',
               );
+              if (ffi.canvasModel.isSingleAppMode) {
+                ffi.canvasModel.setSingleAppResolution('${res15x.width}x${res15x.height}');
+              }
             },
           ),
           ListTile(
@@ -6606,6 +6716,9 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 key: 'custom-resolution',
                 value: '${res2x.width}x${res2x.height}',
               );
+              if (ffi.canvasModel.isSingleAppMode) {
+                ffi.canvasModel.setSingleAppResolution('${res2x.width}x${res2x.height}');
+              }
             },
           ),
           ListTile(

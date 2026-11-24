@@ -4095,7 +4095,16 @@ impl Connection {
         }
     }
 
-    async fn select_app_window(&mut self, hwnd: usize, mut target_w: i32, mut target_h: i32, client_w: i32, client_h: i32) {
+    async fn select_app_window(
+        &mut self,
+        hwnd: usize,
+        mut target_w: i32,
+        mut target_h: i32,
+        client_w: i32,
+        client_h: i32,
+        desk_w: i32,
+        desk_h: i32,
+    ) {
         // 严格 16 像素对齐，确保硬件编码器（如 Intel QSV）能够正常编码不抛出 Invalid FrameType
         if target_w > 0 {
             target_w = ((target_w + 15) / 16) * 16;
@@ -4103,7 +4112,10 @@ impl Connection {
         if target_h > 0 {
             target_h = ((target_h + 15) / 16) * 16;
         }
-        log::info!("select_app_window: {} (target_size: {}x{}, client_size: {}x{})", hwnd, target_w, target_h, client_w, client_h);
+        log::info!(
+            "select_app_window: {} (target_size: {}x{}, client_size: {}x{}, desk_size: {}x{})",
+            hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h
+        );
         // Picking a window means the Start menu interaction is over.
         self.start_menu_opened_at = None;
         crate::server::video_service::set_selected_window(hwnd);
@@ -4157,10 +4169,10 @@ impl Connection {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
             {
-                // 单程序模式下，远端虚拟桌面统一采用 2800x2160 超大宽屏分辨率，
+                // 单程序模式下，远端虚拟桌面采用指定的单程序分辨率（默认 2800x2160 超大宽屏分辨率，或客户端记忆的 3840x2160 等），
                 // 彻底避免桌面过窄导致 Windows 桌面程序（微信两栏/浏览器等）因桌面宽度不足而无法展开或布局异常，同时兼容一般高分显示器显示。
-                let req_w = 2800u32;
-                let req_h = 2160u32;
+                let req_w = if desk_w > 0 { (desk_w as u32 / 16) * 16 } else { 2800u32 };
+                let req_h = if desk_h > 0 { (desk_h as u32 / 16) * 16 } else { 2160u32 };
 
                 let (target_idx, switch_needed_here, rect_info) = {
                     let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
@@ -4519,7 +4531,12 @@ impl Connection {
             } else {
                 (0, 0)
             };
-            self.select_app_window(hwnd, target_w, target_h, client_w, client_h).await;
+            let (desk_w, desk_h) = if parts.len() >= 8 {
+                (parts[6].parse::<i32>().unwrap_or(0), parts[7].parse::<i32>().unwrap_or(0))
+            } else {
+                (0, 0)
+            };
+            self.select_app_window(hwnd, target_w, target_h, client_w, client_h, desk_w, desk_h).await;
             return;
         }
         if t.impl_key.starts_with("app_window:temp_full:") {
@@ -4732,7 +4749,10 @@ impl Connection {
                     #[allow(unused_mut)]
                     let mut record_changed = true;
                     #[cfg(windows)]
-                    if virtual_display_manager::amyuni_idd::is_my_display(&name) {
+                    if virtual_display_manager::amyuni_idd::is_my_display(&name)
+                        || virtual_display_manager::is_any_virtual_display(&name)
+                        || crate::usb_display::is_this_usb_display(&name)
+                    {
                         record_changed = false;
                     }
                     #[cfg(not(target_os = "macos"))]
