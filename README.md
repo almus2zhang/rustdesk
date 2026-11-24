@@ -46,7 +46,7 @@ This modified edition integrates several core productivity enhancements based on
   - Three convenient scaling presets available in Display Settings and Resolution menus:
     - **1:1 Native**: Pixel-perfect dot-to-dot display (${W}x${H}) for absolute sharpness.
     - **1.5:1 Comfortable**: Balanced scaling (e.g. 842x1866 / 720x1600) for ideal desktop readability on high-DPI screens.
-    - **2:1 Large UI**: Scaled up UI (e.g. 632x1400 / 540x1200) for comfortable touch targets on smaller mobile displays.
+    - **2:1 Large UI**: Scaled up UI (e.g. 632x1400) for comfortable touch targets on smaller mobile displays, and **2800x2800** large canvas for single app mode.
   - Supports automatic orientation following (switching seamlessly between landscape and portrait while preserving the selected scale ratio) and dynamic runtime driver hot-reload via named pipe (`RELOAD_DRIVER`).
 - **DXGI Screen Duplication Robustness & UAC Elevation**: Completely resolves frame freeze caused by spurious `DXGI_ERROR_INVALID_CALL` / `Kind(InvalidData)`, with frame state tracking and auto-recreation of output duplication. Resolves VDD driver install permission error via automatic UAC elevation.
 
