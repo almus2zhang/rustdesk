@@ -2900,7 +2900,7 @@ class CanvasModel with ChangeNotifier {
         final cL = appCropLeft;
         final cR = appCropRight;
         final imgW = parent.target?.imageModel.image?.width ?? 0;
-        final curW = imgW > 0 ? imgW : targetW;
+        final curW = (imgW > 0 && imgW < targetW) ? imgW : targetW;
         final visibleW = max(1, curW - cL - cR);
         if (size.width > 0 && visibleW > 0) {
           _scale = size.width / visibleW;

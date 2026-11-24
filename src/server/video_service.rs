@@ -536,7 +536,7 @@ fn get_capturer_monitor(
     #[cfg(windows)]
     {
         let sel_hwnd = get_selected_window();
-        if sel_hwnd != 0 {
+        if sel_hwnd != 0 && !get_temp_full_screen() {
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                 origin = (wx, wy);
                 width = ((ww as usize) / 2) * 2;
@@ -760,7 +760,7 @@ fn run(vs: VideoService) -> ResultType<()> {
     #[cfg(windows)]
     {
         let sel_hwnd = get_selected_window();
-        if sel_hwnd != 0 {
+        if sel_hwnd != 0 && !get_temp_full_screen() {
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                 let cur_w = ((ww as usize) / 2) * 2;
                 let cur_h = ((wh as usize) / 2) * 2;
@@ -973,6 +973,20 @@ fn run(vs: VideoService) -> ResultType<()> {
                 && !crate::portable_service::client::running()
             {
                 bail!("Desktop changed");
+            }
+            static LAST_TEMP_FULL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            let cur_temp = get_temp_full_screen();
+            if LAST_TEMP_FULL.swap(cur_temp, std::sync::atomic::Ordering::SeqCst) != cur_temp {
+                log::info!("switch due to temp_full_screen changed to {}", cur_temp);
+                if let Some(msg_out) = make_display_changed_msg(display_idx, None, vs.source) {
+                    let msg_out = Arc::new(msg_out);
+                    sp.send_shared(msg_out.clone());
+                    let _ = sp.snapshot(move |sps| {
+                        sps.send_shared(msg_out.clone());
+                        Ok(())
+                    });
+                }
+                bail!("SWITCH");
             }
         }
         #[cfg(windows)]
@@ -1786,7 +1800,7 @@ pub fn make_display_changed_msg(
     #[cfg(windows)]
     {
         let sel_hwnd = get_selected_window();
-        if sel_hwnd != 0 {
+        if sel_hwnd != 0 && !get_temp_full_screen() {
             if let Some((wx, wy, ww, wh)) = crate::platform::get_window_rect(sel_hwnd) {
                 display.x = wx;
                 display.y = wy;
