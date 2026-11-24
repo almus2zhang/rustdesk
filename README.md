@@ -29,7 +29,12 @@ This modified edition integrates several core productivity enhancements based on
 - **Android Secondary Display (USB Cast Mode & VDD)**: Leverages high-speed physical USB connection or local network to extend an Android phone/tablet as an independent virtual secondary monitor for Windows with <0.5ms latency and full physical bandwidth, featuring automatic wake-up, resolution/position persistence, in-app ADB service management, and 120 FPS high refresh-rate streaming.
 - **Smart Soft Keyboard & Cursor Text Auto-Popup**: Automatically pops up the mobile soft keyboard when the remote cursor turns into a text editing cursor. Features customizable popup delay (0~1000ms), safe margin distance, dismiss options (gesture/touch vs tap-only), zero canvas shift for floating keyboards (e.g. Doubao/Gboard small floating IME), and automatic canvas restoration to the exact pre-keyboard position on dismiss.
 - **Redesigned Floating Mobile Control Bar**: Collapsible floating toolbar with long-press horizontal/vertical orientation toggle, independent ⌘ shortcut key tools toggle, and high-contrast touch vs mouse modes with direct tap configuration.
-- **Single App Window Remote Control (Single App Mode)**: Allows capturing and controlling only a single specified application window instead of the entire desktop, delivering an immersive, borderless native-like experience on mobile devices.
+- **Single App Immersive Mode & App Dock (VDD Powered)**:
+  - **Dedicated Virtual Display Hosting**: Automatically binds to or creates a VDD virtual screen matched to the phone/tablet's native aspect ratio (e.g. 2800x1264). Selected applications are automatically routed and resized to fit the virtual canvas, delivering a distraction-free, native-app experience.
+  - **Compact Mobile Task Dock**: A sleek bottom dock lists active desktop applications (with smart Alt-Tab filtering, minimized window support via `GetWindowPlacement`, and RustDesk self-filtering) for instant one-tap switching and Windows Start menu invocation.
+  - **Per-Application Scale Memory**: Independent scale factor (1.0x - 3.0x, 2.0x recommended) remembered per app with transition de-bouncing and aspect re-computation.
+  - **Zero-Latency Touch & Pinch Zoom**: Eliminated the 300ms double-tap recognition delay for instant touch response, complemented by smooth two-finger pinch-to-zoom and refined single-finger scrolling.
+  - **Windows Start Menu Integration**: Dedicated Start logo on the Dock instantly summons the Windows Start Menu, properly anchored above the soft keyboard.
 - **Left Anchor Gesture Zone (4-Way Scroll, Direct Tap & Live Drag Adjustment)**: Specially designed for mobile/tablet mouse mode. Holding the anchor zone on the lower-left edge (default bottom 80-180px, width 100px) displays a 30% translucent grey mask. While holding:
   - Sliding another finger anywhere triggers continuous 4-way remote mouse wheel scrolling (horizontal & vertical).
   - Tapping another finger anywhere immediately moves the remote cursor to that position and sends a left click.
@@ -83,8 +88,8 @@ For the lowest possible latency and smooth 120Hz/144Hz refresh rate when using y
 #### 4. Smart Soft Keyboard & Cursor Text Auto-Popup Options
 ![Smart Keyboard Options](res/rustdesk-keyboard-settings.jpg)
 
-#### 5. Desktop & Single Application Remote View
-![Remote Application View](res/rustdesk-single-app-view.jpg)
+#### 5. Mobile Single Application View & App Dock
+![Mobile Single Application View](res/rustdesk-single-app-view.jpg)
 
 RustDesk welcomes contribution from everyone. See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for help getting started.
 
