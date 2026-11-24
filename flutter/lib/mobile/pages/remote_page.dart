@@ -3294,7 +3294,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                       width: w,
                                       height: h,
                                     );
-                                    final savedDpi = bind.mainGetPeerOptionSync(id: cm.id.isNotEmpty ? cm.id : (gFFI.ffiModel.pi.id), key: 'custom-dpi-scale');
+                                    final peerId = widget.id.isNotEmpty ? widget.id : cm.id;
+                                    final savedDpi = bind.mainGetPeerOptionSync(id: peerId, key: 'custom-dpi-scale');
                                     if (savedDpi.isNotEmpty) {
                                       bind.sessionPeerOption(
                                         sessionId: gFFI.sessionId,
