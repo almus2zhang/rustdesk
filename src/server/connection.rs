@@ -153,6 +153,12 @@ pub static CLICK_TIME: AtomicI64 = AtomicI64::new(0);
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub static MOUSE_MOVE_TIME: AtomicI64 = AtomicI64::new(0);
 
+#[cfg(windows)]
+lazy_static::lazy_static! {
+    static ref SINGLE_APP_ORIGINAL_RESOLUTION: std::sync::RwLock<Option<(String, usize, usize)>> = std::sync::RwLock::new(None);
+    static ref SINGLE_APP_VDD_ADDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+}
+
 #[cfg(all(feature = "flutter", feature = "plugin_framework"))]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 lazy_static::lazy_static! {
@@ -4108,10 +4114,12 @@ impl Connection {
         if hwnd == 0 {
             #[cfg(windows)]
             {
-                // 把进入单程序模式时改过的分辨率还原，否则原屏幕会一直停在手机尺寸。
-                if let Some((name, w, h)) = self.single_app_original_resolution.take() {
+                // 用户主动点击“全屏幕”退出单程序模式时，才将分辨率还原回进单程序前的原始分辨率
+                let orig_res = SINGLE_APP_ORIGINAL_RESOLUTION.write().unwrap().take()
+                    .or_else(|| self.single_app_original_resolution.take());
+                if let Some((name, w, h)) = orig_res {
                     log::info!(
-                        "Single app mode exit: restoring {} to {}x{}",
+                        "Single app mode exit (Full Screen chosen): restoring {} to {}x{}",
                         name,
                         w,
                         h
@@ -4119,8 +4127,9 @@ impl Connection {
                     crate::platform::change_resolution(&name, w, h).ok();
                     crate::server::display_service::check_displays_changed().ok();
                 }
-                if self.single_app_vdd_added {
-                    log::info!("Single app mode exit: plugging out the virtual display added by this session");
+                let vdd_was_added = SINGLE_APP_VDD_ADDED.swap(false, std::sync::atomic::Ordering::SeqCst) || self.single_app_vdd_added;
+                if vdd_was_added {
+                    log::info!("Single app mode exit (Full Screen chosen): plugging out the virtual display added by single app mode");
                     crate::usb_display::plug_out_usb_display().ok();
                     crate::server::display_service::check_displays_changed().ok();
                     self.single_app_vdd_added = false;
@@ -4173,6 +4182,7 @@ impl Connection {
                         }
                         if let Ok(_) = crate::usb_display::plug_in_usb_display(req_w, req_h) {
                             self.single_app_vdd_added = true;
+                            SINGLE_APP_VDD_ADDED.store(true, std::sync::atomic::Ordering::SeqCst);
                             crate::server::display_service::check_displays_changed().ok();
                             displays = crate::server::display_service::try_get_displays().unwrap_or_default();
                             v_display_idx = displays.iter().position(|d| {
@@ -4203,13 +4213,18 @@ impl Connection {
                                     if cur_res.width != best_w as i32
                                         || cur_res.height != best_h as i32
                                     {
-                                        if self.single_app_original_resolution.is_none() {
-                                            self.single_app_original_resolution = Some((
+                                        let mut orig = SINGLE_APP_ORIGINAL_RESOLUTION.write().unwrap();
+                                        if orig.is_none() {
+                                            *orig = Some((
                                                 dev_name.clone(),
                                                 cur_res.width as usize,
                                                 cur_res.height as usize,
                                             ));
                                         }
+                                        if self.single_app_original_resolution.is_none() {
+                                            self.single_app_original_resolution = orig.clone();
+                                        }
+                                        drop(orig);
                                         log::info!(
                                             "Single app mode: adjusting {} to closest resolution {}x{} (was {}x{})",
                                             dev_name,
@@ -6335,19 +6350,10 @@ impl Drop for Connection {
                 crate::usb_display::plug_out_usb_display().ok();
             }
         }
-        // Restore the resolution single-app mode changed, then remove the
-        // virtual display it plugged in (if any) so nothing leaks into the
-        // user's desktop after the session ends.
+        // 进入单程序模式后，除非主动点击切换到全屏幕退出，否则断开或关闭客户端时保持远端单程序模式与分辨率不变，不自动还原
         #[cfg(windows)]
         {
-            if let Some((name, w, h)) = self.single_app_original_resolution.take() {
-                log::info!("Disconnect: restoring {} to {}x{}", name, w, h);
-                crate::platform::change_resolution(&name, w, h).ok();
-                crate::server::display_service::check_displays_changed().ok();
-            }
-            if self.single_app_vdd_added && !self.is_secondary_session {
-                crate::usb_display::plug_out_usb_display().ok();
-            }
+            // Do not restore resolution or plug out virtual display on disconnect.
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
