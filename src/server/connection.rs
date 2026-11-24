@@ -4157,10 +4157,10 @@ impl Connection {
             crate::platform::focus_app_window(hwnd);
             #[cfg(windows)]
             {
-                // 单程序模式下，远端虚拟桌面统一采用 2800x2800 超大正方形分辨率，
-                // 彻底避免桌面过窄（如 1264x2800 仅 1264 宽度）导致 Windows 桌面程序（微信两栏/浏览器等）因桌面宽度不足而无法展开或布局异常。
+                // 单程序模式下，远端虚拟桌面统一采用 2800x2160 超大宽屏分辨率，
+                // 彻底避免桌面过窄导致 Windows 桌面程序（微信两栏/浏览器等）因桌面宽度不足而无法展开或布局异常，同时兼容一般高分显示器显示。
                 let req_w = 2800u32;
-                let req_h = 2800u32;
+                let req_h = 2160u32;
 
                 let (target_idx, switch_needed_here, rect_info) = {
                     let mut displays = crate::server::display_service::try_get_displays().unwrap_or_default();
@@ -4171,11 +4171,11 @@ impl Connection {
                             || crate::usb_display::is_this_usb_display(&d.name())
                     });
 
-                    // 只有物理屏的话才加一块 2800x2800 虚拟屏；
+                    // 只有物理屏的话才加一块 2800x2160 虚拟屏；
                     // 已经有虚拟屏（包括用户手动加的、USB 副屏的）就直接用那块。
                     if v_display_idx.is_none() {
                         log::info!("Single app mode: no virtual display found, plugging in VDD virtual display for {}x{}", req_w, req_h);
-                        // Make sure the 2800x2800 resolution is a declared VDD mode,
+                        // Make sure the 2800x2160 resolution is a declared VDD mode,
                         // otherwise closest_resolution() snaps it to another size.
                         if crate::virtual_display_manager::is_vdd_available() {
                             crate::usb_display::ensure_vdd_resolution(req_w, req_h).ok();
@@ -4195,7 +4195,7 @@ impl Connection {
 
                     let t_idx = v_display_idx.unwrap_or(self.display_idx);
 
-                    // 单程序模式下将虚拟屏调整为 2800x2800；物理屏不碰。
+                    // 单程序模式下将虚拟屏调整为 2800x2160；物理屏不碰。
                     if let Some(d) = displays.get(t_idx) {
                         let dev_name = d.name();
                         if crate::virtual_display_manager::is_any_virtual_display(&dev_name)

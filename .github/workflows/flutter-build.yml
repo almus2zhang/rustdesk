@@ -234,7 +234,7 @@ jobs:
               '    <resolution><width>1080</width><height>2400</height><refresh_rate>120</refresh_rate></resolution>',
               '    <resolution><width>2400</width><height>1080</height><refresh_rate>120</refresh_rate></resolution>',
               '    <resolution><width>720</width><height>1600</height><refresh_rate>120</refresh_rate></resolution>',
-              '    <resolution><width>2800</width><height>2800</height><refresh_rate>120</refresh_rate></resolution>',
+              '    <resolution><width>2800</width><height>2160</height><refresh_rate>120</refresh_rate></resolution>',
               '    <resolution><width>1080</width><height>2340</height><refresh_rate>120</refresh_rate></resolution>',
               '    <resolution><width>720</width><height>1560</height><refresh_rate>120</refresh_rate></resolution>',
               '  </resolutions>',
