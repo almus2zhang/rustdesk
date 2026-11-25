@@ -472,6 +472,14 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'job_done') {
         bool? refresh =
             await parent.target?.fileModel.jobController.jobDone(evt);
+            final pushedId = int.tryParse('${evt['id'] ?? ''}');
+            if (pushedId != null) {
+              final pushedName =
+                  parent.target?.fileModel.pushedDownloadJobs.remove(pushedId);
+              if (pushedName != null) {
+                showToast('已保存到 Download/RustDesk/$pushedName');
+              }
+            }
         if (refresh == true) {
           // many job done for delete directory
           // todo: refresh may not work when confirm delete local directory
@@ -1361,6 +1369,8 @@ class FfiModel with ChangeNotifier {
       showElevationError(sessionId, type, title, text, dialogManager);
     } else if (type == 'relay-hint' || type == 'relay-hint2') {
       showRelayHintDialog(sessionId, type, title, text, dialogManager, peerId);
+    } else if (type == 'send_files_to_client') {
+      parent.target?.fileModel.receivePushedFiles(text?.toString() ?? '[]');
     } else if (text == kMsgboxTextWaitingForImage) {
       showConnectedWaitingForImage(dialogManager, sessionId, type, title, text);
     } else if (title == 'Privacy mode') {

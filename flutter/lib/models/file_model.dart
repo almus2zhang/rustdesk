@@ -60,6 +60,7 @@ class FileModel {
   late final GetDialogManager getDialogManager;
   SessionID get sessionId => getSessionID();
   late final FileDialogEventLoop evtLoop;
+  final Map<int, String> pushedDownloadJobs = {};
 
   FileModel(this.parent) {
     getSessionID = () => parent.target!.sessionId;
@@ -90,6 +91,7 @@ class FileModel {
   }
 
   Future<void> close() async {
+    pushedDownloadJobs.clear();
     await evtLoop.close();
     parent.target?.dialogManager.dismissAll();
     await localController.close();
@@ -99,6 +101,66 @@ class FileModel {
   Future<void> refreshAll() async {
     if (!isWeb) await localController.refresh();
     await remoteController.refresh();
+  }
+
+  Future<void> receivePushedFiles(String jsonText) async {
+    if (isWeb || !isMobile) return;
+    if (isAndroid) {
+      if (!await AndroidPermissionManager.check(kManageExternalStorage)) {
+        final granted =
+            await AndroidPermissionManager.request(kManageExternalStorage);
+        if (!granted) {
+          showToast('需要存储权限才能保存到 Download/RustDesk');
+          return;
+        }
+      }
+    }
+    List<dynamic> items;
+    try {
+      items = jsonDecode(jsonText) as List<dynamic>;
+    } catch (e) {
+      debugPrint('Failed to parse pushed files: $e');
+      return;
+    }
+    if (items.isEmpty) return;
+
+    final destDir = isAndroid
+        ? '/storage/emulated/0/Download/RustDesk'
+        : path.join(await bind.mainGetHomeDir(), 'Download', 'RustDesk');
+    bind.sessionCreateDir(
+      sessionId: sessionId,
+      actId: JobController.jobID.next(),
+      path: destDir,
+      isRemote: false,
+    );
+
+    for (final raw in items) {
+      if (raw is! Map) continue;
+      final remotePath = raw['path']?.toString() ?? '';
+      final name = raw['name']?.toString() ?? '';
+      final isDir = raw['is_dir'] == true;
+      final size = int.tryParse('${raw['size'] ?? 0}') ?? 0;
+      if (remotePath.isEmpty || name.isEmpty) continue;
+
+      final entry = Entry()
+        ..path = remotePath
+        ..name = name
+        ..entryType = isDir ? 1 : 0
+        ..size = size;
+      final jobId = jobController.addTransferJob(entry, true);
+      pushedDownloadJobs[jobId] = name;
+      bind.sessionSendFiles(
+        sessionId: sessionId,
+        actId: jobId,
+        path: remotePath,
+        to: path.join(destDir, name),
+        fileNum: 0,
+        includeHidden: false,
+        isRemote: true,
+        isDir: isDir,
+      );
+      showToast('正在接收 $name → Download/RustDesk');
+    }
   }
 
   void receiveFileDir(Map<String, dynamic> evt) {
@@ -132,6 +194,10 @@ class FileModel {
   void handleJobError(Map<String, dynamic> evt) {
     final id = int.tryParse(evt['id']?.toString() ?? '');
     if (id != null) {
+      final pushedName = pushedDownloadJobs.remove(id);
+      if (pushedName != null) {
+        showToast('接收失败: $pushedName');
+      }
       final err = evt['err']?.toString() ?? 'Unknown error';
       fileFetcher.tryCompleteRecursiveTaskWithError(id, err);
     }

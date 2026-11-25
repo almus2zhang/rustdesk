@@ -347,6 +347,7 @@ pub enum Data {
     #[cfg(windows)]
     ControlledSessionCount(usize),
     CmErr(String),
+    SendFilesToClient(Vec<String>),
     // CM-side file reading responses (Windows only)
     // These are sent from CM back to Connection when CM handles file reading
     /// Response to ReadFile: contains initial file list or error
@@ -1103,8 +1104,20 @@ async fn handle(data: Data, stream: &mut Connection) {
                     .await
             );
         }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        Data::SendFilesToClient(paths) => {
+            crate::server::connection::broadcast_send_files_to_clients(paths);
+        }
         _ => {}
     };
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::main(flavor = "current_thread")]
+pub async fn send_files_to_clients(paths: Vec<String>) -> ResultType<()> {
+    let mut c = connect(1000, "").await?;
+    c.send(&Data::SendFilesToClient(paths)).await?;
+    Ok(())
 }
 
 pub async fn connect(ms_timeout: u64, postfix: &str) -> ResultType<ConnectionTmpl<ConnClient>> {

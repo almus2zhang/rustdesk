@@ -5732,6 +5732,40 @@ pub fn capture_window_bitmap(hwnd: usize, direct_mode: bool) -> Option<(i32, i32
 }
 
 
+pub fn register_send_to_client_context_menu() {
+    let exe_path = match std::env::current_exe() {
+        Ok(p) => p.to_string_lossy().to_string(),
+        Err(_) => return,
+    };
+    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+    let menu_label = "发送到 RustDesk 客户端";
+    let icon_val = format!("{},0", exe_path);
+    let cmd_val = format!("\"{}\" --send-to-client \"%1\"", exe_path);
+
+    for base in [
+        r"Software\Classes\*\shell\SendToRustDesk",
+        r"Software\Classes\Directory\shell\SendToRustDesk",
+    ] {
+        if let Ok((key, _)) = hkcu.create_subkey(base) {
+            let _ = key.set_value("", &menu_label);
+            let _ = key.set_value("Icon", &icon_val);
+            if let Ok((cmd_key, _)) = key.create_subkey("command") {
+                let _ = cmd_key.set_value("", &cmd_val);
+            }
+        }
+    }
+}
+
+pub fn unregister_send_to_client_context_menu() {
+    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
+    for base in [
+        r"Software\Classes\*\shell\SendToRustDesk",
+        r"Software\Classes\Directory\shell\SendToRustDesk",
+    ] {
+        let _ = hkcu.delete_subkey_all(base);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

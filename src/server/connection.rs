@@ -78,6 +78,14 @@ lazy_static::lazy_static! {
     pub static ref CONTROL_PERMISSIONS_ARRAY: Arc::<Mutex<Vec<(i32, ControlPermissions)>>> = Default::default();
     static ref WAKELOCK_SENDER: Arc::<Mutex<std::sync::mpsc::Sender<(usize, usize)>>> = Arc::new(Mutex::new(start_wakelock_thread()));
     static ref WAKELOCK_KEEP_AWAKE_OPTION: Arc::<Mutex<Option<bool>>> = Default::default();
+    static ref SEND_FILES_TO_CLIENTS_TX: tokio::sync::broadcast::Sender<Vec<String>> = {
+        let (tx, _) = tokio::sync::broadcast::channel(16);
+        tx
+    };
+}
+
+pub fn broadcast_send_files_to_clients(paths: Vec<String>) {
+    let _ = SEND_FILES_TO_CLIENTS_TX.send(paths);
 }
 
 static LOOPBACK_CONN_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -662,9 +670,44 @@ impl Connection {
             (_tx_clip, rx_clip) = mpsc::unbounded_channel::<i32>();
         }
 
+        let mut rx_send_files = SEND_FILES_TO_CLIENTS_TX.subscribe();
+
         loop {
             tokio::select! {
                 // biased; // video has higher priority // causing test_delay_timer failed while transferring big file
+
+                Ok(paths) = rx_send_files.recv() => {
+                    if conn.authorized && conn.file_transfer_enabled() && conn.port_forward_socket.is_none() {
+                        let mut items = Vec::new();
+                        for p in paths {
+                            let path = std::path::Path::new(&p);
+                            if let Ok(meta) = std::fs::metadata(path) {
+                                let name = path
+                                    .file_name()
+                                    .map(|n| n.to_string_lossy().to_string())
+                                    .unwrap_or_else(|| p.clone());
+                                items.push(serde_json::json!({
+                                    "path": p,
+                                    "name": name,
+                                    "is_dir": meta.is_dir(),
+                                    "size": meta.len(),
+                                }));
+                            }
+                        }
+                        if !items.is_empty() {
+                            let mut msg_out = Message::new();
+                            let res = MessageBox {
+                                msgtype: "send_files_to_client".to_owned(),
+                                title: "".to_owned(),
+                                text: serde_json::Value::Array(items).to_string(),
+                                link: "".to_owned(),
+                                ..Default::default()
+                            };
+                            msg_out.set_message_box(res);
+                            conn.send(msg_out).await;
+                        }
+                    }
+                }
 
                 Some(data) = rx_from_cm.recv() => {
                     match data {

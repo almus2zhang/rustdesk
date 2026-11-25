@@ -205,6 +205,8 @@ pub fn core_main() -> Option<Vec<String>> {
         {
             use crate::platform;
             if args[0] == "--uninstall" {
+                #[cfg(windows)]
+                platform::unregister_send_to_client_context_menu();
                 if let Err(err) = platform::uninstall_me(true) {
                     log::error!("Failed to uninstall: {}", err);
                 }
@@ -394,8 +396,17 @@ pub fn core_main() -> Option<Vec<String>> {
                 return None;
             }
         } else if args[0] == "--tray" {
+            #[cfg(windows)]
+            crate::platform::register_send_to_client_context_menu();
             if !crate::check_process("--tray", true) {
                 crate::tray::start_tray();
+            }
+            return None;
+        } else if args[0] == "--send-to-client" {
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if args.len() > 1 {
+                let paths: Vec<String> = args[1..].to_vec();
+                hbb_common::allow_err!(crate::ipc::send_files_to_clients(paths));
             }
             return None;
         } else if args[0] == "--install-service" {
