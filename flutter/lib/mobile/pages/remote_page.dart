@@ -128,15 +128,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   int? _anchorPointerId;
   final RxBool _isAnchorActive = false.obs;
-  final RxBool _isAnchorTextSelectionMode = false.obs;
+  final RxBool _anchorDidSelect = false.obs;
+  final Rx<String> _anchorSwipeAction = ''.obs; // '', 'copy', 'cut', 'paste', 'escape'
   bool _anchorSelectionMouseDown = false;
+  Rect _activeAnchorRect = Rect.zero;
   int? _actionPointerId;
   Offset _actionDownPos = Offset.zero;
   DateTime _actionDownTime = DateTime.fromMillisecondsSinceEpoch(0);
   Offset _actionLastPos = Offset.zero;
   bool _actionHasMoved = false;
-  double _actionScrollAccX = 0.0;
-  double _actionScrollAccY = 0.0;
 
   Rect _getLeftAnchorZoneRect(Size size) {
     final bottom = gFFI.ffiModel.anchorZoneBottom.value;
@@ -440,10 +440,76 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _anchorPointerId = null;
     _actionPointerId = null;
     _isAnchorActive.value = false;
-    _isAnchorTextSelectionMode.value = false;
+    _anchorDidSelect.value = false;
+    _anchorSwipeAction.value = '';
+    _activeAnchorRect = Rect.zero;
     _actionHasMoved = false;
-    _actionScrollAccX = 0.0;
-    _actionScrollAccY = 0.0;
+  }
+
+  void _updateAnchorSwipeAction(Offset globalPos) {
+    final rect = _activeAnchorRect;
+    if (rect.isEmpty || rect.contains(globalPos)) {
+      _anchorSwipeAction.value = '';
+      return;
+    }
+    final dyTop = rect.top - globalPos.dy;
+    final dyBottom = globalPos.dy - rect.bottom;
+    final dxRight = globalPos.dx - rect.right;
+    if (dyTop > 0 && dyTop >= dxRight && dyTop >= dyBottom) {
+      _anchorSwipeAction.value = _anchorDidSelect.value ? 'copy' : 'paste';
+    } else if (dyBottom > 0 && dyBottom >= dxRight && dyBottom >= dyTop) {
+      _anchorSwipeAction.value = _anchorDidSelect.value ? 'cut' : '';
+    } else if (dxRight > 0) {
+      _anchorSwipeAction.value = 'escape';
+    } else {
+      _anchorSwipeAction.value = '';
+    }
+  }
+
+  void _executeAnchorSwipeAction(String action) {
+    if (action.isEmpty) return;
+    if (!gFFI.inputModel.keyboardPerm || gFFI.inputModel.isViewCamera) return;
+    switch (action) {
+      case 'copy':
+        bind.sessionInputKey(
+          sessionId: gFFI.sessionId,
+          name: 'VK_C',
+          down: false,
+          press: true,
+          alt: false,
+          ctrl: true,
+          shift: false,
+          command: false,
+        );
+        break;
+      case 'cut':
+        bind.sessionInputKey(
+          sessionId: gFFI.sessionId,
+          name: 'VK_X',
+          down: false,
+          press: true,
+          alt: false,
+          ctrl: true,
+          shift: false,
+          command: false,
+        );
+        break;
+      case 'paste':
+        bind.sessionInputKey(
+          sessionId: gFFI.sessionId,
+          name: 'VK_V',
+          down: false,
+          press: true,
+          alt: false,
+          ctrl: true,
+          shift: false,
+          command: false,
+        );
+        break;
+      case 'escape':
+        gFFI.inputModel.inputKey('VK_ESCAPE');
+        break;
+    }
   }
 
   void _handleAnchorActionDown(PointerDownEvent event) {
@@ -452,8 +518,6 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _actionDownTime = DateTime.now();
     _actionLastPos = event.position;
     _actionHasMoved = false;
-    _actionScrollAccX = 0.0;
-    _actionScrollAccY = 0.0;
   }
 
   Future<void> _handleAnchorActionMove(PointerMoveEvent event) async {
@@ -461,7 +525,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final dist = (event.position - _actionDownPos).distance;
     if (!_actionHasMoved && dist > 6.0) {
       _actionHasMoved = true;
-      if (_isAnchorTextSelectionMode.value && !_anchorSelectionMouseDown) {
+      _anchorDidSelect.value = true;
+      if (!_anchorSelectionMouseDown) {
         _anchorSelectionMouseDown = true;
         await gFFI.inputModel.sendMouse('down', MouseButtons.left);
       }
@@ -470,39 +535,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
     final delta = event.position - _actionLastPos;
     _actionLastPos = event.position;
-
-    if (_isAnchorTextSelectionMode.value) {
-      await gFFI.cursorModel.updatePan(delta, event.position, false);
-      return;
-    }
-
-    _actionScrollAccX += delta.dx;
-    _actionScrollAccY += delta.dy;
-
-    const double threshold = 8.0;
-    int scrollX = 0;
-    int scrollY = 0;
-
-    if (_actionScrollAccX.abs() >= threshold) {
-      scrollX = (_actionScrollAccX / threshold).truncate();
-      _actionScrollAccX -= scrollX * threshold;
-    }
-    if (_actionScrollAccY.abs() >= threshold) {
-      scrollY = (_actionScrollAccY / threshold).truncate();
-      _actionScrollAccY -= scrollY * threshold;
-    }
-
-    if (scrollX != 0 || scrollY != 0) {
-      await bind.sessionSendMouse(
-        sessionId: gFFI.sessionId,
-        msg: json.encode(gFFI.inputModel.modify({
-          'id': gFFI.inputModel.id,
-          'type': 'wheel',
-          'x': scrollX.toString(),
-          'y': scrollY.toString(),
-        })),
-      );
-    }
+    await gFFI.cursorModel.updatePan(delta, event.position, false);
   }
 
   Future<void> _handleAnchorActionUp(PointerUpEvent event) async {
@@ -2031,19 +2064,28 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onPointerDown: (event) {
                   if (_anchorPointerId == null) {
                     _anchorPointerId = event.pointer;
-                    _isAnchorTextSelectionMode.value =
-                        gFFI.cursorModel.isTextCursor.value;
+                    _activeAnchorRect = anchorRect;
+                    _anchorDidSelect.value = false;
                     _anchorSelectionMouseDown = false;
+                    _anchorSwipeAction.value = '';
                     _isAnchorActive.value = true;
                   } else if (_actionPointerId == null &&
                       event.pointer != _anchorPointerId) {
                     _handleAnchorActionDown(event);
                   }
                 },
-                onPointerMove: _handleAnchorActionMove,
+                onPointerMove: (event) async {
+                  if (event.pointer == _anchorPointerId) {
+                    _updateAnchorSwipeAction(event.position);
+                  } else {
+                    await _handleAnchorActionMove(event);
+                  }
+                },
                 onPointerUp: (event) async {
                   if (event.pointer == _anchorPointerId) {
+                    final action = _anchorSwipeAction.value;
                     _resetLeftAnchorState();
+                    _executeAnchorSwipeAction(action);
                   } else {
                     await _handleAnchorActionUp(event);
                   }
@@ -2059,60 +2101,98 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               ),
             ),
 
-            // 3. Visual 30% translucent grey mask
+            // 3. Visual 30% translucent grey mask (highlighted when swipe-out action armed)
             Positioned(
               left: anchorRect.left,
               top: anchorRect.top,
               width: anchorRect.width,
               height: anchorRect.height,
               child: Obx(
-                () => _isAnchorActive.value
-                    ? IgnorePointer(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0x4D808080),
-                            borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(12),
-                            ),
-                            border: Border.all(
-                              color: const Color(0x40FFFFFF),
-                              width: 1.2,
-                            ),
-                          ),
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isAnchorTextSelectionMode.value
-                                      ? Icons.text_fields
-                                      : Icons.touch_app,
-                                  color: const Color(0x99FFFFFF),
-                                  size: 20,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _isAnchorTextSelectionMode.value
-                                      ? (localeName.startsWith('zh')
-                                          ? '滑动: 选择文字\n点击: 原位左键'
-                                          : 'Pan: Select Text\nTap: Left Click')
-                                      : (localeName.startsWith('zh')
-                                          ? '滑动: 滚轮\n点击: 原位左键'
-                                          : 'Pan: Scroll\nTap: Left Click'),
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xCCFFFFFF),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    height: 1.15,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                () {
+                  if (!_isAnchorActive.value) {
+                    return const SizedBox.shrink();
+                  }
+                  final action = _anchorSwipeAction.value;
+                  final didSelect = _anchorDidSelect.value;
+                  final isZh = localeName.startsWith('zh');
+                  final IconData icon;
+                  final String label;
+                  final bool isArmed = action.isNotEmpty;
+                  switch (action) {
+                    case 'copy':
+                      icon = Icons.copy_rounded;
+                      label = isZh ? '松开: 复制' : 'Release: Copy';
+                      break;
+                    case 'cut':
+                      icon = Icons.content_cut_rounded;
+                      label = isZh ? '松开: 剪切' : 'Release: Cut';
+                      break;
+                    case 'paste':
+                      icon = Icons.paste_rounded;
+                      label = isZh ? '松开: 粘贴' : 'Release: Paste';
+                      break;
+                    case 'escape':
+                      icon = Icons.close_rounded;
+                      label = isZh ? '松开: Esc' : 'Release: Esc';
+                      break;
+                    default:
+                      icon = Icons.select_all_rounded;
+                      label = didSelect
+                          ? (isZh
+                              ? '上:复制 下:剪切\n右:Esc'
+                              : 'Up:Copy Dn:Cut\nRight:Esc')
+                          : (isZh
+                              ? '选择模式\n上:粘贴 右:Esc'
+                              : 'Select Mode\nUp:Paste R:Esc');
+                      break;
+                  }
+                  return IgnorePointer(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isArmed
+                            ? const Color(0x881976D2)
+                            : const Color(0x4D808080),
+                        borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(12),
                         ),
-                      )
-                    : const SizedBox.shrink(),
+                        border: Border.all(
+                          color: isArmed
+                              ? const Color(0xCC64B5F6)
+                              : const Color(0x40FFFFFF),
+                          width: isArmed ? 1.8 : 1.2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              icon,
+                              color: isArmed
+                                  ? Colors.white
+                                  : const Color(0x99FFFFFF),
+                              size: 20,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: isArmed
+                                    ? Colors.white
+                                    : const Color(0xCCFFFFFF),
+                                fontSize: isArmed ? 11 : 10,
+                                fontWeight:
+                                    isArmed ? FontWeight.w600 : FontWeight.w500,
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             )
           ];
