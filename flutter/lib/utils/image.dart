@@ -101,12 +101,20 @@ class ImagePainter extends CustomPainter {
     required this.x,
     required this.y,
     required this.scale,
+    this.cropLeft = 0,
+    this.cropTop = 0,
+    this.cropRight = 0,
+    this.cropBottom = 0,
   });
 
   ui.Image? image;
   double x;
   double y;
   double scale;
+  int cropLeft;
+  int cropTop;
+  int cropRight;
+  int cropBottom;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -133,8 +141,25 @@ class ImagePainter extends CustomPainter {
     if (isWeb) {
       paint.filterQuality = FilterQuality.high;
     }
-    canvas.drawImage(
-        image!, Offset(x.toInt().toDouble(), y.toInt().toDouble()), paint);
+    if (cropLeft > 0 || cropTop > 0 || cropRight > 0 || cropBottom > 0) {
+      final double w = image!.width.toDouble();
+      final double h = image!.height.toDouble();
+      final double l = cropLeft.toDouble().clamp(0.0, w - 1);
+      final double t = cropTop.toDouble().clamp(0.0, h - 1);
+      final double r = (w - cropRight.toDouble()).clamp(l + 1, w);
+      final double b = (h - cropBottom.toDouble()).clamp(t + 1, h);
+      final src = Rect.fromLTRB(l, t, r, b);
+      final dst = Rect.fromLTWH(
+        x.toInt().toDouble() + l,
+        y.toInt().toDouble() + t,
+        src.width,
+        src.height,
+      );
+      canvas.drawImageRect(image!, src, dst, paint);
+    } else {
+      canvas.drawImage(
+          image!, Offset(x.toInt().toDouble(), y.toInt().toDouble()), paint);
+    }
   }
 
   @override

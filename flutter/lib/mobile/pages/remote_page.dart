@@ -132,6 +132,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   final Rx<String> _anchorSwipeAction = ''.obs; // '', 'copy', 'cut', 'paste', 'escape'
   bool _anchorSelectionMouseDown = false;
   Rect _activeAnchorRect = Rect.zero;
+  Offset _anchorDownPos = Offset.zero;
+  DateTime _anchorDownTime = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime? _lastAnchorTapUpTime;
+  final Rxn<Offset> _anchorSelectionMenuPos = Rxn<Offset>();
   int? _actionPointerId;
   Offset _actionDownPos = Offset.zero;
   DateTime _actionDownTime = DateTime.fromMillisecondsSinceEpoch(0);
@@ -466,53 +470,52 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     }
   }
 
+  void _sendCtrlKey(String vkName) {
+    if (!gFFI.inputModel.keyboardPerm || gFFI.inputModel.isViewCamera) return;
+    bind.sessionInputKey(
+      sessionId: gFFI.sessionId,
+      name: vkName,
+      down: false,
+      press: true,
+      alt: false,
+      ctrl: true,
+      shift: false,
+      command: false,
+    );
+  }
+
+  void _showAnchorSelectionMenu(Offset pos) {
+    _anchorSelectionMenuPos.value = pos;
+  }
+
+  void _dismissAnchorSelectionMenu() {
+    if (_anchorSelectionMenuPos.value != null) {
+      _anchorSelectionMenuPos.value = null;
+    }
+  }
+
   void _executeAnchorSwipeAction(String action) {
     if (action.isEmpty) return;
-    if (!gFFI.inputModel.keyboardPerm || gFFI.inputModel.isViewCamera) return;
     switch (action) {
       case 'copy':
-        bind.sessionInputKey(
-          sessionId: gFFI.sessionId,
-          name: 'VK_C',
-          down: false,
-          press: true,
-          alt: false,
-          ctrl: true,
-          shift: false,
-          command: false,
-        );
+        _sendCtrlKey('VK_C');
         break;
       case 'cut':
-        bind.sessionInputKey(
-          sessionId: gFFI.sessionId,
-          name: 'VK_X',
-          down: false,
-          press: true,
-          alt: false,
-          ctrl: true,
-          shift: false,
-          command: false,
-        );
+        _sendCtrlKey('VK_X');
         break;
       case 'paste':
-        bind.sessionInputKey(
-          sessionId: gFFI.sessionId,
-          name: 'VK_V',
-          down: false,
-          press: true,
-          alt: false,
-          ctrl: true,
-          shift: false,
-          command: false,
-        );
+        _sendCtrlKey('VK_V');
         break;
       case 'escape':
-        gFFI.inputModel.inputKey('VK_ESCAPE');
+        if (gFFI.inputModel.keyboardPerm && !gFFI.inputModel.isViewCamera) {
+          gFFI.inputModel.inputKey('VK_ESCAPE');
+        }
         break;
     }
   }
 
   void _handleAnchorActionDown(PointerDownEvent event) {
+    _dismissAnchorSelectionMenu();
     _actionPointerId = event.pointer;
     _actionDownPos = event.position;
     _actionDownTime = DateTime.now();
@@ -549,6 +552,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     if (_anchorSelectionMouseDown) {
       _anchorSelectionMouseDown = false;
       await gFFI.inputModel.sendMouse('up', MouseButtons.left);
+      _showAnchorSelectionMenu(event.position);
     } else if (isTap && _isAnchorActive.value) {
       // Direct left click at tapped position
       await gFFI.cursorModel.move(event.position.dx, event.position.dy);
@@ -2063,8 +2067,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (event) {
                   if (_anchorPointerId == null) {
+                    _dismissAnchorSelectionMenu();
                     _anchorPointerId = event.pointer;
                     _activeAnchorRect = anchorRect;
+                    _anchorDownPos = event.position;
+                    _anchorDownTime = DateTime.now();
                     _anchorDidSelect.value = false;
                     _anchorSelectionMouseDown = false;
                     _anchorSwipeAction.value = '';
@@ -2084,14 +2091,49 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onPointerUp: (event) async {
                   if (event.pointer == _anchorPointerId) {
                     final action = _anchorSwipeAction.value;
+                    final didSelect = _anchorDidSelect.value;
+                    final tapDist = (event.position - _anchorDownPos).distance;
+                    final tapDuration = DateTime.now()
+                        .difference(_anchorDownTime)
+                        .inMilliseconds;
+                    final isPlainTap = action.isEmpty &&
+                        !didSelect &&
+                        tapDist < 12.0 &&
+                        tapDuration < 350;
                     _resetLeftAnchorState();
-                    _executeAnchorSwipeAction(action);
+                    if (action.isNotEmpty) {
+                      _lastAnchorTapUpTime = null;
+                      _executeAnchorSwipeAction(action);
+                    } else if (isPlainTap) {
+                      final now = DateTime.now();
+                      final prev = _lastAnchorTapUpTime;
+                      if (prev != null &&
+                          now.difference(prev).inMilliseconds <= 350) {
+                        _lastAnchorTapUpTime = null;
+                        if (gFFI.cursorModel.isTextCursor.value) {
+                          _sendCtrlKey('VK_A');
+                          final cm = gFFI.canvasModel;
+                          final cur = gFFI.cursorModel;
+                          final s = cm.scale > 0 ? cm.scale : 1.0;
+                          final cursorScreenPos = Offset(
+                            cur.x * s + cm.x,
+                            cur.y * s + cm.y + cm.getAdjustY(),
+                          );
+                          _showAnchorSelectionMenu(cursorScreenPos);
+                        }
+                      } else {
+                        _lastAnchorTapUpTime = now;
+                      }
+                    } else {
+                      _lastAnchorTapUpTime = null;
+                    }
                   } else {
                     await _handleAnchorActionUp(event);
                   }
                 },
                 onPointerCancel: (event) {
                   if (event.pointer == _anchorPointerId) {
+                    _lastAnchorTapUpTime = null;
                     _resetLeftAnchorState();
                   } else {
                     _handleAnchorActionCancel(event);
@@ -2194,7 +2236,143 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   );
                 },
               ),
-            )
+            ),
+
+            // 4. Translucent outside-tap listener to dismiss floating selection menu
+            Obx(() {
+              if (_anchorSelectionMenuPos.value == null) {
+                return const SizedBox.shrink();
+              }
+              return Positioned.fill(
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: (_) => _dismissAnchorSelectionMenu(),
+                  child: const SizedBox.expand(),
+                ),
+              );
+            }),
+
+            // 5. Floating selection action buttons (Copy / Cut / Delete)
+            Obx(() {
+              final pos = _anchorSelectionMenuPos.value;
+              if (pos == null) return const SizedBox.shrink();
+              final isZh = localeName.startsWith('zh');
+              const double estWidth = 226.0;
+              final double left = pos.dx - estWidth / 2;
+              final double clampedLeft = left.clamp(
+                12.0,
+                max(12.0, size.width - estWidth - 12.0),
+              );
+              final double preferredTop = pos.dy - 54.0;
+              final double clampedTop = (preferredTop >= 12.0
+                      ? preferredTop
+                      : pos.dy + 16.0)
+                  .clamp(12.0, max(12.0, size.height - 60.0));
+
+              Widget buildActionBtn(
+                IconData icon,
+                String text,
+                VoidCallback onTap, {
+                Color color = Colors.white,
+              }) {
+                return InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: onTap,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(icon, size: 15, color: color),
+                        const SizedBox(width: 4),
+                        Text(
+                          text,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return Positioned(
+                left: clampedLeft,
+                top: clampedTop,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xEE22262E),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: const Color(0x44FFFFFF),
+                        width: 1,
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black45,
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        buildActionBtn(
+                          Icons.copy_rounded,
+                          isZh ? '复制' : 'Copy',
+                          () {
+                            _sendCtrlKey('VK_C');
+                            _dismissAnchorSelectionMenu();
+                          },
+                        ),
+                        buildActionBtn(
+                          Icons.content_cut_rounded,
+                          isZh ? '剪切' : 'Cut',
+                          () {
+                            _sendCtrlKey('VK_X');
+                            _dismissAnchorSelectionMenu();
+                          },
+                        ),
+                        buildActionBtn(
+                          Icons.delete_outline_rounded,
+                          isZh ? '删除' : 'Delete',
+                          () {
+                            if (gFFI.inputModel.keyboardPerm &&
+                                !gFFI.inputModel.isViewCamera) {
+                              gFFI.inputModel.inputKey('VK_DELETE');
+                            }
+                            _dismissAnchorSelectionMenu();
+                          },
+                          color: Colors.redAccent.shade100,
+                        ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: _dismissAnchorSelectionMenu,
+                          child: const Padding(
+                            padding: EdgeInsets.all(6),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 14,
+                              color: Colors.white60,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
           ];
         }(),
         _buildAnchorZoneAdjustOverlay(size),
@@ -4711,9 +4889,18 @@ class ImagePaint extends StatelessWidget {
       }
     }
     final adjust = c.getAdjustY();
+    final applyCrop = c.isSingleAppMode && !c.isSingleAppTempFullScreen;
     return CustomPaint(
       painter: ImagePainter(
-          image: m.image, x: c.x / s, y: (c.y + adjust) / s, scale: s),
+        image: m.image,
+        x: c.x / s,
+        y: (c.y + adjust) / s,
+        scale: s,
+        cropLeft: applyCrop ? c.appCropLeft : 0,
+        cropTop: applyCrop ? c.appCropTop : 0,
+        cropRight: applyCrop ? c.appCropRight : 0,
+        cropBottom: applyCrop ? c.appCropBottom : 0,
+      ),
     );
   }
 }

@@ -2897,13 +2897,26 @@ class CanvasModel with ChangeNotifier {
       } else {
         final dims = calculateRemoteWindowTargetSize();
         final targetW = dims['targetW'] ?? 700;
+        final targetH = dims['targetH'] ?? 1300;
         final cL = appCropLeft;
         final cR = appCropRight;
+        final cT = appCropTop;
+        final cB = appCropBottom;
         final imgW = parent.target?.imageModel.image?.width ?? 0;
-        final curW = (imgW > 0 && imgW < targetW) ? imgW : targetW;
+        final imgH = parent.target?.imageModel.image?.height ?? 0;
+        final curW =
+            imgW > 0 ? imgW : (displayWidth > 0 ? displayWidth : targetW);
+        final curH =
+            imgH > 0 ? imgH : (displayHeight > 0 ? displayHeight : targetH);
         final visibleW = max(1, curW - cL - cR);
-        if (size.width > 0 && visibleW > 0) {
-          _scale = size.width / visibleW;
+        final visibleH = max(1, curH - cT - cB);
+        if (size.width > 0 &&
+            size.height > 0 &&
+            visibleW > 0 &&
+            visibleH > 0) {
+          final scaleX = size.width / visibleW;
+          final scaleY = size.height / visibleH;
+          _scale = min(scaleX, scaleY);
         }
       }
     }
@@ -3441,8 +3454,16 @@ class CanvasModel with ChangeNotifier {
 
   _resetCanvasOffset(int displayWidth, int displayHeight) {
     if (isSingleAppMode && !isSingleAppTempFullScreen) {
-      _x = -appCropLeft * _scale;
-      _y = -appCropTop * _scale;
+      final imgW = parent.target?.imageModel.image?.width ?? 0;
+      final imgH = parent.target?.imageModel.image?.height ?? 0;
+      final curW = imgW > 0 ? imgW : displayWidth;
+      final curH = imgH > 0 ? imgH : displayHeight;
+      final visibleW = max(1, curW - appCropLeft - appCropRight);
+      final visibleH = max(1, curH - appCropTop - appCropBottom);
+      final padX = max(0.0, (size.width - visibleW * _scale) / 2.0);
+      final padY = max(0.0, (size.height - visibleH * _scale) / 2.0);
+      _x = padX - appCropLeft * _scale;
+      _y = padY - appCropTop * _scale;
       return;
     }
     final alignTopLeft =
