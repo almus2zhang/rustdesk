@@ -128,6 +128,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   int? _anchorPointerId;
   final RxBool _isAnchorActive = false.obs;
+  final RxBool _isAnchorTextSelectionMode = false.obs;
+  bool _anchorSelectionMouseDown = false;
   int? _actionPointerId;
   Offset _actionDownPos = Offset.zero;
   DateTime _actionDownTime = DateTime.fromMillisecondsSinceEpoch(0);
@@ -431,12 +433,104 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   }
 
   void _resetLeftAnchorState() {
+    if (_anchorSelectionMouseDown) {
+      _anchorSelectionMouseDown = false;
+      gFFI.inputModel.sendMouse('up', MouseButtons.left);
+    }
     _anchorPointerId = null;
     _actionPointerId = null;
     _isAnchorActive.value = false;
+    _isAnchorTextSelectionMode.value = false;
     _actionHasMoved = false;
     _actionScrollAccX = 0.0;
     _actionScrollAccY = 0.0;
+  }
+
+  void _handleAnchorActionDown(PointerDownEvent event) {
+    _actionPointerId = event.pointer;
+    _actionDownPos = event.position;
+    _actionDownTime = DateTime.now();
+    _actionLastPos = event.position;
+    _actionHasMoved = false;
+    _actionScrollAccX = 0.0;
+    _actionScrollAccY = 0.0;
+  }
+
+  Future<void> _handleAnchorActionMove(PointerMoveEvent event) async {
+    if (event.pointer != _actionPointerId) return;
+    final dist = (event.position - _actionDownPos).distance;
+    if (!_actionHasMoved && dist > 6.0) {
+      _actionHasMoved = true;
+      if (_isAnchorTextSelectionMode.value && !_anchorSelectionMouseDown) {
+        _anchorSelectionMouseDown = true;
+        await gFFI.inputModel.sendMouse('down', MouseButtons.left);
+      }
+    }
+    if (!_actionHasMoved) return;
+
+    final delta = event.position - _actionLastPos;
+    _actionLastPos = event.position;
+
+    if (_isAnchorTextSelectionMode.value) {
+      await gFFI.cursorModel.updatePan(delta, event.position, false);
+      return;
+    }
+
+    _actionScrollAccX += delta.dx;
+    _actionScrollAccY += delta.dy;
+
+    const double threshold = 8.0;
+    int scrollX = 0;
+    int scrollY = 0;
+
+    if (_actionScrollAccX.abs() >= threshold) {
+      scrollX = (_actionScrollAccX / threshold).truncate();
+      _actionScrollAccX -= scrollX * threshold;
+    }
+    if (_actionScrollAccY.abs() >= threshold) {
+      scrollY = (_actionScrollAccY / threshold).truncate();
+      _actionScrollAccY -= scrollY * threshold;
+    }
+
+    if (scrollX != 0 || scrollY != 0) {
+      await bind.sessionSendMouse(
+        sessionId: gFFI.sessionId,
+        msg: json.encode(gFFI.inputModel.modify({
+          'id': gFFI.inputModel.id,
+          'type': 'wheel',
+          'x': scrollX.toString(),
+          'y': scrollY.toString(),
+        })),
+      );
+    }
+  }
+
+  Future<void> _handleAnchorActionUp(PointerUpEvent event) async {
+    if (event.pointer != _actionPointerId) return;
+    final duration = DateTime.now().difference(_actionDownTime).inMilliseconds;
+    final dist = (event.position - _actionDownPos).distance;
+    final bool isTap = !_actionHasMoved && dist < 8.0 && duration < 500;
+    _actionPointerId = null;
+    _actionHasMoved = false;
+
+    if (_anchorSelectionMouseDown) {
+      _anchorSelectionMouseDown = false;
+      await gFFI.inputModel.sendMouse('up', MouseButtons.left);
+    } else if (isTap && _isAnchorActive.value) {
+      // Direct left click at tapped position
+      await gFFI.cursorModel.move(event.position.dx, event.position.dy);
+      await gFFI.inputModel.tap(MouseButtons.left);
+    }
+  }
+
+  void _handleAnchorActionCancel(PointerCancelEvent event) {
+    if (event.pointer != _actionPointerId) return;
+    _actionPointerId = null;
+    _actionHasMoved = false;
+    if (_anchorSelectionMouseDown) {
+      _anchorSelectionMouseDown = false;
+      gFFI.inputModel.sendMouse('up', MouseButtons.left);
+    }
   }
 
   Offset? _pointerDownPos;
@@ -1915,80 +2009,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         behavior: HitTestBehavior.opaque,
                         onPointerDown: (event) {
                           if (event.pointer == _anchorPointerId) return;
-                          _actionPointerId = event.pointer;
-                          _actionDownPos = event.position;
-                          _actionDownTime = DateTime.now();
-                          _actionLastPos = event.position;
-                          _actionHasMoved = false;
-                          _actionScrollAccX = 0.0;
-                          _actionScrollAccY = 0.0;
+                          _handleAnchorActionDown(event);
                         },
-                        onPointerMove: (event) async {
-                          if (event.pointer != _actionPointerId) return;
-                          final dist =
-                              (event.position - _actionDownPos).distance;
-                          if (!_actionHasMoved && dist > 6.0) {
-                            _actionHasMoved = true;
-                          }
-                          if (_actionHasMoved) {
-                            final delta = event.position - _actionLastPos;
-                            _actionLastPos = event.position;
-                            _actionScrollAccX += delta.dx;
-                            _actionScrollAccY += delta.dy;
-
-                            const double threshold = 8.0;
-                            int scrollX = 0;
-                            int scrollY = 0;
-
-                            if (_actionScrollAccX.abs() >= threshold) {
-                              scrollX =
-                                  (_actionScrollAccX / threshold).truncate();
-                              _actionScrollAccX -= scrollX * threshold;
-                            }
-                            if (_actionScrollAccY.abs() >= threshold) {
-                              scrollY =
-                                  (_actionScrollAccY / threshold).truncate();
-                              _actionScrollAccY -= scrollY * threshold;
-                            }
-
-                            if (scrollX != 0 || scrollY != 0) {
-                              await bind.sessionSendMouse(
-                                sessionId: gFFI.sessionId,
-                                msg: json.encode(gFFI.inputModel.modify({
-                                  'id': gFFI.inputModel.id,
-                                  'type': 'wheel',
-                                  'x': scrollX.toString(),
-                                  'y': scrollY.toString(),
-                                })),
-                              );
-                            }
-                          }
-                        },
-                        onPointerUp: (event) async {
-                          if (event.pointer == _actionPointerId) {
-                            final duration = DateTime.now()
-                                .difference(_actionDownTime)
-                                .inMilliseconds;
-                            final dist =
-                                (event.position - _actionDownPos).distance;
-                            final bool isTap = !_actionHasMoved &&
-                                dist < 8.0 &&
-                                duration < 500;
-                            _actionPointerId = null;
-
-                            if (isTap && _isAnchorActive.value) {
-                              // Direct left click at tapped position
-                              await gFFI.cursorModel
-                                  .move(event.position.dx, event.position.dy);
-                              await gFFI.inputModel.tap(MouseButtons.left);
-                            }
-                          }
-                        },
-                        onPointerCancel: (event) {
-                          if (event.pointer == _actionPointerId) {
-                            _actionPointerId = null;
-                          }
-                        },
+                        onPointerMove: _handleAnchorActionMove,
+                        onPointerUp: _handleAnchorActionUp,
+                        onPointerCancel: _handleAnchorActionCancel,
                         child: const SizedBox.expand(),
                       )
                     : const SizedBox.shrink(),
@@ -2006,84 +2031,28 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 onPointerDown: (event) {
                   if (_anchorPointerId == null) {
                     _anchorPointerId = event.pointer;
+                    _isAnchorTextSelectionMode.value =
+                        gFFI.cursorModel.isTextCursor.value;
+                    _anchorSelectionMouseDown = false;
                     _isAnchorActive.value = true;
                   } else if (_actionPointerId == null &&
                       event.pointer != _anchorPointerId) {
-                    _actionPointerId = event.pointer;
-                    _actionDownPos = event.position;
-                    _actionDownTime = DateTime.now();
-                    _actionLastPos = event.position;
-                    _actionHasMoved = false;
-                    _actionScrollAccX = 0.0;
-                    _actionScrollAccY = 0.0;
+                    _handleAnchorActionDown(event);
                   }
                 },
-                onPointerMove: (event) async {
-                  if (event.pointer == _actionPointerId) {
-                    final dist = (event.position - _actionDownPos).distance;
-                    if (!_actionHasMoved && dist > 6.0) {
-                      _actionHasMoved = true;
-                    }
-                    if (_actionHasMoved) {
-                      final delta = event.position - _actionLastPos;
-                      _actionLastPos = event.position;
-                      _actionScrollAccX += delta.dx;
-                      _actionScrollAccY += delta.dy;
-
-                      const double threshold = 8.0;
-                      int scrollX = 0;
-                      int scrollY = 0;
-
-                      if (_actionScrollAccX.abs() >= threshold) {
-                        scrollX = (_actionScrollAccX / threshold).truncate();
-                        _actionScrollAccX -= scrollX * threshold;
-                      }
-                      if (_actionScrollAccY.abs() >= threshold) {
-                        scrollY = (_actionScrollAccY / threshold).truncate();
-                        _actionScrollAccY -= scrollY * threshold;
-                      }
-
-                      if (scrollX != 0 || scrollY != 0) {
-                        await bind.sessionSendMouse(
-                          sessionId: gFFI.sessionId,
-                          msg: json.encode(gFFI.inputModel.modify({
-                            'id': gFFI.inputModel.id,
-                            'type': 'wheel',
-                            'x': scrollX.toString(),
-                            'y': scrollY.toString(),
-                          })),
-                        );
-                      }
-                    }
-                  }
-                },
+                onPointerMove: _handleAnchorActionMove,
                 onPointerUp: (event) async {
                   if (event.pointer == _anchorPointerId) {
-                    _anchorPointerId = null;
-                    _actionPointerId = null;
-                    _isAnchorActive.value = false;
-                  } else if (event.pointer == _actionPointerId) {
-                    final duration = DateTime.now()
-                        .difference(_actionDownTime)
-                        .inMilliseconds;
-                    final dist = (event.position - _actionDownPos).distance;
-                    final bool isTap =
-                        !_actionHasMoved && dist < 8.0 && duration < 500;
-                    _actionPointerId = null;
-                    if (isTap && _isAnchorActive.value) {
-                      await gFFI.cursorModel
-                          .move(event.position.dx, event.position.dy);
-                      await gFFI.inputModel.tap(MouseButtons.left);
-                    }
+                    _resetLeftAnchorState();
+                  } else {
+                    await _handleAnchorActionUp(event);
                   }
                 },
                 onPointerCancel: (event) {
                   if (event.pointer == _anchorPointerId) {
-                    _anchorPointerId = null;
-                    _actionPointerId = null;
-                    _isAnchorActive.value = false;
-                  } else if (event.pointer == _actionPointerId) {
-                    _actionPointerId = null;
+                    _resetLeftAnchorState();
+                  } else {
+                    _handleAnchorActionCancel(event);
                   }
                 },
                 child: const SizedBox.expand(),
@@ -2114,16 +2083,22 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(
-                                  Icons.touch_app,
-                                  color: Color(0x99FFFFFF),
+                                Icon(
+                                  _isAnchorTextSelectionMode.value
+                                      ? Icons.text_fields
+                                      : Icons.touch_app,
+                                  color: const Color(0x99FFFFFF),
                                   size: 20,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  localeName.startsWith('zh')
-                                      ? '滑动: 滚轮\n点击: 原位左键'
-                                      : 'Pan: Scroll\nTap: Left Click',
+                                  _isAnchorTextSelectionMode.value
+                                      ? (localeName.startsWith('zh')
+                                          ? '滑动: 选择文字\n点击: 原位左键'
+                                          : 'Pan: Select Text\nTap: Left Click')
+                                      : (localeName.startsWith('zh')
+                                          ? '滑动: 滚轮\n点击: 原位左键'
+                                          : 'Pan: Scroll\nTap: Left Click'),
                                   textAlign: TextAlign.center,
                                   style: const TextStyle(
                                     color: Color(0xCCFFFFFF),
