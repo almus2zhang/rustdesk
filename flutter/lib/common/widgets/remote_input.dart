@@ -121,6 +121,17 @@ class _RawTouchGestureDetectorRegionState
   // Cache global position for onTap (which lacks position info).
   Offset? _lastTapDownGlobalPosition;
 
+  // Touch mode: snap rapid second tap within double-tap threshold to first tap's
+  // position so double-click works reliably with 0ms tap delay.
+  DateTime? _lastTouchTapTime;
+  Offset? _lastTouchTapLocalPos;
+
+  // Mouse mode: long press + move = left button drag; stationary long press = right click.
+  bool _mouseModeLongPressActive = false;
+  bool _mouseModeLongPressDragging = false;
+  Offset _mouseModeLongPressOrigin = Offset.zero;
+  Offset _mouseModeLongPressLastPos = Offset.zero;
+
   double _twoFingerScrollX = 0;
   double _twoFingerScrollY = 0;
   double _remoteScaleAccumulator = 0;
@@ -178,6 +189,30 @@ class _RawTouchGestureDetectorRegionState
             _lastTapDownPositionForMouseMode!.dy);
   }
 
+  Offset _resolveTouchTapPosition(Offset localPos,
+      {required bool updateHistory}) {
+    if (!isMobile) {
+      return localPos;
+    }
+    final now = DateTime.now();
+    final lastTime = _lastTouchTapTime;
+    final lastPos = _lastTouchTapLocalPos;
+    if (lastTime != null &&
+        lastPos != null &&
+        now.difference(lastTime).inMilliseconds <= 350 &&
+        (localPos - lastPos).distance <= 32.0) {
+      if (updateHistory) {
+        _lastTouchTapTime = now;
+      }
+      return lastPos;
+    }
+    if (updateHistory) {
+      _lastTouchTapTime = now;
+      _lastTouchTapLocalPos = localPos;
+    }
+    return localPos;
+  }
+
   onTapDown(TapDownDetails d) async {
     _oneFingerInertiaTimer?.cancel();
     _twoFingerInertiaTimer?.cancel();
@@ -188,7 +223,9 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch) {
-      _lastPosOfDoubleTapDown = d.localPosition;
+      final targetPos =
+          _resolveTouchTapPosition(d.localPosition, updateHistory: false);
+      _lastPosOfDoubleTapDown = targetPos;
       // Desktop or mobile "Touch mode"
       _lastTapDownDetails = d;
       // Move the cursor on DOWN, exactly like onDoubleTapDown does. At the
@@ -196,7 +233,7 @@ class _RawTouchGestureDetectorRegionState
       // accidental-touch suppression) or the gesture arena can reject the
       // tap, so onTapUp never runs and the cursor stays behind. A double tap
       // "fixes" it only because its down callback already moved the cursor.
-      await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      await ffi.cursorModel.move(targetPos.dx, targetPos.dy);
     } else {
       _lastTapDownPositionForMouseMode = d.localPosition;
     }
@@ -212,11 +249,12 @@ class _RawTouchGestureDetectorRegionState
       return;
     }
     if (handleTouch) {
+      final targetPos =
+          _resolveTouchTapPosition(d.localPosition, updateHistory: true);
       // `move()` already validates and clamps the position. Gating on the
       // tap-down position as well drops taps near the border whenever the
       // finger moves a pixel between down and up.
-      final isMoved =
-          await ffi.cursorModel.move(d.localPosition.dx, d.localPosition.dy);
+      final isMoved = await ffi.cursorModel.move(targetPos.dx, targetPos.dy);
       if (isMoved) {
         // If pan already handled 'down', don't send it again.
         if (!_touchModePanStarted) {
@@ -307,6 +345,47 @@ class _RawTouchGestureDetectorRegionState
     }
   }
 
+  onLongPressStart(LongPressStartDetails d) async {
+    if (isNotTouchBasedDevice()) {
+      return;
+    }
+    if (isMobile && !handleTouch) {
+      if (isSpecialHoldDragActive || shouldBlockMouseModeEvent()) {
+        return;
+      }
+      _mouseModeLongPressActive = true;
+      _mouseModeLongPressDragging = false;
+      _mouseModeLongPressOrigin = d.localPosition;
+      _mouseModeLongPressLastPos = d.localPosition;
+    }
+  }
+
+  onLongPressEnd(LongPressEndDetails d) async {
+    if (isNotTouchBasedDevice()) {
+      return;
+    }
+    if (isMobile && !handleTouch) {
+      if (!_mouseModeLongPressActive) {
+        return;
+      }
+      _mouseModeLongPressActive = false;
+      if (_mouseModeLongPressDragging) {
+        _mouseModeLongPressDragging = false;
+        await inputModel.sendMouse('up', MouseButtons.left);
+      } else if (!shouldBlockMouseModeEvent()) {
+        await inputModel.tap(MouseButtons.right);
+      }
+    }
+  }
+
+  onLongPressCancel() {
+    if (_mouseModeLongPressDragging) {
+      _mouseModeLongPressDragging = false;
+      inputModel.sendMouse('up', MouseButtons.left);
+    }
+    _mouseModeLongPressActive = false;
+  }
+
   onLongPressUp() async {
     if (isNotTouchBasedDevice()) {
       return;
@@ -319,6 +398,10 @@ class _RawTouchGestureDetectorRegionState
   // for mobiles
   onLongPress() async {
     if (isNotTouchBasedDevice()) {
+      return;
+    }
+    // Mouse mode handles stationary right-click vs hold-drag in onLongPressEnd.
+    if (isMobile && !handleTouch) {
       return;
     }
     if (!ffi.ffiModel.isPeerMobile) {
@@ -345,7 +428,26 @@ class _RawTouchGestureDetectorRegionState
   }
 
   onLongPressMoveUpdate(LongPressMoveUpdateDetails d) async {
-    if (!ffiModel.isPeerMobile || isNotTouchBasedDevice()) {
+    if (isNotTouchBasedDevice()) {
+      return;
+    }
+    if (isMobile && !handleTouch) {
+      if (!_mouseModeLongPressActive || isSpecialHoldDragActive) {
+        return;
+      }
+      final delta = d.localPosition - _mouseModeLongPressLastPos;
+      _mouseModeLongPressLastPos = d.localPosition;
+      if (!_mouseModeLongPressDragging &&
+          (d.localPosition - _mouseModeLongPressOrigin).distance > 4.0) {
+        _mouseModeLongPressDragging = true;
+        await inputModel.sendMouse('down', MouseButtons.left);
+      }
+      if (_mouseModeLongPressDragging) {
+        await ffi.cursorModel.updatePan(delta, d.localPosition, false);
+      }
+      return;
+    }
+    if (!ffiModel.isPeerMobile) {
       return;
     }
     if (handleTouch) {
@@ -984,11 +1086,11 @@ class _RawTouchGestureDetectorRegionState
     // kDoubleTapTimeout(300ms) 才胜出，点击（onTapUp 里才下发）就明显发顿。
     // 远端双击本来就是两次快速点击，去掉后每次点击立即下发，双击依然成立。
     final enableDoubleTap = isDesktop || isWebDesktop;
-    // 移动端触摸模式下，下面两个自定义识别器只会在手势竞技场里 hold
-    // 300ms 等待第二次点击，而它们的回调在触摸模式下都是空的
-    // （右键走长按、拖动走单指平移），所以直接不注册，点击立即下发。
-    // 移动端鼠标模式仍需要它们提供右键和左键拖动。
-    final enableMouseModeGestures = !isMobile || !ffiModel.touchMode;
+    // 移动端鼠标模式不再注册 HoldTapMoveGestureRecognizer（它会把每次单击 hold 住
+    // 300ms 且吞掉双击的第二次抬起），改为用长按后移动实现左键拖动；
+    // DoubleFinerTapGestureRecognizer 已修复为单指抬起立即放弃，因此无 300ms 延时。
+    final enableHoldTapMove = !isMobile;
+    final enableDoubleFingerTap = !isMobile || !ffiModel.touchMode;
     return <Type, GestureRecognizerFactory>{
       // Official
       TapGestureRecognizer:
@@ -1017,16 +1119,22 @@ class _RawTouchGestureDetectorRegionState
       LongPressGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
               () => LongPressGestureRecognizer(
+                    duration: (isMobile && !ffiModel.touchMode)
+                        ? const Duration(milliseconds: 380)
+                        : null,
                     supportedDevices: kTouchBasedDeviceKinds,
                   ), (instance) {
         instance
           ..onLongPressDown = onLongPressDown
+          ..onLongPressStart = onLongPressStart
           ..onLongPressUp = onLongPressUp
+          ..onLongPressEnd = onLongPressEnd
+          ..onLongPressCancel = onLongPressCancel
           ..onLongPress = onLongPress
           ..onLongPressMoveUpdate = onLongPressMoveUpdate;
       }),
       // Customized
-      if (enableMouseModeGestures)
+      if (enableHoldTapMove)
         HoldTapMoveGestureRecognizer:
           GestureRecognizerFactoryWithHandlers<HoldTapMoveGestureRecognizer>(
               () => HoldTapMoveGestureRecognizer(
@@ -1037,7 +1145,7 @@ class _RawTouchGestureDetectorRegionState
                 ..onHoldDragUpdate = onHoldDragUpdate
                 ..onHoldDragCancel = onHoldDragCancel
                 ..onHoldDragEnd = onHoldDragEnd),
-      if (enableMouseModeGestures)
+      if (enableDoubleFingerTap)
         DoubleFinerTapGestureRecognizer:
             GestureRecognizerFactoryWithHandlers<DoubleFinerTapGestureRecognizer>(
               () => DoubleFinerTapGestureRecognizer(

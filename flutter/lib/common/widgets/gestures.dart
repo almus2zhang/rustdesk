@@ -503,6 +503,12 @@ class DoubleFinerTapGestureRecognizer extends GestureRecognizer {
     if (event is PointerUpEvent) {
       debugPrint("PointerUpEvent");
       _upTap.add(tracker.pointer);
+      if (_trackers.length == 1) {
+        // Single-finger tap lifted: cannot become a two-finger tap, release immediately.
+        _reset();
+      } else if (_upTap.length == 2 && _trackers.length == 2) {
+        _resolve();
+      }
     } else if (event is PointerMoveEvent) {
       if (!tracker.isWithinGlobalTolerance(event, kDoubleTapTouchSlop)) {
         _reject(tracker);
@@ -552,6 +558,8 @@ class DoubleFinerTapGestureRecognizer extends GestureRecognizer {
 
   void _reset() {
     _stopFirstTapUpTimer();
+    _isStart = false;
+    _upTap.clear();
     _firstTap = null;
     _clearTrackers();
   }
