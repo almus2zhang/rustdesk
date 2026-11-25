@@ -84,10 +84,6 @@ lazy_static::lazy_static! {
     };
 }
 
-pub fn broadcast_send_files_to_clients(paths: Vec<String>) {
-    let _ = SEND_FILES_TO_CLIENTS_TX.send(paths);
-}
-
 static LOOPBACK_CONN_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub fn is_loopback_active() -> bool {
@@ -677,7 +673,7 @@ impl Connection {
                 // biased; // video has higher priority // causing test_delay_timer failed while transferring big file
 
                 Ok(paths) = rx_send_files.recv() => {
-                    if conn.authorized && conn.file_transfer_enabled() && conn.port_forward_socket.is_none() {
+                    if conn.authorized && conn.file && conn.port_forward_socket.is_none() {
                         let mut items = Vec::new();
                         for p in paths {
                             let path = std::path::Path::new(&p);
@@ -5671,6 +5667,10 @@ impl Connection {
 
     pub fn alive_conns() -> Vec<i32> {
         ALIVE_CONNS.lock().unwrap().clone()
+    }
+
+    pub fn broadcast_send_files_to_clients(paths: Vec<String>) {
+        let _ = SEND_FILES_TO_CLIENTS_TX.send(paths);
     }
 
     #[cfg(windows)]

@@ -1106,7 +1106,7 @@ async fn handle(data: Data, stream: &mut Connection) {
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         Data::SendFilesToClient(paths) => {
-            crate::server::connection::broadcast_send_files_to_clients(paths);
+            crate::server::Connection::broadcast_send_files_to_clients(paths);
         }
         _ => {}
     };
