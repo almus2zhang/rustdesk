@@ -3124,10 +3124,20 @@ impl Connection {
                 Some(message::Union::FileAction(fa)) => {
                     let mut handle_fa = self.file_transfer.is_some();
                     if !handle_fa {
-                        if let Some(file_action::Union::Send(s)) = fa.union.as_ref() {
-                            if JobType::from_proto(s.file_type) == JobType::Printer {
+                        match fa.union.as_ref() {
+                            Some(file_action::Union::Send(s)) => {
+                                if self.file || JobType::from_proto(s.file_type) == JobType::Printer
+                                {
+                                    handle_fa = true;
+                                }
+                            }
+                            Some(file_action::Union::SendConfirm(_))
+                            | Some(file_action::Union::Cancel(_))
+                                if self.file =>
+                            {
                                 handle_fa = true;
                             }
+                            _ => {}
                         }
                     }
                     if handle_fa {
