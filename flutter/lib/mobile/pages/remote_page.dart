@@ -452,19 +452,36 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
 
   void _updateAnchorSwipeAction(Offset globalPos) {
     final rect = _activeAnchorRect;
-    if (rect.isEmpty || rect.contains(globalPos)) {
+    if (rect.isEmpty) {
       _anchorSwipeAction.value = '';
+      return;
+    }
+    if (rect.contains(globalPos)) {
+      final dxLeft = _anchorDownPos.dx - globalPos.dx;
+      final dyAbs = (globalPos.dy - _anchorDownPos.dy).abs();
+      if ((dxLeft >= 24.0 || (globalPos.dx <= 12.0 && dxLeft >= 14.0)) &&
+          dxLeft > dyAbs) {
+        _anchorSwipeAction.value = 'backspace';
+      } else {
+        _anchorSwipeAction.value = '';
+      }
       return;
     }
     final dyTop = rect.top - globalPos.dy;
     final dyBottom = globalPos.dy - rect.bottom;
     final dxRight = globalPos.dx - rect.right;
-    if (dyTop > 0 && dyTop >= dxRight && dyTop >= dyBottom) {
+    final dxLeftOut = rect.left - globalPos.dx;
+    if (dyTop > 0 && dyTop >= dxRight && dyTop >= dyBottom && dyTop >= dxLeftOut) {
       _anchorSwipeAction.value = _anchorDidSelect.value ? 'copy' : 'paste';
-    } else if (dyBottom > 0 && dyBottom >= dxRight && dyBottom >= dyTop) {
+    } else if (dyBottom > 0 &&
+        dyBottom >= dxRight &&
+        dyBottom >= dyTop &&
+        dyBottom >= dxLeftOut) {
       _anchorSwipeAction.value = _anchorDidSelect.value ? 'cut' : '';
-    } else if (dxRight > 0) {
+    } else if (dxRight > 0 && dxRight >= dxLeftOut) {
       _anchorSwipeAction.value = 'escape';
+    } else if (dxLeftOut > 0) {
+      _anchorSwipeAction.value = 'backspace';
     } else {
       _anchorSwipeAction.value = '';
     }
@@ -509,6 +526,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       case 'escape':
         if (gFFI.inputModel.keyboardPerm && !gFFI.inputModel.isViewCamera) {
           gFFI.inputModel.inputKey('VK_ESCAPE');
+        }
+        break;
+      case 'backspace':
+        if (gFFI.inputModel.keyboardPerm && !gFFI.inputModel.isViewCamera) {
+          gFFI.inputModel.inputKey('VK_BACK');
         }
         break;
     }
@@ -2177,15 +2199,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       icon = Icons.close_rounded;
                       label = isZh ? '松开: Esc' : 'Release: Esc';
                       break;
+                    case 'backspace':
+                      icon = Icons.backspace_outlined;
+                      label = isZh ? '松开: 退格' : 'Release: Back';
+                      break;
                     default:
                       icon = Icons.select_all_rounded;
                       label = didSelect
                           ? (isZh
-                              ? '上:复制 下:剪切\n右:Esc'
-                              : 'Up:Copy Dn:Cut\nRight:Esc')
+                              ? '上:复制 下:剪切\n左:退格 右:Esc'
+                              : 'U:Copy D:Cut\nL:Back R:Esc')
                           : (isZh
-                              ? '选择模式\n上:粘贴 右:Esc'
-                              : 'Select Mode\nUp:Paste R:Esc');
+                              ? '选择模式\n上:粘贴 左:退格 右:Esc'
+                              : 'Select Mode\nU:Paste L:Back R:Esc');
                       break;
                   }
                   return IgnorePointer(
@@ -2257,17 +2283,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
               final pos = _anchorSelectionMenuPos.value;
               if (pos == null) return const SizedBox.shrink();
               final isZh = localeName.startsWith('zh');
-              const double estWidth = 226.0;
+              const double estWidth = 248.0;
               final double left = pos.dx - estWidth / 2;
               final double clampedLeft = left.clamp(
                 12.0,
                 max(12.0, size.width - estWidth - 12.0),
               );
-              final double preferredTop = pos.dy - 54.0;
+              final double preferredTop = pos.dy - 78.0;
               final double clampedTop = (preferredTop >= 12.0
                       ? preferredTop
                       : pos.dy + 16.0)
-                  .clamp(12.0, max(12.0, size.height - 60.0));
+                  .clamp(12.0, max(12.0, size.height - 80.0));
 
               Widget buildActionBtn(
                 IconData icon,
@@ -2276,23 +2302,23 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 Color color = Colors.white,
               }) {
                 return InkWell(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   onTap: onTap,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 7,
+                      horizontal: 12,
+                      vertical: 20,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 15, color: color),
-                        const SizedBox(width: 4),
+                        Icon(icon, size: 17, color: color),
+                        const SizedBox(width: 5),
                         Text(
                           text,
                           style: TextStyle(
                             color: color,
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -2309,15 +2335,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                   color: Colors.transparent,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xEE22262E),
-                      borderRadius: BorderRadius.circular(10),
+                      color: const Color(0x8822262E),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0x44FFFFFF),
+                        color: const Color(0x55FFFFFF),
                         width: 1,
                       ),
                       boxShadow: const [
                         BoxShadow(
-                          color: Colors.black45,
+                          color: Colors.black38,
                           blurRadius: 10,
                           offset: Offset(0, 4),
                         ),
@@ -2356,14 +2382,17 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           color: Colors.redAccent.shade100,
                         ),
                         InkWell(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(10),
                           onTap: _dismissAnchorSelectionMenu,
                           child: const Padding(
-                            padding: EdgeInsets.all(6),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 20,
+                            ),
                             child: Icon(
                               Icons.close_rounded,
-                              size: 14,
-                              color: Colors.white60,
+                              size: 16,
+                              color: Colors.white70,
                             ),
                           ),
                         ),

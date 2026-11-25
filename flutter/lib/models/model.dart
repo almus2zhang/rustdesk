@@ -2894,6 +2894,14 @@ class CanvasModel with ChangeNotifier {
           final s2 = size.height / displayHeight;
           _scale = min(s1, s2);
         }
+      } else if (startMenuOpen) {
+        final imgW = parent.target?.imageModel.image?.width ?? 0;
+        final imgH = parent.target?.imageModel.image?.height ?? 0;
+        final curW = imgW > 0 ? imgW : (displayWidth > 0 ? displayWidth : 800);
+        final curH =
+            imgH > 0 ? imgH : (displayHeight > 0 ? displayHeight : 1200);
+        _scale =
+            _computeStartMenuZoomScale(size.width, size.height, curW, curH);
       } else {
         final dims = calculateRemoteWindowTargetSize();
         final targetW = dims['targetW'] ?? 700;
@@ -3458,6 +3466,11 @@ class CanvasModel with ChangeNotifier {
       final imgH = parent.target?.imageModel.image?.height ?? 0;
       final curW = imgW > 0 ? imgW : displayWidth;
       final curH = imgH > 0 ? imgH : displayHeight;
+      if (startMenuOpen) {
+        _x = 0.0;
+        _y = size.height - curH * _scale;
+        return;
+      }
       final visibleW = max(1, curW - appCropLeft - appCropRight);
       final visibleH = max(1, curH - appCropTop - appCropBottom);
       final padX = max(0.0, (size.width - visibleW * _scale) / 2.0);
@@ -3884,17 +3897,36 @@ class CanvasModel with ChangeNotifier {
     notifyListeners();
   }
 
+  double _computeStartMenuZoomScale(
+      double availW, double availH, int remoteW, int remoteH) {
+    final regionW = min(800, max(1, remoteW));
+    final regionH = min(1200, max(1, remoteH));
+    if (availW <= 0 || availH <= 0) {
+      return _scale > 0 ? _scale : 1.0;
+    }
+    return min(availW / regionW, availH / regionH);
+  }
+
   void pushCanvasToRemoteBottomLeft(double keyboardHeight) {
     if (keyboardHeight <= 0) return;
     saveMobileOffsetBeforeSoftKeyboard();
 
     final mediaData = MediaQueryData.fromView(ui.window);
+    final screenW = mediaData.size.width;
     final screenH = mediaData.size.height;
     final keyboardTop = screenH - keyboardHeight;
 
-    final dh = getDisplayHeight().toDouble();
-    final s = _scale > 0 ? _scale : 1.0;
+    final imgW = parent.target?.imageModel.image?.width ?? 0;
+    final imgH = parent.target?.imageModel.image?.height ?? 0;
+    final curW = imgW > 0 ? imgW : getDisplayWidth();
+    final curH = imgH > 0 ? imgH : getDisplayHeight();
     final adjust = getAdjustY();
+    if (startMenuOpen && curW > 0 && curH > 0) {
+      final availH = max(100.0, keyboardTop - 4.0 - adjust - mediaData.padding.top);
+      _scale = _computeStartMenuZoomScale(screenW, availH, curW, curH);
+    }
+    final dh = curH > 0 ? curH.toDouble() : getDisplayHeight().toDouble();
+    final s = _scale > 0 ? _scale : 1.0;
     // 强制将远程桌面的最左下角（田字标与任务栏所在区域）推到软键盘正上方
     _x = 0.0;
     _y = keyboardTop - 4.0 - adjust - (dh * s);
