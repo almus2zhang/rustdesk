@@ -737,7 +737,8 @@ class FfiModel with ChangeNotifier {
       if (isIdentical) {
         for (int i = 0; i < list.length; i++) {
           if (current[i]['hwnd'] != list[i]['hwnd'] ||
-              current[i]['title'] != list[i]['title']) {
+              current[i]['title'] != list[i]['title'] ||
+              current[i]['is_minimized'] != list[i]['is_minimized']) {
             isIdentical = false;
             break;
           }
@@ -748,6 +749,7 @@ class FfiModel with ChangeNotifier {
       }
       _restoreSingleAppSelectionFromList(list);
       _handleClosedOrReopenedWindows(sessionId, list);
+      _updateSelectedAppMinimized(list);
       if (parent.target?.canvasModel.showWindowPickerModal != true) {
         return;
       }
@@ -919,56 +921,46 @@ class FfiModel with ChangeNotifier {
     }
   }
 
-  _handleWindowClosed(SessionID sessionId) async {
+  _handleWindowClosed(SessionID sessionId) {
     final cm = parent.target?.canvasModel;
     if (cm == null) return;
-    final closedHwnd = cm.currentSelectedHwnd;
-    parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-    await _leaveClosedApp(sessionId, cm, closedHwnd);
+    _showAppGridForClosedApp(cm);
   }
 
-  /// 当前单程序窗口被关掉（主机通知，或列表里已经找不到它）后：优先切回上一
-  /// 个还开着的程序；否则退出单程序模式，并记住这个程序名，等它再次打开时
-  /// 自动回到单程序全屏。
-  Future<void> _leaveClosedApp(
-      SessionID sessionId, CanvasModel cm, int closedHwnd) async {
-    var name = cm.currentSelectedAppName;
-    if (name.isEmpty && closedHwnd != 0) {
-      // 程序名可能还没解析出来，按句柄从列表里反查一个，方便之后自动恢复。
-      for (final item in cm.appWindowList.value) {
-        if (item is Map &&
-            (int.tryParse('${item['hwnd']}') ?? 0) == closedHwnd) {
-          name = item['name']?.toString() ?? '';
-          break;
-        }
-      }
-    }
-    final prev = cm.previousOpenApp(
-        closedHwnd != 0 ? closedHwnd : cm.currentSelectedHwnd);
-    if (prev != null) {
-      await cm.switchToApp(prev.key, prev.value);
+  /// 选中的程序退出后不再自动切走或退出单程序模式，而是停留在当前会话，
+  /// 在主画面直接弹出大图标程序列表供用户选择。
+  void _showAppGridForClosedApp(CanvasModel cm) {
+    cm.startMenuOpen = false;
+    cm.selectedAppMinimized.value = false;
+    cm.selectedAppClosed.value = true;
+  }
+
+  /// 记录当前单程序窗口是否已最小化，客户端据此在主画面显示大图标程序列表。
+  void _updateSelectedAppMinimized(List<dynamic> list) {
+    final cm = parent.target?.canvasModel;
+    if (cm == null) return;
+    final hwnd = cm.currentHwnd;
+    if (!cm.isSingleAppMode || cm.startMenuOpen || hwnd == 0) {
+      cm.selectedAppMinimized.value = false;
       return;
     }
-    cm.isSingleAppMode = false;
-    cm.startMenuOpen = false;
-    cm.isSingleAppTempFullScreen = false;
-    // 顺序不能反：退出单程序模式会清掉待恢复标记。
-    cm.markAppClosedForAutoReopen(name);
-    // 没有可切的程序就退回桌面：必须让主机也退出单程序模式，否则它会继续
-    // 采集那块已经没有窗口的虚拟屏，画面就是全黑。
-    await bind.sessionPeerOption(
-        sessionId: sessionId, name: 'select_window', value: '0');
-    await bind.sessionPeerOption(
-        sessionId: sessionId, name: 'is_single_app_mode', value: 'N');
-    await cm.updateViewStyle(force: true);
+    var minimized = false;
+    for (final item in list) {
+      if (item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd) {
+        final v = item['is_minimized'];
+        minimized = v == true || v == 1 || v == 'true';
+        break;
+      }
+    }
+    cm.selectedAppMinimized.value = minimized;
   }
 
   /// 主机没发（或来不及发）window_closed 时，用窗口列表兜底：当前选中的程序
-  /// 不见了就按关闭处理，关掉的程序重新出现就自动切回去。
+  /// 不见了就显示程序列表。
   void _handleClosedOrReopenedWindows(
       SessionID sessionId, List<dynamic> list) {
     final cm = parent.target?.canvasModel;
-    if (cm == null || list.isEmpty || cm.startMenuOpen || cm.isSingleAppTempFullScreen) return;
+    if (cm == null || cm.startMenuOpen || cm.isSingleAppTempFullScreen) return;
     if (cm.isSingleAppMode) {
       final hwnd = cm.currentHwnd;
       if (hwnd == 0) return;
@@ -976,12 +968,13 @@ class FfiModel with ChangeNotifier {
       final stillThere = list.any((item) =>
           item is Map && (int.tryParse('${item['hwnd']}') ?? 0) == hwnd);
       if (!stillThere) {
-        parent.target?.ffiModel.pi.platformAdditions['selected_window'] = 0;
-        _leaveClosedApp(sessionId, cm, hwnd);
+        _showAppGridForClosedApp(cm);
       }
       return;
     }
-    cm.tryAutoReopen(list);
+    if (list.isNotEmpty) {
+      cm.tryAutoReopen(list);
+    }
   }
 
   _handlePrinterRequest(
@@ -2964,7 +2957,12 @@ class CanvasModel with ChangeNotifier {
   }
 
   set isSingleAppMode(bool value) {
+    final changed = _isSingleAppMode != value;
     _isSingleAppMode = value;
+    if (changed) {
+      selectedAppMinimized.value = false;
+      selectedAppClosed.value = false;
+    }
     if (value) {
       final ffiModel = parent.target?.ffiModel;
       if (ffiModel != null && !ffiModel.touchMode) {
@@ -2980,6 +2978,8 @@ class CanvasModel with ChangeNotifier {
 
   // Single App Mode & Dock state
   final Rx<List<dynamic>> appWindowList = Rx<List<dynamic>>([]);
+  final RxBool selectedAppMinimized = false.obs;
+  final RxBool selectedAppClosed = false.obs;
   bool showWindowPickerModal = false;
   String currentSelectedAppName = '';
   int currentSelectedHwnd = 0;
@@ -2988,9 +2988,10 @@ class CanvasModel with ChangeNotifier {
   int appCropRight = 0;
   int appCropBottom = 0;
   // True while the host Start menu is open in single-app mode. The view then
-  // shows the whole display and no window resize is requested, otherwise the
-  // menu would be cropped away as soon as the canvas re-lays out.
-  bool startMenuOpen = false;
+  // shows the bottom-left zoomed region and no window resize is requested.
+  final RxBool _startMenuOpen = false.obs;
+  bool get startMenuOpen => _startMenuOpen.value;
+  set startMenuOpen(bool value) => _startMenuOpen.value = value;
 
   int _lastCheckedW = 0;
   int _lastCheckedH = 0;
@@ -3327,6 +3328,8 @@ class CanvasModel with ChangeNotifier {
     loadAppCrop(name);
     isSingleAppMode = true;
     startMenuOpen = false;
+    selectedAppMinimized.value = false;
+    selectedAppClosed.value = false;
     isSingleAppTempFullScreen = false;
     parent.target?.ffiModel.touchMode = true;
     bind.mainSetLocalOption(
@@ -3833,6 +3836,9 @@ class CanvasModel with ChangeNotifier {
     _offsetBeforeMobileSoftKeyboard = null;
     _scaleBeforeMobileSoftKeyboard = null;
     _isSingleAppMode = false;
+    _startMenuOpen.value = false;
+    selectedAppMinimized.value = false;
+    selectedAppClosed.value = false;
   }
 
   updateScrollPercent() {

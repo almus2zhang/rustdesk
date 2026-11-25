@@ -5126,6 +5126,10 @@ pub struct AppWindowInfo {
     pub height: i32,
     #[serde(default)]
     pub icon: String,
+    /// True when the window is minimized so mobile single-app clients can show
+    /// the app icon grid instead of a black/frozen frame.
+    #[serde(default)]
+    pub is_minimized: bool,
 }
 
 extern "system" {
@@ -5483,6 +5487,7 @@ unsafe extern "system" fn enum_windows_callback(hwnd: HWND, lparam: LPARAM) -> B
         width,
         height,
         icon,
+        is_minimized: is_iconic,
     });
     TRUE
 }

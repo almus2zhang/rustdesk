@@ -2458,6 +2458,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       ));
       final isSingleApp =
           gFFI.canvasModel.isSingleAppMode || widget.isMobileMode;
+      // 单程序模式下目标程序最小化或退出后主机采不到画面，用大图标程序列表
+      // 覆盖主画面，点一下直接切过去（用 Obx 监听确保状态变化立即显示/隐藏）。
+      if (isSingleApp) {
+        paints.add(Positioned.fill(
+          child: Obx(() {
+            final cm = gFFI.canvasModel;
+            final show = !cm.startMenuOpen &&
+                (cm.selectedAppMinimized.value || cm.selectedAppClosed.value);
+            if (!show) return const SizedBox.shrink();
+            return _buildAppIconGridOverlay();
+          }),
+        ));
+      }
       if (isSingleApp && (!keyboardIsVisible || _isStartMenuPushed)) {
         paints.add(Positioned(
           left: 0,
@@ -2561,6 +2574,156 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
         child: Stack(children: paints),
       );
     });
+  }
+
+  Widget _buildAppIconGridOverlay() {
+    final isZh = localeName.startsWith('zh');
+    return Container(
+      color: const Color(0xEB101824),
+      child: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
+              child: Text(
+                isZh
+                    ? '当前程序已关闭或最小化，点击图标切换程序'
+                    : 'App is closed or minimized, tap an icon to switch',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+            Expanded(
+              child: Obx(() {
+                final list = gFFI.canvasModel.appWindowList.value;
+                if (list.isEmpty) {
+                  return Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.refresh,
+                          size: 18, color: Colors.white70),
+                      label: Text(
+                        isZh
+                            ? '没有可切换的程序（点击刷新或左下角打开开始菜单）'
+                            : 'No open apps (Tap to refresh or open Start Menu)',
+                        style: const TextStyle(
+                            color: Colors.white60, fontSize: 13),
+                      ),
+                      onPressed: () {
+                        bind.sessionPeerOption(
+                          sessionId: gFFI.sessionId,
+                          name: 'get_window_list',
+                          value: '',
+                        );
+                      },
+                    ),
+                  );
+                }
+                return GridView.builder(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    8,
+                    16,
+                    16 + gFFI.canvasModel.singleAppDockHeight,
+                  ),
+                  gridDelegate:
+                      const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 4,
+                    mainAxisSpacing: 18,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.78,
+                  ),
+                  itemCount: list.length,
+                  itemBuilder: (ctx, idx) {
+                    final item = list[idx];
+                    final title = item['title']?.toString() ?? '';
+                    final name = item['name']?.toString() ?? '';
+                    final hwnd =
+                        int.tryParse(item['hwnd']?.toString() ?? '0') ?? 0;
+                    final vMin = item['is_minimized'];
+                    final minimized =
+                        vMin == true || vMin == 1 || vMin == 'true';
+                    final displayName = name.replaceAll(
+                        RegExp(r'\.exe$', caseSensitive: false), '');
+                    final iconData = _resolveAppIcon(name, title);
+                    final iconBase64 = item['icon']?.toString() ?? '';
+                    Widget iconWidget = Icon(iconData,
+                        color: _resolveAppColor(name), size: 40);
+                    if (iconBase64.isNotEmpty) {
+                      try {
+                        final provider = _appIconMemoryCache.putIfAbsent(
+                          iconBase64,
+                          () => MemoryImage(base64Decode(iconBase64)),
+                        );
+                        iconWidget = ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image(
+                            image: provider,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.high,
+                            errorBuilder: (c, e, s) => Icon(iconData,
+                                color: _resolveAppColor(name), size: 40),
+                          ),
+                        );
+                      } catch (_) {}
+                    }
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () async {
+                        if (hwnd == 0) return;
+                        _isStartMenuPushed = false;
+                        if (_showEdit ||
+                            keyboardVisibilityController.isVisible) {
+                          _closeSoftKeyboard();
+                        }
+                        gFFI.canvasModel.selectedAppMinimized.value = false;
+                        gFFI.canvasModel.selectedAppClosed.value = false;
+                        await gFFI.canvasModel.switchToApp(hwnd, name);
+                      },
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 60,
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: const Color(0x22FFFFFF),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: minimized
+                                    ? const Color(0x66FFB74D)
+                                    : const Color(0x22FFFFFF),
+                                width: 1,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: iconWidget,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            displayName,
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: minimized
+                                  ? const Color(0xCCFFB74D)
+                                  : Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildSingleAppDockBar(BuildContext context) {
