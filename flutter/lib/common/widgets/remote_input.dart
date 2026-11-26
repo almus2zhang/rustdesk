@@ -900,18 +900,20 @@ class _RawTouchGestureDetectorRegionState
       final twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
       final isWheelMode = twoFingerMode == 'wheel';
       if (isWheelMode) {
+        final double scaleDiff = (d.scale - 1.0).abs();
         if (_twoFingerState == TwoFingerModeState.undecided) {
           _twoFingerTotalFocalDelta += d.focalPointDelta;
-          final double scaleDiff = (d.scale - 1.0).abs();
 
-          // 1. 双指先大幅收或者开（明显缩放意图，阈值提高到 25%）-> 判定为画布缩放与拖动
-          if (scaleDiff >= 0.25) {
+          // 1. 双指间距变化 >= 8% -> 优先判定为本地画布缩放与拖动
+          if (scaleDiff >= 0.08) {
             _twoFingerState = TwoFingerModeState.canvasPanZoom;
+            _scale = d.scale;
             _twoFingerHoldTimer?.cancel();
             _twoFingerHoldTimer = null;
           }
-          // 2. 双指轻微滑动（极小阈值 5.0px）-> 瞬间锁定为远程滚轮，坚决优先滚动！
-          else if (_twoFingerTotalFocalDelta.distance >= 5.0) {
+          // 2. 双指平行同向滑动 >= 12px 且无明显捏合 -> 判定为远程滚轮
+          else if (_twoFingerTotalFocalDelta.distance >= 12.0 &&
+              scaleDiff < 0.05) {
             _twoFingerState = TwoFingerModeState.scrolling;
             _twoFingerHoldTimer?.cancel();
             _twoFingerHoldTimer = null;
@@ -919,14 +921,21 @@ class _RawTouchGestureDetectorRegionState
             _twoFingerScrollX += _twoFingerTotalFocalDelta.dx;
             _twoFingerScrollY += _twoFingerTotalFocalDelta.dy;
           }
-          // 3. 双指明显收/开（>= 15%）且按着不动（停留超过 350ms）-> 判定为触发画面拖动
-          else if (scaleDiff >= 0.15 && _twoFingerHoldTimer == null) {
-            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 350), () {
+          // 3. 双指轻微开合（>= 5%）且停留超过 250ms -> 判定为画布缩放与拖动
+          else if (scaleDiff >= 0.05 && _twoFingerHoldTimer == null) {
+            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 250), () {
               if (_twoFingerState == TwoFingerModeState.undecided) {
                 _twoFingerState = TwoFingerModeState.canvasPanZoom;
               }
             });
           }
+        } else if (_twoFingerState == TwoFingerModeState.scrolling &&
+            scaleDiff >= 0.14) {
+          // 防止起步中心点微小偏移误锁滚轮：若后续出现明显捏合/张开，无缝切回本地缩放
+          _twoFingerState = TwoFingerModeState.canvasPanZoom;
+          _scale = d.scale;
+          _twoFingerScrollX = 0;
+          _twoFingerScrollY = 0;
         }
 
         if (_twoFingerState == TwoFingerModeState.canvasPanZoom) {
