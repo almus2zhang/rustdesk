@@ -78,7 +78,7 @@ lazy_static::lazy_static! {
     pub static ref CONTROL_PERMISSIONS_ARRAY: Arc::<Mutex<Vec<(i32, ControlPermissions)>>> = Default::default();
     static ref WAKELOCK_SENDER: Arc::<Mutex<std::sync::mpsc::Sender<(usize, usize)>>> = Arc::new(Mutex::new(start_wakelock_thread()));
     static ref WAKELOCK_KEEP_AWAKE_OPTION: Arc::<Mutex<Option<bool>>> = Default::default();
-    static ref SEND_FILES_TO_CLIENTS_TX: tokio::sync::broadcast::Sender<Vec<String>> = {
+    static ref SEND_FILES_TO_CLIENTS_TX: tokio::sync::broadcast::Sender<(Option<i32>, Vec<String>)> = {
         let (tx, _) = tokio::sync::broadcast::channel(16);
         tx
     };
@@ -672,8 +672,12 @@ impl Connection {
             tokio::select! {
                 // biased; // video has higher priority // causing test_delay_timer failed while transferring big file
 
-                Ok(paths) = rx_send_files.recv() => {
-                    if conn.authorized && conn.file && conn.port_forward_socket.is_none() {
+                Ok((target_conn_id, paths)) = rx_send_files.recv() => {
+                    if target_conn_id.map_or(true, |id| id == conn.inner.id())
+                        && conn.authorized
+                        && conn.file
+                        && conn.port_forward_socket.is_none()
+                    {
                         let mut items = Vec::new();
                         for p in paths {
                             let path = std::path::Path::new(&p);
@@ -5679,8 +5683,25 @@ impl Connection {
         ALIVE_CONNS.lock().unwrap().clone()
     }
 
-    pub fn broadcast_send_files_to_clients(paths: Vec<String>) {
-        let _ = SEND_FILES_TO_CLIENTS_TX.send(paths);
+    pub fn list_send_file_clients() -> Vec<(i32, String, String, String)> {
+        AUTHED_CONNS
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|c| c.conn_type == AuthConnType::Remote)
+            .map(|c| {
+                (
+                    c.conn_id,
+                    c.peer_id.clone(),
+                    c.peer_name.clone(),
+                    c.platform.clone(),
+                )
+            })
+            .collect()
+    }
+
+    pub fn send_files_to_client(conn_id: Option<i32>, paths: Vec<String>) {
+        let _ = SEND_FILES_TO_CLIENTS_TX.send((conn_id, paths));
     }
 
     #[cfg(windows)]
@@ -6623,6 +6644,9 @@ pub struct AuthedConn {
     pub session_key: SessionKey,
     pub sender: mpsc::UnboundedSender<Data>,
     pub printer: bool,
+    pub peer_id: String,
+    pub peer_name: String,
+    pub platform: String,
 }
 
 mod raii {
@@ -6666,6 +6690,9 @@ mod raii {
                 session_key,
                 sender,
                 printer,
+                peer_id: lr.my_id,
+                peer_name: lr.my_name,
+                platform: lr.my_platform,
             });
             Self::check_wake_lock();
             use std::sync::Once;

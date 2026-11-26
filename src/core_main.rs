@@ -403,10 +403,30 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             return None;
         } else if args[0] == "--send-to-client" {
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            #[cfg(target_os = "windows")]
             if args.len() > 1 {
                 let paths: Vec<String> = args[1..].to_vec();
-                hbb_common::allow_err!(crate::ipc::send_files_to_clients(paths));
+                match crate::ipc::list_send_file_clients() {
+                    Ok(clients) => {
+                        if let Some(conn_id) = crate::platform::select_send_file_client(&clients) {
+                            hbb_common::allow_err!(crate::ipc::send_files_to_clients(
+                                Some(conn_id),
+                                paths
+                            ));
+                        }
+                    }
+                    Err(err) => {
+                        log::error!("Failed to list send file clients: {}", err);
+                    }
+                }
+            }
+            #[cfg(all(
+                not(target_os = "windows"),
+                not(any(target_os = "android", target_os = "ios"))
+            ))]
+            if args.len() > 1 {
+                let paths: Vec<String> = args[1..].to_vec();
+                hbb_common::allow_err!(crate::ipc::send_files_to_clients(None, paths));
             }
             return None;
         } else if args[0] == "--install-service" {

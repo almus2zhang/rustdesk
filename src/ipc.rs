@@ -347,7 +347,8 @@ pub enum Data {
     #[cfg(windows)]
     ControlledSessionCount(usize),
     CmErr(String),
-    SendFilesToClient(Vec<String>),
+    ListSendFileClients(Vec<(i32, String, String, String)>),
+    SendFilesToClient((Option<i32>, Vec<String>)),
     // CM-side file reading responses (Windows only)
     // These are sent from CM back to Connection when CM handles file reading
     /// Response to ReadFile: contains initial file list or error
@@ -1105,8 +1106,13 @@ async fn handle(data: Data, stream: &mut Connection) {
             );
         }
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
-        Data::SendFilesToClient(paths) => {
-            crate::server::Connection::broadcast_send_files_to_clients(paths);
+        Data::ListSendFileClients(_) => {
+            let clients = crate::server::Connection::list_send_file_clients();
+            allow_err!(stream.send(&Data::ListSendFileClients(clients)).await);
+        }
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        Data::SendFilesToClient((conn_id, paths)) => {
+            crate::server::Connection::send_files_to_client(conn_id, paths);
         }
         _ => {}
     };
@@ -1114,9 +1120,20 @@ async fn handle(data: Data, stream: &mut Connection) {
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tokio::main(flavor = "current_thread")]
-pub async fn send_files_to_clients(paths: Vec<String>) -> ResultType<()> {
+pub async fn list_send_file_clients() -> ResultType<Vec<(i32, String, String, String)>> {
     let mut c = connect(1000, "").await?;
-    c.send(&Data::SendFilesToClient(paths)).await?;
+    c.send(&Data::ListSendFileClients(Vec::new())).await?;
+    if let Some(Data::ListSendFileClients(clients)) = c.next_timeout(1000).await? {
+        return Ok(clients);
+    }
+    Ok(Vec::new())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::main(flavor = "current_thread")]
+pub async fn send_files_to_clients(conn_id: Option<i32>, paths: Vec<String>) -> ResultType<()> {
+    let mut c = connect(1000, "").await?;
+    c.send(&Data::SendFilesToClient((conn_id, paths))).await?;
     Ok(())
 }
 

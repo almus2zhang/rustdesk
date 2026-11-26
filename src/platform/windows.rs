@@ -5766,6 +5766,104 @@ pub fn unregister_send_to_client_context_menu() {
     }
 }
 
+/// Shows a native Windows popup menu at the cursor position to pick a connected
+/// remote client. Returns `Some(conn_id)` for the selected client, or `None` if
+/// cancelled or no clients are connected.
+pub fn select_send_file_client(clients: &[(i32, String, String, String)]) -> Option<i32> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr::null_mut;
+    use winapi::shared::windef::POINT;
+    use winapi::um::winuser::{
+        AppendMenuW, CreatePopupMenu, CreateWindowExW, DestroyMenu, DestroyWindow, GetCursorPos,
+        MessageBoxW, PostMessageW, SetForegroundWindow, TrackPopupMenu, MB_ICONINFORMATION, MB_OK,
+        MF_DISABLED, MF_SEPARATOR, MF_STRING, TPM_LEFTALIGN, TPM_NONOTIFY, TPM_RETURNCMD,
+        TPM_TOPALIGN, WM_NULL, WS_POPUP,
+    };
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        OsStr::new(s)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect()
+    }
+
+    if clients.is_empty() {
+        let text = to_wide("当前没有已连接的 RustDesk 客户端");
+        let caption = to_wide("发送到 RustDesk 客户端");
+        unsafe {
+            MessageBoxW(
+                null_mut(),
+                text.as_ptr(),
+                caption.as_ptr(),
+                MB_OK | MB_ICONINFORMATION,
+            );
+        }
+        return None;
+    }
+
+    unsafe {
+        let hmenu = CreatePopupMenu();
+        if hmenu.is_null() {
+            return None;
+        }
+        let header = to_wide("选择接收客户端:");
+        AppendMenuW(hmenu, MF_STRING | MF_DISABLED, 0, header.as_ptr());
+        AppendMenuW(hmenu, MF_SEPARATOR, 0, null_mut());
+
+        for (idx, (_conn_id, peer_id, peer_name, platform)) in clients.iter().enumerate() {
+            let label = if peer_name.is_empty() {
+                format!("{} [{}]", peer_id, platform)
+            } else {
+                format!("{} ({}) [{}]", peer_name, peer_id, platform)
+            };
+            let wide_label = to_wide(&label);
+            AppendMenuW(hmenu, MF_STRING, idx + 1, wide_label.as_ptr());
+        }
+
+        let class_name = to_wide("STATIC");
+        let win_name = to_wide("");
+        let hwnd = CreateWindowExW(
+            0,
+            class_name.as_ptr(),
+            win_name.as_ptr(),
+            WS_POPUP,
+            0,
+            0,
+            0,
+            0,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            null_mut(),
+        );
+        let mut pt = POINT { x: 0, y: 0 };
+        GetCursorPos(&mut pt);
+        if !hwnd.is_null() {
+            SetForegroundWindow(hwnd);
+        }
+        let cmd = TrackPopupMenu(
+            hmenu,
+            TPM_RETURNCMD | TPM_NONOTIFY | TPM_LEFTALIGN | TPM_TOPALIGN,
+            pt.x,
+            pt.y,
+            0,
+            hwnd,
+            null_mut(),
+        );
+        if !hwnd.is_null() {
+            PostMessageW(hwnd, WM_NULL, 0, 0);
+            DestroyWindow(hwnd);
+        }
+        DestroyMenu(hmenu);
+        if cmd > 0 {
+            let idx = (cmd as usize) - 1;
+            return clients.get(idx).map(|c| c.0);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
