@@ -896,97 +896,10 @@ class _RawTouchGestureDetectorRegionState
                     .toJson()));
       }
     } else {
-      // mobile
-      final twoFingerMode = bind.mainGetLocalOption(key: 'two_finger_mode');
-      final isWheelMode = twoFingerMode == 'wheel';
-      if (isWheelMode) {
-        final double scaleDiff = (d.scale - 1.0).abs();
-        if (_twoFingerState == TwoFingerModeState.undecided) {
-          _twoFingerTotalFocalDelta += d.focalPointDelta;
-
-          // 1. 双指间距变化 >= 10% -> 明确为本地画布缩放与拖动
-          if (scaleDiff >= 0.10) {
-            _twoFingerState = TwoFingerModeState.canvasPanZoom;
-            _scale = d.scale;
-            _twoFingerHoldTimer?.cancel();
-            _twoFingerHoldTimer = null;
-          }
-          // 2. 双指中心点移动 >= 14px 时按当前开合幅度仲裁：
-          //    有明显开合 (>= 6%) 走缩放，平行同向滑动 (< 6%) 走远程滚轮
-          else if (_twoFingerTotalFocalDelta.distance >= 14.0) {
-            _twoFingerHoldTimer?.cancel();
-            _twoFingerHoldTimer = null;
-            if (scaleDiff >= 0.06) {
-              _twoFingerState = TwoFingerModeState.canvasPanZoom;
-              _scale = d.scale;
-            } else {
-              _twoFingerState = TwoFingerModeState.scrolling;
-              // 将初始判定过程中的位移无缝计入，起步不丢帧
-              _twoFingerScrollX += _twoFingerTotalFocalDelta.dx;
-              _twoFingerScrollY += _twoFingerTotalFocalDelta.dy;
-            }
-          }
-          // 3. 双指轻微开合（>= 5%）且停留超过 200ms -> 判定为画布缩放与拖动
-          else if (scaleDiff >= 0.05 && _twoFingerHoldTimer == null) {
-            _twoFingerHoldTimer = Timer(const Duration(milliseconds: 200), () {
-              if (_twoFingerState == TwoFingerModeState.undecided) {
-                _twoFingerState = TwoFingerModeState.canvasPanZoom;
-              }
-            });
-          }
-        } else if (_twoFingerState == TwoFingerModeState.scrolling &&
-            scaleDiff >= 0.30) {
-          // 仅当滚动中出现非常明确的张开/捏合（>= 30%）时才切回本地缩放，避免正常滚动误触打架
-          _twoFingerState = TwoFingerModeState.canvasPanZoom;
-          _scale = d.scale;
-          _twoFingerScrollX = 0;
-          _twoFingerScrollY = 0;
-        }
-
-        if (_twoFingerState == TwoFingerModeState.canvasPanZoom) {
-          // 双指缩放与画布拖动模式：
-          // 先收或者开，或者按着不动后，拖动画布与缩放
-          if (_scale > 0 && d.scale > 0) {
-            final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.85;
-            ffi.canvasModel.updateScale(zoomRatio, d.focalPoint);
-            _scale = d.scale;
-            ffi.canvasModel.panX(d.focalPointDelta.dx);
-            ffi.canvasModel.panY(d.focalPointDelta.dy);
-          }
-        } else if (_twoFingerState == TwoFingerModeState.scrolling) {
-          // 滚轮模式：严格只滚动远程内容，画面绝对不动！
-          // 基础速度温和稳定，快速划过时由惯量接管
-          _twoFingerScrollX += d.focalPointDelta.dx;
-          _twoFingerScrollY += d.focalPointDelta.dy;
-
-          const double threshold = 10.0;
-          int scrollX = 0;
-          int scrollY = 0;
-
-          if (_twoFingerScrollX.abs() >= threshold) {
-            scrollX = (_twoFingerScrollX / threshold).truncate();
-            _twoFingerScrollX -= scrollX * threshold;
-          }
-          if (_twoFingerScrollY.abs() >= threshold) {
-            scrollY = (_twoFingerScrollY / threshold).truncate();
-            _twoFingerScrollY -= scrollY * threshold;
-          }
-
-          if (scrollX != 0 || scrollY != 0) {
-            if (!widget.isCamera) {
-              await bind.sessionSendMouse(
-                  sessionId: sessionId,
-                  msg: json.encode(inputModel.modify({
-                    'id': inputModel.id,
-                    'type': 'wheel',
-                    'x': scrollX.toString(),
-                    'y': scrollY.toString(),
-                  })));
-            }
-          }
-        }
-      } else {
-        final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.5;
+      // mobile: two-finger gesture is dedicated to local canvas zoom & pan
+      // (remote scroll is handled by the left gesture zone + second finger)
+      if (_scale > 0 && d.scale > 0) {
+        final double zoomRatio = 1.0 + (d.scale / _scale - 1.0) * 0.85;
         ffi.canvasModel.updateScale(zoomRatio, d.focalPoint);
         _scale = d.scale;
         ffi.canvasModel.panX(d.focalPointDelta.dx);

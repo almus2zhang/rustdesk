@@ -129,8 +129,11 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
   int? _anchorPointerId;
   final RxBool _isAnchorActive = false.obs;
   final RxBool _anchorDidSelect = false.obs;
+  final RxBool _anchorBoxSelectMode = false.obs;
   final Rx<String> _anchorSwipeAction = ''.obs; // '', 'copy', 'cut', 'paste', 'escape'
   bool _anchorSelectionMouseDown = false;
+  double _anchorScrollX = 0;
+  double _anchorScrollY = 0;
   Rect _activeAnchorRect = Rect.zero;
   Offset _anchorDownPos = Offset.zero;
   DateTime _anchorDownTime = DateTime.fromMillisecondsSinceEpoch(0);
@@ -445,9 +448,12 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     _actionPointerId = null;
     _isAnchorActive.value = false;
     _anchorDidSelect.value = false;
+    _anchorBoxSelectMode.value = false;
     _anchorSwipeAction.value = '';
     _activeAnchorRect = Rect.zero;
     _actionHasMoved = false;
+    _anchorScrollX = 0;
+    _anchorScrollY = 0;
   }
 
   void _updateAnchorSwipeAction(Offset globalPos) {
@@ -550,17 +556,45 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
     final dist = (event.position - _actionDownPos).distance;
     if (!_actionHasMoved && dist > 6.0) {
       _actionHasMoved = true;
-      _anchorDidSelect.value = true;
-      if (!_anchorSelectionMouseDown) {
-        _anchorSelectionMouseDown = true;
-        await gFFI.inputModel.sendMouse('down', MouseButtons.left);
+      if (_anchorBoxSelectMode.value) {
+        _anchorDidSelect.value = true;
+        if (!_anchorSelectionMouseDown) {
+          _anchorSelectionMouseDown = true;
+          await gFFI.inputModel.sendMouse('down', MouseButtons.left);
+        }
       }
     }
     if (!_actionHasMoved) return;
 
     final delta = event.position - _actionLastPos;
     _actionLastPos = event.position;
-    await gFFI.cursorModel.updatePan(delta, event.position, false);
+    if (_anchorBoxSelectMode.value) {
+      await gFFI.cursorModel.updatePan(delta, event.position, false);
+    } else {
+      _anchorScrollX += delta.dx;
+      _anchorScrollY += delta.dy;
+      const double threshold = 10.0;
+      int scrollX = 0;
+      int scrollY = 0;
+      if (_anchorScrollX.abs() >= threshold) {
+        scrollX = (_anchorScrollX / threshold).truncate();
+        _anchorScrollX -= scrollX * threshold;
+      }
+      if (_anchorScrollY.abs() >= threshold) {
+        scrollY = (_anchorScrollY / threshold).truncate();
+        _anchorScrollY -= scrollY * threshold;
+      }
+      if ((scrollX != 0 || scrollY != 0) && !gFFI.inputModel.isViewCamera) {
+        await bind.sessionSendMouse(
+            sessionId: gFFI.sessionId,
+            msg: json.encode(gFFI.inputModel.modify({
+              'id': gFFI.inputModel.id,
+              'type': 'wheel',
+              'x': scrollX.toString(),
+              'y': scrollY.toString(),
+            })));
+      }
+    }
   }
 
   Future<void> _handleAnchorActionUp(PointerUpEvent event) async {
@@ -2095,7 +2129,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     _anchorDownPos = event.position;
                     _anchorDownTime = DateTime.now();
                     _anchorDidSelect.value = false;
+                    _anchorBoxSelectMode.value = false;
                     _anchorSelectionMouseDown = false;
+                    _anchorScrollX = 0;
+                    _anchorScrollY = 0;
                     _anchorSwipeAction.value = '';
                     _isAnchorActive.value = true;
                   } else if (_actionPointerId == null &&
@@ -2105,6 +2142,15 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 },
                 onPointerMove: (event) async {
                   if (event.pointer == _anchorPointerId) {
+                    if (!_anchorBoxSelectMode.value &&
+                        !_anchorDidSelect.value &&
+                        !_actionHasMoved) {
+                      final dyDown = event.position.dy - _anchorDownPos.dy;
+                      final dxAbs = (event.position.dx - _anchorDownPos.dx).abs();
+                      if (dyDown >= 18.0 && dyDown > dxAbs) {
+                        _anchorBoxSelectMode.value = true;
+                      }
+                    }
                     _updateAnchorSwipeAction(event.position);
                   } else {
                     await _handleAnchorActionMove(event);
@@ -2209,9 +2255,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           ? (isZh
                               ? '上:复制 下:剪切\n左:退格 右:Esc'
                               : 'U:Copy D:Cut\nL:Back R:Esc')
-                          : (isZh
-                              ? '选择模式\n上:粘贴 左:退格 右:Esc'
-                              : 'Select Mode\nU:Paste L:Back R:Esc');
+                          : (_anchorBoxSelectMode.value
+                              ? (isZh
+                                  ? '框选模式\n上:粘贴 左:退格 右:Esc'
+                                  : 'Select Mode\nU:Paste L:Back R:Esc')
+                              : (isZh
+                                  ? '拖动模式 (下滑框选)\n上:粘贴 左:退格 右:Esc'
+                                  : 'Scroll (Down:Select)\nU:Paste L:Back R:Esc'));
                       break;
                   }
                   return IgnorePointer(
