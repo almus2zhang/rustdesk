@@ -37,6 +37,7 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
   GestureDragEndCallback? onThreeFingerVerticalDragEnd;
 
   var _currentState = GestureState.none;
+  final Set<int> _trackedPointers = <int>{};
 
   void _finishCurrentState(ScaleEndDetails d) {
     switch (_currentState) {
@@ -80,7 +81,9 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
           onOneFingerPanStart?.call(DragStartDetails(
               localPosition: d.localFocalPoint, globalPosition: d.focalPoint));
         }
-      } else if (count == 2 && _currentState != GestureState.twoFingerScale) {
+      } else if (count == 2 &&
+          _trackedPointers.length >= 2 &&
+          _currentState != GestureState.twoFingerScale) {
         if (_currentState == GestureState.oneFingerPan) {
           _endOneFingerForMulti();
         } else if (_currentState != GestureState.none) {
@@ -130,7 +133,35 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
       DragEndDetails(velocity: d.velocity);
 
   @override
+  void addAllowedPointer(PointerDownEvent event) {
+    _trackedPointers.add(event.pointer);
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _trackedPointers.remove(event.pointer);
+    }
+    super.handleEvent(event);
+    if (_currentState == GestureState.twoFingerScale &&
+        _trackedPointers.length < 2) {
+      _finishCurrentState(ScaleEndDetails());
+    }
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    _trackedPointers.clear();
+    if (_currentState != GestureState.none) {
+      _finishCurrentState(ScaleEndDetails());
+    }
+    super.didStopTrackingLastPointer(pointer);
+  }
+
+  @override
   void rejectGesture(int pointer) {
+    _trackedPointers.remove(pointer);
     super.rejectGesture(pointer);
     switch (_currentState) {
       case GestureState.oneFingerPan:
@@ -139,7 +170,7 @@ class CustomTouchGestureRecognizer extends ScaleGestureRecognizer {
         }
         break;
       case GestureState.twoFingerScale:
-        // Reset scale state if needed, currently self-contained
+        onTwoFingerScaleEnd?.call(ScaleEndDetails());
         break;
       case GestureState.threeFingerVerticalDrag:
         // Reset drag state if needed, currently self-contained
