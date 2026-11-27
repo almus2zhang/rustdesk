@@ -17,13 +17,16 @@ html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-a
 .btn{width:100%;padding:10px 14px;border:none;border-radius:8px;background:#238636;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
 .btn:disabled{opacity:.6;cursor:not-allowed}
 .err{color:#f85149;font-size:13px;margin-top:10px;min-height:18px}
-#viewer-wrap{display:none;flex-direction:column;width:100%;height:100%}
-#toolbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap;z-index:10}
-#toolbar .stat{font-size:12px;color:#8b949e;margin-right:auto;white-space:nowrap}
+#viewer-wrap{display:none;position:relative;width:100%;height:100%}
+#toolbar{position:fixed;top:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(22,27,34,.86);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.15);border-radius:10px;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 16px);z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+#toolbar.collapsed{display:none}
+#toolbar-tab{position:fixed;top:6px;left:50%;transform:translateX(-50%);display:none;align-items:center;gap:4px;padding:4px 12px;background:rgba(22,27,34,.6);backdrop-filter:blur(6px);color:#e6edf3;border:1px solid rgba(255,255,255,.18);border-radius:999px;font-size:12px;cursor:pointer;z-index:20}
+#toolbar-tab.visible{display:flex}
+#toolbar .stat{font-size:12px;color:#8b949e;white-space:nowrap}
 #toolbar select,#toolbar button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer}
 #toolbar button:hover{background:#30363d}
-#stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000;touch-action:none}
-#screen{max-width:100%;max-height:100%;object-fit:contain;cursor:default;user-select:none;-webkit-user-select:none}
+#stage{width:100%;height:100%;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000;touch-action:none}
+#screen{display:block;max-width:100%;max-height:100%;cursor:default;user-select:none;-webkit-user-select:none}
 #kb-input{position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px}
 </style>
 </head>
@@ -62,7 +65,9 @@ html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-a
     <button id="btn-esc">Esc</button>
     <button id="btn-fs">全屏</button>
     <button id="btn-disc">断开</button>
+    <button id="btn-hide-bar" title="收起工具栏">▲</button>
   </div>
+  <button id="toolbar-tab" title="展开工具栏">▼ 工具栏</button>
   <div id="stage">
     <canvas id="screen" tabindex="0"></canvas>
     <input id="kb-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -291,6 +296,7 @@ async function startStream() {
             if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
               canvas.width = bmp.width;
               canvas.height = bmp.height;
+              fitCanvasToStage();
             }
             ctx.drawImage(bmp, 0, 0);
             bmp.close();
@@ -322,10 +328,26 @@ document.getElementById('btn-disc').onclick = () => {
   viewerWrap.style.display = 'none';
   loginWrap.style.display = 'flex';
 };
+const toolbarEl = document.getElementById('toolbar');
+const toolbarTab = document.getElementById('toolbar-tab');
+function setToolbarCollapsed(collapsed) {
+  toolbarEl.classList.toggle('collapsed', collapsed);
+  toolbarTab.classList.toggle('visible', collapsed);
+}
+document.getElementById('btn-hide-bar').onclick = () => setToolbarCollapsed(true);
+toolbarTab.onclick = () => setToolbarCollapsed(false);
+
 document.getElementById('btn-fs').onclick = () => {
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-  else document.exitFullscreen?.();
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.();
+    setToolbarCollapsed(true);
+  } else {
+    document.exitFullscreen?.();
+  }
 };
+document.addEventListener('fullscreenchange', () => {
+  setTimeout(fitCanvasToStage, 60);
+});
 document.getElementById('btn-esc').onclick = () => {
   sendInput({ type: 'key', key: 'Escape', code: 'Escape', down: true });
   sendInput({ type: 'key', key: 'Escape', code: 'Escape', down: false });
@@ -397,6 +419,21 @@ let tMoved = false, tHoldTimer = null;
 let relAccumX = 0, relAccumY = 0, wheelAccumX = 0, wheelAccumY = 0;
 let initPinchDist = 0, lastPinchDist = 0;
 let viewScale = 1.0, viewX = 0, viewY = 0;
+
+function fitCanvasToStage() {
+  if (!canvas.width || !canvas.height) return;
+  const stage = document.getElementById('stage');
+  const sw = stage.clientWidth, sh = stage.clientHeight;
+  if (sw <= 0 || sh <= 0) return;
+  if (sw / sh > canvas.width / canvas.height) {
+    canvas.style.height = '100%';
+    canvas.style.width = 'auto';
+  } else {
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+  }
+}
+window.addEventListener('resize', fitCanvasToStage);
 
 function applyCanvasTransform() {
   if (viewScale <= 1.01) {
