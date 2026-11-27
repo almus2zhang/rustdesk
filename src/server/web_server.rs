@@ -543,13 +543,19 @@ fn capture_loop(
     stop: Arc<AtomicBool>,
 ) {
     use scrap::{TraitCapturer, TraitPixelBuffer};
-    let display = match scrap::Display::primary() {
+    let mut displays = match scrap::Display::all() {
         Ok(d) => d,
         Err(e) => {
-            log::warn!("Web AVI Display::primary failed: {}", e);
+            log::warn!("Web AVI Display::all failed: {}", e);
             return;
         }
     };
+    if displays.is_empty() {
+        log::warn!("Web AVI Display::all returned 0 displays");
+        return;
+    }
+    let idx = displays.iter().position(|d| d.is_primary()).unwrap_or(0);
+    let display = displays.remove(idx);
     let disp_w = display.width() as i32;
     let disp_h = display.height() as i32;
     *DISPLAY_SIZE.lock().unwrap() = (disp_w, disp_h);
