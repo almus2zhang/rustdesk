@@ -353,8 +353,10 @@ function normCoords(clientX, clientY) {
 function btnName(b) { return b === 2 ? 'right' : b === 1 ? 'middle' : 'left'; }
 
 let lastMoveSent = 0;
+let lastTouchTime = 0;
 canvas.oncontextmenu = (e) => e.preventDefault();
 canvas.onmousemove = (e) => {
+  if (Date.now() - lastTouchTime < 700) return;
   const now = performance.now();
   if (now - lastMoveSent < 20) return;
   lastMoveSent = now;
@@ -362,11 +364,13 @@ canvas.onmousemove = (e) => {
   sendInput({ type: 'move', x: p.x, y: p.y });
 };
 canvas.onmousedown = (e) => {
+  if (Date.now() - lastTouchTime < 700) return;
   canvas.focus();
   const p = normCoords(e.clientX, e.clientY);
   sendInput({ type: 'down', button: btnName(e.button), x: p.x, y: p.y });
 };
 canvas.onmouseup = (e) => {
+  if (Date.now() - lastTouchTime < 700) return;
   const p = normCoords(e.clientX, e.clientY);
   sendInput({ type: 'up', button: btnName(e.button), x: p.x, y: p.y });
 };
@@ -375,46 +379,138 @@ canvas.onwheel = (e) => {
   sendInput({ type: 'wheel', dx: Math.round(-e.deltaX), dy: Math.round(-e.deltaY) });
 };
 
-let touchStartPos = null, touchMoved = false;
+// Touch screen: App-style trackpad mouse mode (1-finger move cursor, tap left click,
+// long-press+drag left hold, 2-finger tap right click, 2-finger drag scroll)
+let touchMode = null; // 'one', 'two', 'hold'
+let tStart = { x: 0, y: 0 }, tLast = { x: 0, y: 0 };
+let tMoved = false, tHoldTimer = null;
+let relAccumX = 0, relAccumY = 0, wheelAccumX = 0, wheelAccumY = 0;
+
+function flushRelMove() {
+  const dx = Math.trunc(relAccumX);
+  const dy = Math.trunc(relAccumY);
+  if (dx !== 0 || dy !== 0) {
+    relAccumX -= dx;
+    relAccumY -= dy;
+    sendInput({ type: 'move_rel', dx, dy });
+  }
+}
+
 canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  lastTouchTime = Date.now();
+  if (tHoldTimer) { clearTimeout(tHoldTimer); tHoldTimer = null; }
   if (e.touches.length === 1) {
     const t = e.touches[0];
-    touchStartPos = { x: t.clientX, y: t.clientY };
-    touchMoved = false;
-  }
-}, { passive: true });
-canvas.addEventListener('touchmove', (e) => {
-  if (e.touches.length === 1 && touchStartPos) {
-    const t = e.touches[0];
-    if (Math.hypot(t.clientX - touchStartPos.x, t.clientY - touchStartPos.y) > 8) {
-      touchMoved = true;
-    }
-    if (touchMoved) {
-      const now = performance.now();
-      if (now - lastMoveSent >= 25) {
-        lastMoveSent = now;
-        const p = normCoords(t.clientX, t.clientY);
-        sendInput({ type: 'move', x: p.x, y: p.y });
+    touchMode = 'one';
+    tStart = { x: t.clientX, y: t.clientY };
+    tLast = { x: t.clientX, y: t.clientY };
+    tMoved = false;
+    relAccumX = 0; relAccumY = 0;
+    tHoldTimer = setTimeout(() => {
+      if (touchMode === 'one' && !tMoved) {
+        touchMode = 'hold';
+        sendInput({ type: 'down', button: 'left' });
       }
+      tHoldTimer = null;
+    }, 380);
+  } else if (e.touches.length === 2) {
+    if (touchMode === 'hold') {
+      sendInput({ type: 'up', button: 'left' });
+    }
+    touchMode = 'two';
+    tMoved = false;
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    tStart = { x: mx, y: my };
+    tLast = { x: mx, y: my };
+    wheelAccumX = 0; wheelAccumY = 0;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  lastTouchTime = Date.now();
+  if ((touchMode === 'one' || touchMode === 'hold') && e.touches.length === 1) {
+    const t = e.touches[0];
+    const dx = t.clientX - tLast.x;
+    const dy = t.clientY - tLast.y;
+    tLast = { x: t.clientX, y: t.clientY };
+    if (!tMoved && Math.hypot(t.clientX - tStart.x, t.clientY - tStart.y) > 6) {
+      tMoved = true;
+      if (tHoldTimer) { clearTimeout(tHoldTimer); tHoldTimer = null; }
+    }
+    const r = canvas.getBoundingClientRect();
+    const scaleX = r.width > 0 ? (screenW / r.width) * 1.4 : 1.5;
+    const scaleY = r.height > 0 ? (screenH / r.height) * 1.4 : 1.5;
+    relAccumX += dx * scaleX;
+    relAccumY += dy * scaleY;
+    const now = performance.now();
+    if (now - lastMoveSent >= 20) {
+      lastMoveSent = now;
+      flushRelMove();
+    }
+  } else if (touchMode === 'two' && e.touches.length === 2) {
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const dx = mx - tLast.x;
+    const dy = my - tLast.y;
+    tLast = { x: mx, y: my };
+    if (!tMoved && Math.hypot(mx - tStart.x, my - tStart.y) > 8) {
+      tMoved = true;
+    }
+    wheelAccumX += dx;
+    wheelAccumY += dy;
+    const step = 12;
+    let wx = 0, wy = 0;
+    if (Math.abs(wheelAccumX) >= step) { wx = Math.trunc(wheelAccumX / step); wheelAccumX -= wx * step; }
+    if (Math.abs(wheelAccumY) >= step) { wy = Math.trunc(wheelAccumY / step); wheelAccumY -= wy * step; }
+    if (wx !== 0 || wy !== 0) {
+      sendInput({ type: 'wheel', dx: -wx * 15, dy: wy * 15 });
     }
   }
-}, { passive: true });
+}, { passive: false });
+
 canvas.addEventListener('touchend', (e) => {
-  if (!touchMoved && touchStartPos) {
-    const p = normCoords(touchStartPos.x, touchStartPos.y);
-    sendInput({ type: 'down', button: 'left', x: p.x, y: p.y });
-    setTimeout(() => sendInput({ type: 'up', button: 'left', x: p.x, y: p.y }), 40);
+  e.preventDefault();
+  lastTouchTime = Date.now();
+  if (tHoldTimer) { clearTimeout(tHoldTimer); tHoldTimer = null; }
+  flushRelMove();
+  if (touchMode === 'hold' && e.touches.length === 0) {
+    sendInput({ type: 'up', button: 'left' });
+    touchMode = null;
+  } else if (touchMode === 'one' && e.touches.length === 0) {
+    if (!tMoved) {
+      sendInput({ type: 'down', button: 'left' });
+      setTimeout(() => sendInput({ type: 'up', button: 'left' }), 40);
+    }
+    touchMode = null;
+  } else if (touchMode === 'two' && e.touches.length === 0) {
+    if (!tMoved) {
+      sendInput({ type: 'down', button: 'right' });
+      setTimeout(() => sendInput({ type: 'up', button: 'right' }), 40);
+    }
+    touchMode = null;
   }
-  touchStartPos = null;
+}, { passive: false });
+
+canvas.addEventListener('touchcancel', () => {
+  if (tHoldTimer) { clearTimeout(tHoldTimer); tHoldTimer = null; }
+  if (touchMode === 'hold') sendInput({ type: 'up', button: 'left' });
+  touchMode = null;
 });
 
 function handleKeyEvt(e, down) {
   if (e.target === pwdInput) return;
+  if (e.target === kbInput) {
+    const special = ['Backspace','Enter','Escape','Tab','Delete','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'];
+    if (!special.includes(e.key)) return;
+  }
   e.preventDefault();
   sendInput({
     type: 'key',
     key: e.key,
-    code: e.code,
+    code: e.code || e.key,
     down,
     ctrl: e.ctrlKey,
     alt: e.altKey,

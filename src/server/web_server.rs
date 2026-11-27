@@ -38,7 +38,7 @@ use sha2::{Digest, Sha256};
 
 use crate::common::input::{
     MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_WHEEL, MOUSE_TYPE_DOWN, MOUSE_TYPE_MOVE,
-    MOUSE_TYPE_UP, MOUSE_TYPE_WHEEL,
+    MOUSE_TYPE_MOVE_RELATIVE, MOUSE_TYPE_UP, MOUSE_TYPE_WHEEL,
 };
 use crate::server::input_service::{handle_key, handle_mouse};
 
@@ -725,26 +725,47 @@ fn dispatch_web_input(val: &serde_json::Value) {
     let (dw, dh) = *DISPLAY_SIZE.lock().unwrap();
 
     match typ {
+        "move_rel" => {
+            let dx = val.get("dx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let dy = val.get("dy").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            if dx != 0 || dy != 0 {
+                let mut evt = MouseEvent::new();
+                evt.mask = MOUSE_TYPE_MOVE_RELATIVE;
+                evt.x = dx.clamp(-2000, 2000);
+                evt.y = dy.clamp(-2000, 2000);
+                handle_mouse(&evt, 0, "web".to_owned(), 0, true, false);
+            }
+        }
         "move" | "down" | "up" => {
-            let nx = val.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0).clamp(0.0, 1.0);
-            let ny = val.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0).clamp(0.0, 1.0);
-            let px = (nx * dw as f64).round() as i32;
-            let py = (ny * dh as f64).round() as i32;
-            let btn = match val.get("button").and_then(|v| v.as_str()).unwrap_or("left") {
-                "right" => MOUSE_BUTTON_RIGHT,
-                "middle" => MOUSE_BUTTON_WHEEL,
-                _ => MOUSE_BUTTON_LEFT,
-            };
-            let mask = match typ {
-                "down" => (btn << 3) | MOUSE_TYPE_DOWN,
-                "up" => (btn << 3) | MOUSE_TYPE_UP,
-                _ => MOUSE_TYPE_MOVE,
-            };
-            let mut evt = MouseEvent::new();
-            evt.mask = mask;
-            evt.x = px;
-            evt.y = py;
-            handle_mouse(&evt, 0, "web".to_owned(), 0, false, false);
+            if let (Some(nx), Some(ny)) = (
+                val.get("x").and_then(|v| v.as_f64()),
+                val.get("y").and_then(|v| v.as_f64()),
+            ) {
+                let px = (nx.clamp(0.0, 1.0) * dw as f64).round() as i32;
+                let py = (ny.clamp(0.0, 1.0) * dh as f64).round() as i32;
+                if typ == "move" || typ == "down" {
+                    let mut move_evt = MouseEvent::new();
+                    move_evt.mask = MOUSE_TYPE_MOVE;
+                    move_evt.x = px;
+                    move_evt.y = py;
+                    handle_mouse(&move_evt, 0, "web".to_owned(), 0, true, false);
+                }
+            }
+            if typ == "down" || typ == "up" {
+                let btn = match val.get("button").and_then(|v| v.as_str()).unwrap_or("left") {
+                    "right" => MOUSE_BUTTON_RIGHT,
+                    "middle" => MOUSE_BUTTON_WHEEL,
+                    _ => MOUSE_BUTTON_LEFT,
+                };
+                let mask = if typ == "down" {
+                    (btn << 3) | MOUSE_TYPE_DOWN
+                } else {
+                    (btn << 3) | MOUSE_TYPE_UP
+                };
+                let mut evt = MouseEvent::new();
+                evt.mask = mask;
+                handle_mouse(&evt, 0, "web".to_owned(), 0, true, false);
+            }
         }
         "wheel" => {
             let dx = val.get("dx").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
@@ -753,7 +774,7 @@ fn dispatch_web_input(val: &serde_json::Value) {
             evt.mask = MOUSE_TYPE_WHEEL;
             evt.x = dx.clamp(-120, 120);
             evt.y = dy.clamp(-120, 120);
-            handle_mouse(&evt, 0, "web".to_owned(), 0, false, false);
+            handle_mouse(&evt, 0, "web".to_owned(), 0, true, false);
         }
         "text" => {
             if let Some(txt) = val.get("text").and_then(|v| v.as_str()) {
