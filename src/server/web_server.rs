@@ -672,18 +672,32 @@ async fn handle_input(stream: &mut TcpStream, query: &str, body: &[u8]) -> std::
     }
     let seq = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
 
-    let stream_key = {
+    enum InputAuth {
+        Ok([u8; 32]),
+        Unauthorized,
+        Replay,
+    }
+    let auth_res = {
         let mut sessions = WEB_SESSIONS.lock().unwrap();
-        let Some(s) = sessions.get_mut(token) else {
+        match sessions.get_mut(token) {
+            None => InputAuth::Unauthorized,
+            Some(s) if seq <= s.last_input_seq => InputAuth::Replay,
+            Some(s) => {
+                s.last_input_seq = seq;
+                s.last_active = Instant::now();
+                InputAuth::Ok(s.stream_key)
+            }
+        }
+    };
+    let stream_key = match auth_res {
+        InputAuth::Ok(k) => k,
+        InputAuth::Unauthorized => {
             return send_http_response(stream, "401 Unauthorized", "text/plain", b"Unauthorized")
                 .await;
-        };
-        if seq <= s.last_input_seq {
+        }
+        InputAuth::Replay => {
             return send_http_response(stream, "403 Forbidden", "text/plain", b"Replay").await;
         }
-        s.last_input_seq = seq;
-        s.last_active = Instant::now();
-        s.stream_key
     };
 
     let mut plain = body[4..].to_vec();
