@@ -489,6 +489,7 @@ async fn handle_live_avi(mut stream: TcpStream, query: &str) -> std::io::Result<
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.75f32)
         .clamp(0.25, 1.0);
+    let show_cursor: bool = parse_query_param(query, "cursor").unwrap_or("1") != "0";
 
     let header = concat!(
         "HTTP/1.1 200 OK\r\n",
@@ -506,7 +507,7 @@ async fn handle_live_avi(mut stream: TcpStream, query: &str) -> std::io::Result<
 
     ACTIVE_STREAMS.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
-        capture_loop(fps, quality, scale, stream_key, tx, stop_clone);
+        capture_loop(fps, quality, scale, show_cursor, stream_key, tx, stop_clone);
     });
 
     while let Some(pkt) = rx.recv().await {
@@ -534,10 +535,57 @@ fn fast_sample_hash(bgra: &[u8]) -> u64 {
     h
 }
 
+fn draw_cursor_on_rgb(rgb: &mut [u8], w: usize, h: usize, cx: i32, cy: i32) {
+    // Classic 12x18 arrow cursor bitmap: '.' = transparent, '#' = black border, 'W' = white fill
+    const CURSOR: &[&[u8]] = &[
+        b"#...........",
+        b"##..........",
+        b"#W#.........",
+        b"#WW#........",
+        b"#WWW#.......",
+        b"#WWWW#......",
+        b"#WWWWW#.....",
+        b"#WWWWWW#....",
+        b"#WWWWWWW#...",
+        b"#WWWWWWWW#..",
+        b"#WWWWWWWWW#.",
+        b"#WWWWWW#####",
+        b"#WWW#WW#....",
+        b"#WW#.#WW#...",
+        b"#W#..#WW#...",
+        b"##....#WW#..",
+        b"#.....#WW#..",
+        b".......##...",
+    ];
+    for (dy, row) in CURSOR.iter().enumerate() {
+        let py = cy + dy as i32;
+        if py < 0 || py >= h as i32 {
+            continue;
+        }
+        for (dx, &ch) in row.iter().enumerate() {
+            if ch == b'.' {
+                continue;
+            }
+            let px = cx + dx as i32;
+            if px < 0 || px >= w as i32 {
+                continue;
+            }
+            let off = (py as usize * w + px as usize) * 3;
+            if off + 2 < rgb.len() {
+                let c = if ch == b'W' { 255u8 } else { 0u8 };
+                rgb[off] = c;
+                rgb[off + 1] = c;
+                rgb[off + 2] = c;
+            }
+        }
+    }
+}
+
 fn capture_loop(
     fps: u64,
     quality: u8,
     scale: f32,
+    show_cursor: bool,
     stream_key: [u8; 32],
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
@@ -558,6 +606,7 @@ fn capture_loop(
     let display = displays.remove(idx);
     let disp_w = display.width() as i32;
     let disp_h = display.height() as i32;
+    let (disp_ox, disp_oy) = display.origin();
     *DISPLAY_SIZE.lock().unwrap() = (disp_w, disp_h);
 
     let mut capturer = match scrap::Capturer::new(display) {
@@ -591,7 +640,11 @@ fn capture_loop(
                     continue;
                 }
                 let bgra = pixbuf.data();
-                let cur_hash = fast_sample_hash(bgra);
+                let cursor_pos = if show_cursor { crate::get_cursor_pos() } else { None };
+                let mut cur_hash = fast_sample_hash(bgra);
+                if let Some((cx, cy)) = cursor_pos {
+                    cur_hash ^= ((cx as u64) << 32) ^ (cy as u64 & 0xffff_ffff);
+                }
                 let unchanged = cur_hash == last_hash && last_sent.elapsed() < Duration::from_secs(2);
                 if unchanged {
                     std::thread::sleep(Duration::from_millis(10));
@@ -629,6 +682,12 @@ fn capture_loop(
                         rgb_buf[d_off + 1] = bgra[s_off + 1];
                         rgb_buf[d_off + 2] = bgra[s_off];
                     }
+                }
+
+                if let Some((cx, cy)) = cursor_pos {
+                    let rx = ((cx - disp_ox) as isize * out_w as isize / w as isize) as i32;
+                    let ry = ((cy - disp_oy) as isize * out_h as isize / h as isize) as i32;
+                    draw_cursor_on_rgb(&mut rgb_buf, out_w, out_h, rx, ry);
                 }
 
                 jpg_buf.clear();

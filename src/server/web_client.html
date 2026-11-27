@@ -56,6 +56,7 @@ html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-a
       <option value="30" selected>30 FPS</option>
       <option value="15">15 FPS</option>
     </select>
+    <button id="btn-cursor" title="切换显示远程光标">光标:开</button>
     <button id="btn-kb">键盘</button>
     <button id="btn-esc">Esc</button>
     <button id="btn-fs">全屏</button>
@@ -229,13 +230,21 @@ async function doLogin() {
 loginBtn.onclick = doLogin;
 pwdInput.onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
 
+let showRemoteCursor = true;
+const btnCursor = document.getElementById('btn-cursor');
+btnCursor.onclick = () => {
+  showRemoteCursor = !showRemoteCursor;
+  btnCursor.textContent = showRemoteCursor ? '光标:开' : '光标:关';
+  startStream();
+};
+
 async function startStream() {
   if (streamAbort) streamAbort.abort();
   streamAbort = new AbortController();
   const fps = document.getElementById('sel-fps').value;
   const q = document.getElementById('sel-quality').value;
   const s = document.getElementById('sel-scale').value;
-  const url = `/live.avi?token=${encodeURIComponent(sessionToken)}&fps=${fps}&q=${q}&s=${s}`;
+  const url = `/live.avi?token=${encodeURIComponent(sessionToken)}&fps=${fps}&q=${q}&s=${s}&cursor=${showRemoteCursor ? 1 : 0}`;
 
   let bytesInSec = 0, framesInSec = 0, lastStatTime = performance.now();
   try {
