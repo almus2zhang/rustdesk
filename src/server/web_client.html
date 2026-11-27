@@ -56,6 +56,7 @@ html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-a
       <option value="30" selected>30 FPS</option>
       <option value="15">15 FPS</option>
     </select>
+    <button id="btn-reset-zoom" title="重置网页缩放">1:1</button>
     <button id="btn-cursor" title="切换显示远程光标">光标:开</button>
     <button id="btn-kb">键盘</button>
     <button id="btn-esc">Esc</button>
@@ -388,12 +389,34 @@ canvas.onwheel = (e) => {
   sendInput({ type: 'wheel', dx: Math.round(-e.deltaX), dy: Math.round(-e.deltaY) });
 };
 
-// Touch screen: App-style trackpad mouse mode (1-finger move cursor, tap left click,
-// long-press+drag left hold, 2-finger tap right click, 2-finger drag scroll)
+// Touch screen: App-style trackpad mouse mode + 2-finger pinch-to-zoom / scroll
 let touchMode = null; // 'one', 'two', 'hold'
+let twoSubMode = null; // 'undecided', 'zoom', 'scroll'
 let tStart = { x: 0, y: 0 }, tLast = { x: 0, y: 0 };
 let tMoved = false, tHoldTimer = null;
 let relAccumX = 0, relAccumY = 0, wheelAccumX = 0, wheelAccumY = 0;
+let initPinchDist = 0, lastPinchDist = 0;
+let viewScale = 1.0, viewX = 0, viewY = 0;
+
+function applyCanvasTransform() {
+  if (viewScale <= 1.01) {
+    viewScale = 1.0; viewX = 0; viewY = 0;
+    canvas.style.transform = '';
+    canvas.style.transformOrigin = '';
+  } else {
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.transform = `translate(${viewX}px, ${viewY}px) scale(${viewScale})`;
+  }
+}
+
+document.getElementById('btn-reset-zoom').onclick = () => {
+  viewScale = 1.0; viewX = 0; viewY = 0;
+  applyCanvasTransform();
+};
+
+function touchDist(t0, t1) {
+  return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+}
 
 function flushRelMove() {
   const dx = Math.trunc(relAccumX);
@@ -412,6 +435,7 @@ canvas.addEventListener('touchstart', (e) => {
   if (e.touches.length === 1) {
     const t = e.touches[0];
     touchMode = 'one';
+    twoSubMode = null;
     tStart = { x: t.clientX, y: t.clientY };
     tLast = { x: t.clientX, y: t.clientY };
     tMoved = false;
@@ -428,11 +452,14 @@ canvas.addEventListener('touchstart', (e) => {
       sendInput({ type: 'up', button: 'left' });
     }
     touchMode = 'two';
+    twoSubMode = 'undecided';
     tMoved = false;
     const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
     const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     tStart = { x: mx, y: my };
     tLast = { x: mx, y: my };
+    initPinchDist = touchDist(e.touches[0], e.touches[1]);
+    lastPinchDist = initPinchDist;
     wheelAccumX = 0; wheelAccumY = 0;
   }
 }, { passive: false });
@@ -449,11 +476,9 @@ canvas.addEventListener('touchmove', (e) => {
       tMoved = true;
       if (tHoldTimer) { clearTimeout(tHoldTimer); tHoldTimer = null; }
     }
-    const r = canvas.getBoundingClientRect();
-    const scaleX = r.width > 0 ? (screenW / r.width) * 1.4 : 1.5;
-    const scaleY = r.height > 0 ? (screenH / r.height) * 1.4 : 1.5;
-    relAccumX += dx * scaleX;
-    relAccumY += dy * scaleY;
+    const sens = 2.0 / viewScale;
+    relAccumX += dx * sens;
+    relAccumY += dy * sens;
     const now = performance.now();
     if (now - lastMoveSent >= 20) {
       lastMoveSent = now;
@@ -465,17 +490,45 @@ canvas.addEventListener('touchmove', (e) => {
     const dx = mx - tLast.x;
     const dy = my - tLast.y;
     tLast = { x: mx, y: my };
-    if (!tMoved && Math.hypot(mx - tStart.x, my - tStart.y) > 8) {
-      tMoved = true;
+    const curDist = touchDist(e.touches[0], e.touches[1]);
+    const scaleDiff = initPinchDist > 10 ? Math.abs(curDist / initPinchDist - 1.0) : 0;
+
+    if (twoSubMode === 'undecided') {
+      if (scaleDiff >= 0.09) {
+        twoSubMode = 'zoom';
+        lastPinchDist = curDist;
+        tMoved = true;
+      } else if (Math.hypot(mx - tStart.x, my - tStart.y) >= 14) {
+        twoSubMode = scaleDiff >= 0.05 ? 'zoom' : 'scroll';
+        lastPinchDist = curDist;
+        tMoved = true;
+      }
     }
-    wheelAccumX += dx;
-    wheelAccumY += dy;
-    const step = 12;
-    let wx = 0, wy = 0;
-    if (Math.abs(wheelAccumX) >= step) { wx = Math.trunc(wheelAccumX / step); wheelAccumX -= wx * step; }
-    if (Math.abs(wheelAccumY) >= step) { wy = Math.trunc(wheelAccumY / step); wheelAccumY -= wy * step; }
-    if (wx !== 0 || wy !== 0) {
-      sendInput({ type: 'wheel', dx: -wx * 15, dy: wy * 15 });
+
+    if (twoSubMode === 'zoom') {
+      if (lastPinchDist > 10 && curDist > 10) {
+        const ratio = curDist / lastPinchDist;
+        lastPinchDist = curDist;
+        const stageRect = document.getElementById('stage').getBoundingClientRect();
+        const fx = mx - stageRect.left;
+        const fy = my - stageRect.top;
+        const oldScale = viewScale;
+        viewScale = Math.max(1.0, Math.min(4.0, viewScale * ratio));
+        const actualRatio = viewScale / oldScale;
+        viewX = fx - (fx - viewX) * actualRatio + dx;
+        viewY = fy - (fy - viewY) * actualRatio + dy;
+        applyCanvasTransform();
+      }
+    } else if (twoSubMode === 'scroll') {
+      wheelAccumX += dx;
+      wheelAccumY += dy;
+      const step = 12;
+      let wx = 0, wy = 0;
+      if (Math.abs(wheelAccumX) >= step) { wx = Math.trunc(wheelAccumX / step); wheelAccumX -= wx * step; }
+      if (Math.abs(wheelAccumY) >= step) { wy = Math.trunc(wheelAccumY / step); wheelAccumY -= wy * step; }
+      if (wx !== 0 || wy !== 0) {
+        sendInput({ type: 'wheel', dx: -wx * 15, dy: wy * 15 });
+      }
     }
   }
 }, { passive: false });
