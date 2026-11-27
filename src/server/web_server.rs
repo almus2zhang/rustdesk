@@ -23,6 +23,7 @@ use std::{
 
 use hbb_common::{
     config::{decode_permanent_password_h1_from_storage, Config},
+    log,
     message_proto::{ControlKey, KeyEvent, MouseEvent},
     rand::{self, RngCore},
     sodiumoxide::utils::memcmp,
@@ -541,7 +542,7 @@ fn capture_loop(
     tx: mpsc::Sender<Vec<u8>>,
     stop: Arc<AtomicBool>,
 ) {
-    use scrap::TraitCapturer;
+    use scrap::{TraitCapturer, TraitPixelBuffer};
     let display = match scrap::Display::primary() {
         Ok(d) => d,
         Err(e) => {
@@ -571,10 +572,10 @@ fn capture_loop(
     while !stop.load(Ordering::SeqCst) {
         let frame_start = Instant::now();
         match capturer.frame(interval) {
-            Ok(scrap::Frame::PixelBuffer(pixbuf)) => {
-                if !pixbuf.valid() {
+            Ok(frame) if frame.valid() => {
+                let scrap::Frame::PixelBuffer(pixbuf) = frame else {
                     continue;
-                }
+                };
                 let w = pixbuf.width();
                 let h = pixbuf.height();
                 let Some(&stride) = pixbuf.stride().first() else {
