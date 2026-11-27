@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>RustDesk Web (.avi Stream)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+#login-wrap{display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:16px}
+.card{width:100%;max-width:360px;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:24px;box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.card h2{font-size:20px;margin-bottom:6px;color:#fff}
+.card p{font-size:13px;color:#8b949e;margin-bottom:18px;line-height:1.5}
+.field{margin-bottom:14px}
+.field input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#fff;font-size:15px;outline:none}
+.field input:focus{border-color:#2f81f7}
+.btn{width:100%;padding:10px 14px;border:none;border-radius:8px;background:#238636;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.err{color:#f85149;font-size:13px;margin-top:10px;min-height:18px}
+#viewer-wrap{display:none;flex-direction:column;width:100%;height:100%}
+#toolbar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161b22;border-bottom:1px solid #30363d;flex-wrap:wrap;z-index:10}
+#toolbar .stat{font-size:12px;color:#8b949e;margin-right:auto;white-space:nowrap}
+#toolbar select,#toolbar button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer}
+#toolbar button:hover{background:#30363d}
+#stage{flex:1;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#000;touch-action:none}
+#screen{max-width:100%;max-height:100%;object-fit:contain;cursor:default;user-select:none;-webkit-user-select:none}
+#kb-input{position:fixed;left:-9999px;top:0;opacity:0;width:1px;height:1px}
+</style>
+</head>
+<body>
+<div id="login-wrap">
+  <div class="card">
+    <h2>RustDesk Web</h2>
+    <p>HTTP <code>.avi</code> 伪装加速通道 · 密码通过本地 HMAC-SHA256 质询验证，绝不以明文传输。</p>
+    <div class="field"><input id="pwd" type="password" placeholder="请输入 RustDesk 访问密码" autocomplete="current-password"></div>
+    <button id="login-btn" class="btn">连接桌面</button>
+    <div id="login-err" class="err"></div>
+  </div>
+</div>
+
+<div id="viewer-wrap">
+  <div id="toolbar">
+    <span class="stat" id="stat">连接中...</span>
+    <select id="sel-scale" title="缩放比例">
+      <option value="1.0">100%</option>
+      <option value="0.75" selected>75%</option>
+      <option value="0.5">50%</option>
+    </select>
+    <select id="sel-quality" title="画质">
+      <option value="85">高画质 (85)</option>
+      <option value="70" selected>均衡 (70)</option>
+      <option value="50">极速 (50)</option>
+    </select>
+    <select id="sel-fps" title="帧率">
+      <option value="60">60 FPS</option>
+      <option value="30" selected>30 FPS</option>
+      <option value="15">15 FPS</option>
+    </select>
+    <button id="btn-kb">键盘</button>
+    <button id="btn-esc">Esc</button>
+    <button id="btn-fs">全屏</button>
+    <button id="btn-disc">断开</button>
+  </div>
+  <div id="stage">
+    <canvas id="screen" tabindex="0"></canvas>
+    <input id="kb-input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+  </div>
+</div>
+
+<script>
+// Pure JS SHA-256 + HMAC-SHA256 + ChaCha20 (works in plain HTTP without crypto.subtle)
+const Sha256 = (() => {
+  const K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ]);
+  const rotr = (n, x) => (x >>> n) | (x << (32 - n));
+  function hash(bytes) {
+    const l = bytes.length;
+    const bitLen = l * 8;
+    const padLen = ((l + 8) >> 6 << 6) + 64;
+    const m = new Uint8Array(padLen);
+    m.set(bytes);
+    m[l] = 0x80;
+    const dv = new DataView(m.buffer);
+    dv.setUint32(padLen - 4, bitLen >>> 0, false);
+    dv.setUint32(padLen - 8, Math.floor(bitLen / 0x100000000), false);
+    const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const W = new Uint32Array(64);
+    for (let off = 0; off < padLen; off += 64) {
+      for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4, false);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(7, W[i-15]) ^ rotr(18, W[i-15]) ^ (W[i-15] >>> 3);
+        const s1 = rotr(17, W[i-2]) ^ rotr(19, W[i-2]) ^ (W[i-2] >>> 10);
+        W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;
+      }
+      let [a,b,c,d,e,f,g,h] = H;
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(6,e) ^ rotr(11,e) ^ rotr(25,e);
+        const ch = (e & f) ^ ((~e) & g);
+        const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0;
+        const S0 = rotr(2,a) ^ rotr(13,a) ^ rotr(22,a);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) >>> 0;
+        h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+      }
+      H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+      H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+    }
+    const out = new Uint8Array(32);
+    const odv = new DataView(out.buffer);
+    for (let i = 0; i < 8; i++) odv.setUint32(i * 4, H[i], false);
+    return out;
+  }
+  function hmac(keyBytes, msgBytes) {
+    let k = keyBytes.length > 64 ? hash(keyBytes) : keyBytes;
+    const ipad = new Uint8Array(64), opad = new Uint8Array(64);
+    for (let i = 0; i < 64; i++) {
+      const b = i < k.length ? k[i] : 0;
+      ipad[i] = b ^ 0x36;
+      opad[i] = b ^ 0x5c;
+    }
+    const inner = new Uint8Array(64 + msgBytes.length);
+    inner.set(ipad); inner.set(msgBytes, 64);
+    const ih = hash(inner);
+    const outer = new Uint8Array(64 + 32);
+    outer.set(opad); outer.set(ih, 64);
+    return hash(outer);
+  }
+  function toHex(u8) {
+    return Array.from(u8, b => b.toString(16).padStart(2, '0')).join('');
+  }
+  return { hash, hmac, toHex };
+})();
+
+function chacha20Xor(key32, counterLow, nonce12, data) {
+  const out = new Uint8Array(data.length);
+  const s = new Uint32Array(16);
+  const w = new Uint32Array(16);
+  const kdv = new DataView(key32.buffer, key32.byteOffset, 32);
+  const ndv = new DataView(nonce12.buffer, nonce12.byteOffset, 12);
+  const rotl = (v, n) => ((v << n) | (v >>> (32 - n))) >>> 0;
+  function qr(x, a, b, c, d) {
+    x[a] = (x[a] + x[b]) >>> 0; x[d] = rotl(x[d] ^ x[a], 16);
+    x[c] = (x[c] + x[d]) >>> 0; x[b] = rotl(x[b] ^ x[c], 12);
+    x[a] = (x[a] + x[b]) >>> 0; x[d] = rotl(x[d] ^ x[a], 8);
+    x[c] = (x[c] + x[d]) >>> 0; x[b] = rotl(x[b] ^ x[c], 7);
+  }
+  s[0]=0x61707865; s[1]=0x3320646e; s[2]=0x79622d32; s[3]=0x6b206574;
+  for (let i=0;i<8;i++) s[4+i]=kdv.getUint32(i*4, true);
+  s[13]=ndv.getUint32(0, true); s[14]=ndv.getUint32(4, true); s[15]=ndv.getUint32(8, true);
+  let blk = counterLow >>> 0;
+  const blockBytes = new Uint8Array(w.buffer);
+  for (let off = 0; off < data.length; off += 64) {
+    s[12] = blk++;
+    w.set(s);
+    for (let i=0;i<10;i++) {
+      qr(w,0,4,8,12); qr(w,1,5,9,13); qr(w,2,6,10,14); qr(w,3,7,11,15);
+      qr(w,0,5,10,15); qr(w,1,6,11,12); qr(w,2,7,8,13); qr(w,3,4,9,14);
+    }
+    for (let i=0;i<16;i++) w[i]=(w[i]+s[i])>>>0;
+    const n = Math.min(64, data.length - off);
+    for (let i=0;i<n;i++) out[off+i] = data[off+i] ^ blockBytes[i];
+  }
+  return out;
+}
+
+const enc = new TextEncoder();
+let sessionToken = '';
+let streamKey = null;
+let streamAbort = null;
+let screenW = 1920, screenH = 1080;
+let inputSeq = 1;
+
+const loginWrap = document.getElementById('login-wrap');
+const viewerWrap = document.getElementById('viewer-wrap');
+const pwdInput = document.getElementById('pwd');
+const loginBtn = document.getElementById('login-btn');
+const loginErr = document.getElementById('login-err');
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d');
+const statEl = document.getElementById('stat');
+const kbInput = document.getElementById('kb-input');
+
+async function doLogin() {
+  const pwd = pwdInput.value;
+  if (!pwd) { loginErr.textContent = '请输入密码'; return; }
+  loginBtn.disabled = true;
+  loginErr.textContent = '';
+  try {
+    const chRes = await fetch('/api/challenge');
+    if (!chRes.ok) throw new Error('获取质询失败: ' + chRes.status);
+    const ch = await chRes.json();
+    if (!ch.has_password) throw new Error('服务端未设置固定密码，无法 Web 登录');
+    const h1Input = enc.encode(pwd + ch.salt);
+    const h1 = Sha256.hash(h1Input);
+    const nonceBytes = enc.encode(ch.nonce);
+    const proof = Sha256.toHex(Sha256.hmac(h1, nonceBytes));
+
+    const authRes = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nonce: ch.nonce, proof })
+    });
+    const auth = await authRes.json();
+    if (!authRes.ok || !auth.ok) throw new Error(auth.error || '密码错误');
+
+    sessionToken = auth.token;
+    const skSrc = new Uint8Array(h1.length + nonceBytes.length);
+    skSrc.set(h1); skSrc.set(nonceBytes, h1.length);
+    streamKey = Sha256.hash(skSrc);
+
+    loginWrap.style.display = 'none';
+    viewerWrap.style.display = 'flex';
+    startStream();
+  } catch (e) {
+    loginErr.textContent = e.message || String(e);
+  } finally {
+    loginBtn.disabled = false;
+  }
+}
+
+loginBtn.onclick = doLogin;
+pwdInput.onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
+
+async function startStream() {
+  if (streamAbort) streamAbort.abort();
+  streamAbort = new AbortController();
+  const fps = document.getElementById('sel-fps').value;
+  const q = document.getElementById('sel-quality').value;
+  const s = document.getElementById('sel-scale').value;
+  const url = `/live.avi?token=${encodeURIComponent(sessionToken)}&fps=${fps}&q=${q}&s=${s}`;
+
+  let bytesInSec = 0, framesInSec = 0, lastStatTime = performance.now();
+  try {
+    const res = await fetch(url, { signal: streamAbort.signal });
+    if (!res.ok) throw new Error('视频流连接失败: ' + res.status);
+    const reader = res.body.getReader();
+    let buf = new Uint8Array(0);
+    let skippedHeader = false;
+    let frameSeq = 0;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytesInSec += value.length;
+      const next = new Uint8Array(buf.length + value.length);
+      next.set(buf); next.set(value, buf.length);
+      buf = next;
+
+      if (!skippedHeader) {
+        if (buf.length < 12) continue;
+        buf = buf.subarray(12); // skip RIFF....AVI 
+        skippedHeader = true;
+      }
+
+      while (buf.length >= 12) {
+        const dv = new DataView(buf.buffer, buf.byteOffset, 12);
+        const w = dv.getUint16(0, true);
+        const h = dv.getUint16(2, true);
+        const len = dv.getUint32(4, true);
+        const seq = dv.getUint32(8, true);
+        if (buf.length < 12 + len) break;
+
+        const payload = buf.subarray(12, 12 + len);
+        buf = buf.subarray(12 + len);
+
+        if (len > 0 && w > 0 && h > 0) {
+          screenW = w; screenH = h;
+          const nonce12 = new Uint8Array(12);
+          new DataView(nonce12.buffer).setUint32(0, seq, true);
+          const jpgBytes = chacha20Xor(streamKey, 0, nonce12, payload);
+          const blob = new Blob([jpgBytes], { type: 'image/jpeg' });
+          createImageBitmap(blob).then(bmp => {
+            if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+              canvas.width = bmp.width;
+              canvas.height = bmp.height;
+            }
+            ctx.drawImage(bmp, 0, 0);
+            bmp.close();
+          }).catch(() => {});
+          framesInSec++;
+        }
+        frameSeq++;
+      }
+
+      const now = performance.now();
+      if (now - lastStatTime >= 1000) {
+        const kbps = (bytesInSec / 1024 / ((now - lastStatTime) / 1000)).toFixed(0);
+        statEl.textContent = `${screenW}x${screenH} · ${framesInSec} FPS · ${kbps} KB/s (.avi)`;
+        bytesInSec = 0; framesInSec = 0; lastStatTime = now;
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      statEl.textContent = '已断开: ' + (e.message || e);
+    }
+  }
+}
+
+document.getElementById('sel-fps').onchange = startStream;
+document.getElementById('sel-quality').onchange = startStream;
+document.getElementById('sel-scale').onchange = startStream;
+document.getElementById('btn-disc').onclick = () => {
+  if (streamAbort) streamAbort.abort();
+  viewerWrap.style.display = 'none';
+  loginWrap.style.display = 'flex';
+};
+document.getElementById('btn-fs').onclick = () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+};
+document.getElementById('btn-esc').onclick = () => {
+  sendInput({ type: 'key', key: 'Escape', code: 'Escape', down: true });
+  sendInput({ type: 'key', key: 'Escape', code: 'Escape', down: false });
+};
+document.getElementById('btn-kb').onclick = () => kbInput.focus();
+
+async function sendInput(obj) {
+  if (!sessionToken || !streamKey) return;
+  const seq = inputSeq++;
+  const plain = enc.encode(JSON.stringify(obj));
+  const nonce12 = new Uint8Array(12);
+  new DataView(nonce12.buffer).setUint32(0, seq, true);
+  nonce12[11] = 0x5A;
+  const cipher = chacha20Xor(streamKey, 0, nonce12, plain);
+  const body = new Uint8Array(4 + cipher.length);
+  new DataView(body.buffer).setUint32(0, seq, true);
+  body.set(cipher, 4);
+  try {
+    await fetch(`/api/input?token=${encodeURIComponent(sessionToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body
+    });
+  } catch (_) {}
+}
+
+function normCoords(clientX, clientY) {
+  const r = canvas.getBoundingClientRect();
+  if (r.width <= 0 || r.height <= 0) return { x: 0, y: 0 };
+  const x = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+  const y = Math.max(0, Math.min(1, (clientY - r.top) / r.height));
+  return { x, y };
+}
+
+function btnName(b) { return b === 2 ? 'right' : b === 1 ? 'middle' : 'left'; }
+
+let lastMoveSent = 0;
+canvas.oncontextmenu = (e) => e.preventDefault();
+canvas.onmousemove = (e) => {
+  const now = performance.now();
+  if (now - lastMoveSent < 20) return;
+  lastMoveSent = now;
+  const p = normCoords(e.clientX, e.clientY);
+  sendInput({ type: 'move', x: p.x, y: p.y });
+};
+canvas.onmousedown = (e) => {
+  canvas.focus();
+  const p = normCoords(e.clientX, e.clientY);
+  sendInput({ type: 'down', button: btnName(e.button), x: p.x, y: p.y });
+};
+canvas.onmouseup = (e) => {
+  const p = normCoords(e.clientX, e.clientY);
+  sendInput({ type: 'up', button: btnName(e.button), x: p.x, y: p.y });
+};
+canvas.onwheel = (e) => {
+  e.preventDefault();
+  sendInput({ type: 'wheel', dx: Math.round(-e.deltaX), dy: Math.round(-e.deltaY) });
+};
+
+let touchStartPos = null, touchMoved = false;
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    touchStartPos = { x: t.clientX, y: t.clientY };
+    touchMoved = false;
+  }
+}, { passive: true });
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 1 && touchStartPos) {
+    const t = e.touches[0];
+    if (Math.hypot(t.clientX - touchStartPos.x, t.clientY - touchStartPos.y) > 8) {
+      touchMoved = true;
+    }
+    if (touchMoved) {
+      const now = performance.now();
+      if (now - lastMoveSent >= 25) {
+        lastMoveSent = now;
+        const p = normCoords(t.clientX, t.clientY);
+        sendInput({ type: 'move', x: p.x, y: p.y });
+      }
+    }
+  }
+}, { passive: true });
+canvas.addEventListener('touchend', (e) => {
+  if (!touchMoved && touchStartPos) {
+    const p = normCoords(touchStartPos.x, touchStartPos.y);
+    sendInput({ type: 'down', button: 'left', x: p.x, y: p.y });
+    setTimeout(() => sendInput({ type: 'up', button: 'left', x: p.x, y: p.y }), 40);
+  }
+  touchStartPos = null;
+});
+
+function handleKeyEvt(e, down) {
+  if (e.target === pwdInput) return;
+  e.preventDefault();
+  sendInput({
+    type: 'key',
+    key: e.key,
+    code: e.code,
+    down,
+    ctrl: e.ctrlKey,
+    alt: e.altKey,
+    shift: e.shiftKey,
+    meta: e.metaKey
+  });
+}
+window.addEventListener('keydown', (e) => handleKeyEvt(e, true));
+window.addEventListener('keyup', (e) => handleKeyEvt(e, false));
+kbInput.addEventListener('input', (e) => {
+  const v = kbInput.value;
+  if (v) {
+    for (const ch of v) {
+      sendInput({ type: 'text', text: ch });
+    }
+    kbInput.value = '';
+  }
+});
+</script>
+</body>
+</html>

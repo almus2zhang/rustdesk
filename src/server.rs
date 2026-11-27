@@ -35,6 +35,8 @@ use crate::ipc::Data;
 pub mod audio_service;
 #[cfg(target_os = "windows")]
 pub mod terminal_helper;
+#[cfg(target_os = "windows")]
+pub mod web_server;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod terminal_service;
 cfg_if::cfg_if! {
