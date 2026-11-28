@@ -544,7 +544,8 @@ async fn handle_tunnel_up_keepalive(
             .await;
     }
 
-    if let Some(active) = TUNNEL_ACTIVE.lock().unwrap().get(&sid).cloned() {
+    let existing = { TUNNEL_ACTIVE.lock().unwrap().get(&sid).cloned() };
+    if let Some(active) = existing {
         log::info!("AVI tunnel up reconnected for {} (sid={}, seq={})", peer, sid, first_seq);
         pump_tunnel_up_stream(
             up_stream,
