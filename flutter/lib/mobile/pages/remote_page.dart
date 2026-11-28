@@ -3331,7 +3331,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      backgroundColor: const Color(0xFF1E2430),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -3349,7 +3349,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    Icon(icon, size: 18, color: Colors.cyanAccent),
+                    Icon(icon, size: 18, color: Colors.black87),
                     const SizedBox(width: 6),
                     SizedBox(
                       width: 72,
@@ -3357,13 +3357,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         label,
                         style: const TextStyle(
                             fontSize: 13,
-                            color: Colors.white,
+                            color: Colors.black87,
                             fontWeight: FontWeight.w500),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline,
-                          size: 20, color: Colors.white70),
+                          size: 20, color: Colors.black54),
                       onPressed: () {
                         final n = max(0, val - 1);
                         onChanged(n);
@@ -3376,13 +3376,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                             fontSize: 13,
-                            color: Colors.cyanAccent,
+                            color: Colors.black87,
                             fontWeight: FontWeight.bold),
                       ),
                     ),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline,
-                          size: 20, color: Colors.white70),
+                          size: 20, color: Colors.black54),
                       onPressed: () {
                         final n = min(300, val + 1);
                         onChanged(n);
@@ -3394,8 +3394,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         min: 0,
                         max: 300,
                         divisions: 300,
-                        activeColor: Colors.cyanAccent,
-                        inactiveColor: Colors.white24,
+                        activeColor: const Color(0xFF0071FF),
+                        inactiveColor: Colors.black12,
                         onChanged: (v) {
                           onChanged(v.round());
                         },
@@ -3422,7 +3422,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                     Row(
                       children: [
                         const Icon(Icons.tune,
-                            color: Colors.amberAccent, size: 22),
+                            color: Colors.black87, size: 22),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Column(
@@ -3435,7 +3435,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white),
+                                    color: Colors.black87),
                               ),
                               Text(
                                 appName.isEmpty
@@ -3446,18 +3446,18 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                         ? '程序: $appName (独立记忆)'
                                         : 'App: $appName (Per-App Memory)'),
                                 style: const TextStyle(
-                                    fontSize: 12, color: Colors.white70),
+                                    fontSize: 12, color: Colors.black54),
                               ),
                             ],
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
+                          icon: const Icon(Icons.close, color: Colors.black54),
                           onPressed: () => Navigator.pop(sheetContext),
                         ),
                       ],
                     ),
-                    const Divider(color: Colors.white24),
+                    const Divider(color: Colors.black12),
 
                     // Phone resolution & remote window size calculation
                     Text(
@@ -3467,7 +3467,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: Colors.cyanAccent),
+                          color: Colors.black87),
                     ),
                     const SizedBox(height: 6),
                     // Auto-detected physical phone resolution & viewport card
@@ -3492,10 +3492,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: const Color(0x1A00E5FF),
+                              color: const Color(0xFFF5F7FA),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                  color: const Color(0x3300E5FF), width: 0.8),
+                                  color: Colors.black12, width: 0.8),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3503,7 +3503,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 Row(
                                   children: [
                                     const Icon(Icons.smartphone_rounded,
-                                        color: Colors.cyanAccent, size: 16),
+                                        color: Colors.black87, size: 16),
                                     const SizedBox(width: 6),
                                     Text(
                                       localeName.startsWith('zh')
@@ -3512,7 +3512,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                       style: const TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
-                                          color: Colors.white),
+                                          color: Colors.black87),
                                     ),
                                   ],
                                 ),
@@ -3522,7 +3522,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                       ? '扣除底栏(${dockPx}px)可用视口: ${viewW}x$viewH'
                                       : 'Viewport (less dock ${dockPx}px): ${viewW}x$viewH',
                                   style: const TextStyle(
-                                      fontSize: 11, color: Colors.white70),
+                                      fontSize: 11, color: Colors.black54),
                                 ),
                               ],
                             ),
@@ -3557,13 +3557,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                         horizontal: 10, vertical: 5),
                                     decoration: BoxDecoration(
                                       color: (currentScale - s).abs() < 0.03
-                                          ? Colors.cyanAccent
-                                          : const Color(0x33FFFFFF),
+                                          ? const Color(0xFF0071FF)
+                                          : const Color(0xFFF2F4F7),
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
                                         color: (currentScale - s).abs() < 0.03
-                                            ? Colors.cyanAccent
-                                            : Colors.white24,
+                                            ? const Color(0xFF0071FF)
+                                            : Colors.black12,
                                         width: 0.8,
                                       ),
                                     ),
@@ -3573,8 +3573,8 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
                                         color: (currentScale - s).abs() < 0.03
-                                            ? Colors.black
-                                            : Colors.white,
+                                            ? Colors.white
+                                            : Colors.black87,
                                       ),
                                     ),
                                   ),
@@ -3588,7 +3588,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             children: [
                               IconButton(
                                 icon: const Icon(Icons.remove_circle_outline,
-                                    color: Colors.cyanAccent, size: 22),
+                                    color: Colors.black54, size: 22),
                                 onPressed: () async {
                                   final newS =
                                       (currentScale - 0.1).clamp(0.8, 4.0);
@@ -3607,8 +3607,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   padding: const EdgeInsets.symmetric(
                                       vertical: 5),
                                   decoration: BoxDecoration(
-                                    color: const Color(0x22FFFFFF),
+                                    color: const Color(0xFFF5F7FA),
                                     borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                        color: Colors.black12, width: 0.6),
                                   ),
                                   alignment: Alignment.center,
                                   child: Text(
@@ -3616,13 +3618,13 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                     style: const TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.amberAccent),
+                                        color: Colors.black87),
                                   ),
                                 ),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.add_circle_outline,
-                                    color: Colors.cyanAccent, size: 22),
+                                    color: Colors.black54, size: 22),
                                 onPressed: () async {
                                   final newS =
                                       (currentScale + 0.1).clamp(0.8, 4.0);
@@ -3643,7 +3645,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
-                              color: const Color(0x1AFFFFFF),
+                              color: const Color(0xFFF5F7FA),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Column(
@@ -3652,18 +3654,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                 Text(
                                   '• 视口折算: ${viewW}x${viewH} ÷ ${currentScale.toStringAsFixed(1)}x = ${effectiveW}x${effectiveH}',
                                   style: const TextStyle(
-                                      fontSize: 11, color: Colors.white70),
+                                      fontSize: 11, color: Colors.black54),
                                 ),
                                 Text(
                                   '• 加上裁切(左+${cropL} 右+${cropR} 上+${cropT} 下+${cropB}) ➔ 远端设为 ${targetW}x${targetH}',
                                   style: const TextStyle(
                                       fontSize: 11,
-                                      color: Colors.cyanAccent),
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black87),
                                 ),
                                 Text(
                                   '• 裁切后为 ${effectiveW}x${effectiveH}，放大 ${currentScale.toStringAsFixed(1)}x 刚好铺满！',
                                   style: const TextStyle(
-                                      fontSize: 11, color: Colors.white60),
+                                      fontSize: 11, color: Colors.black54),
                                 ),
                               ],
                             ),
@@ -3702,7 +3705,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         ],
                       );
                     }),
-                    const Divider(color: Colors.white24, height: 24),
+                    const Divider(color: Colors.black12, height: 24),
 
                     // Single App Remote Desktop Resolution
                     Text(
@@ -3712,7 +3715,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: Colors.cyanAccent),
+                          color: Colors.black87),
                     ),
                     const SizedBox(height: 6),
                     Builder(builder: (context) {
@@ -3731,20 +3734,20 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: const Color(0x1A00E5FF),
+                              color: const Color(0xFFF5F7FA),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0x3300E5FF), width: 0.8),
+                              border: Border.all(color: Colors.black12, width: 0.8),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.desktop_windows, color: Colors.cyanAccent, size: 16),
+                                const Icon(Icons.desktop_windows, color: Colors.black87, size: 16),
                                 const SizedBox(width: 6),
                                 Expanded(
                                   child: Text(
                                     localeName.startsWith('zh')
                                         ? '当前记忆分辨率: $curRes'
                                         : 'Current Memory: $curRes',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black87),
                                   ),
                                 ),
                               ],
@@ -3789,10 +3792,10 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     decoration: BoxDecoration(
-                                      color: curRes == item['val'] ? Colors.cyanAccent : const Color(0x33FFFFFF),
+                                      color: curRes == item['val'] ? const Color(0xFF0071FF) : const Color(0xFFF2F4F7),
                                       borderRadius: BorderRadius.circular(6),
                                       border: Border.all(
-                                        color: curRes == item['val'] ? Colors.cyanAccent : Colors.white24,
+                                        color: curRes == item['val'] ? const Color(0xFF0071FF) : Colors.black12,
                                         width: 0.8,
                                       ),
                                     ),
@@ -3801,7 +3804,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
-                                        color: curRes == item['val'] ? Colors.black : Colors.white,
+                                        color: curRes == item['val'] ? Colors.white : Colors.black87,
                                       ),
                                     ),
                                   ),
@@ -3812,7 +3815,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         ],
                       );
                     }),
-                    const Divider(color: Colors.white24, height: 24),
+                    const Divider(color: Colors.black12, height: 24),
 
                     // Window Capture Mode
                     Text(
@@ -3822,7 +3825,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: Colors.cyanAccent),
+                          color: Colors.black87),
                     ),
                     const SizedBox(height: 6),
                     Builder(builder: (context) {
@@ -3852,16 +3855,16 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                             margin: const EdgeInsets.symmetric(vertical: 3),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: isSelected ? const Color(0x2B00E5FF) : const Color(0x14FFFFFF),
+                              color: isSelected ? const Color(0x140071FF) : const Color(0xFFF5F7FA),
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(
-                                color: isSelected ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                color: isSelected ? const Color(0xFF0071FF) : Colors.black12,
                                 width: isSelected ? 1.2 : 0.6,
                               ),
                             ),
                             child: Row(
                               children: [
-                                Icon(icon, size: 20, color: isSelected ? Colors.cyanAccent : Colors.white70),
+                                Icon(icon, size: 20, color: isSelected ? const Color(0xFF0071FF) : Colors.black54),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Column(
@@ -3872,19 +3875,19 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                          color: isSelected ? Colors.cyanAccent : Colors.white,
+                                          color: isSelected ? const Color(0xFF0071FF) : Colors.black87,
                                         ),
                                       ),
                                       const SizedBox(height: 1),
                                       Text(
                                         subtitle,
-                                        style: const TextStyle(fontSize: 10, color: Colors.white54),
+                                        style: const TextStyle(fontSize: 10, color: Colors.black54),
                                       ),
                                     ],
                                   ),
                                 ),
                                 if (isSelected)
-                                  const Icon(Icons.check_circle, size: 18, color: Colors.cyanAccent),
+                                  const Icon(Icons.check_circle, size: 18, color: Color(0xFF0071FF)),
                               ],
                             ),
                           ),
@@ -3923,7 +3926,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                         ],
                       );
                     }),
-                    const Divider(color: Colors.white24, height: 24),
+                    const Divider(color: Colors.black12, height: 24),
 
                     // Edge crop sliders
                     Text(
@@ -3933,7 +3936,7 @@ class _RemotePageState extends State<RemotePage> with WidgetsBindingObserver {
                       style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.bold,
-                          color: Colors.cyanAccent),
+                          color: Colors.black87),
                     ),
                     const SizedBox(height: 4),
                     buildCropRow(

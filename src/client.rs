@@ -4517,6 +4517,26 @@ fn strip_avi_prefix(peer: &str) -> &str {
     }
 }
 
+fn drain_avi_tunnel_chunks(chunk_buf: &mut Vec<u8>) -> ResultType<Vec<u8>> {
+    let mut out = Vec::new();
+    while chunk_buf.len() >= 8 {
+        if &chunk_buf[..4] != b"00dc" {
+            bail!("Invalid AVI tunnel chunk magic");
+        }
+        let len = u32::from_le_bytes([chunk_buf[4], chunk_buf[5], chunk_buf[6], chunk_buf[7]])
+            as usize;
+        if len > 16 * 1024 * 1024 {
+            bail!("AVI tunnel chunk too large: {}", len);
+        }
+        if chunk_buf.len() < 8 + len {
+            break;
+        }
+        out.extend_from_slice(&chunk_buf[8..8 + len]);
+        chunk_buf.drain(..8 + len);
+    }
+    Ok(out)
+}
+
 async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream> {
     use hbb_common::rand::{self, RngCore};
     use hbb_common::tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -4538,10 +4558,10 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
 
     let mut down_stream = timeout(ms_timeout, TcpStream::connect(addr))
         .await?
-        .with_context(|| format!("Failed to connect down.avi to {}", addr))?;
+        .with_context(|| format!("Failed to connect live.avi to {}", addr))?;
     let _ = down_stream.set_nodelay(true);
     let get_req = format!(
-        "GET /t/{}/down.avi HTTP/1.1\r\nHost: {}\r\nUser-Agent: Lavf/60.16.100\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        "GET /t/{}/live.avi HTTP/1.1\r\nHost: {}\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\r\nAccept: */*\r\nConnection: close\r\n\r\n",
         sid, target
     );
     down_stream.write_all(get_req.as_bytes()).await?;
@@ -4553,9 +4573,9 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
     loop {
         let n = tokio::time::timeout(dur, down_stream.read(&mut tmp))
             .await
-            .map_err(|_| anyhow!("AVI tunnel down.avi header timeout"))??;
+            .map_err(|_| anyhow!("AVI tunnel live.avi header timeout"))??;
         if n == 0 {
-            bail!("AVI tunnel down.avi closed before header");
+            bail!("AVI tunnel live.avi closed before header");
         }
         buf.extend_from_slice(&tmp[..n]);
         if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
@@ -4574,7 +4594,7 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
     if !status_line.contains("200") {
         bail!("AVI tunnel rejected: {}", status_line);
     }
-    while buf.len() < header_end + 12 {
+    while buf.len() < header_end + 24 {
         let n = tokio::time::timeout(dur, down_stream.read(&mut tmp))
             .await
             .map_err(|_| anyhow!("AVI tunnel magic header timeout"))??;
@@ -4583,7 +4603,8 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         }
         buf.extend_from_slice(&tmp[..n]);
     }
-    let prefix = buf[header_end + 12..].to_vec();
+    let mut chunk_buf = buf[header_end + 24..].to_vec();
+    let prefix = drain_avi_tunnel_chunks(&mut chunk_buf)?;
 
     let mut up_stream = timeout(ms_timeout, TcpStream::connect(addr))
         .await?
@@ -4642,8 +4663,17 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
                     break;
                 }
                 Ok(n) => {
-                    if tx_in.send(buf[..n].to_vec()).await.is_err() {
-                        break;
+                    chunk_buf.extend_from_slice(&buf[..n]);
+                    match drain_avi_tunnel_chunks(&mut chunk_buf) {
+                        Ok(decoded) => {
+                            if !decoded.is_empty() && tx_in.send(decoded).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("AVI client live.avi chunk err (sid={}): {}", sid_down, e);
+                            break;
+                        }
                     }
                 }
             }

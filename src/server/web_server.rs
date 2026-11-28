@@ -67,7 +67,7 @@ lazy_static::lazy_static! {
     static ref CHALLENGES: Mutex<HashMap<String, ChallengeEntry>> = Mutex::new(HashMap::new());
     static ref WEB_SESSIONS: Mutex<HashMap<String, WebSession>> = Mutex::new(HashMap::new());
     static ref DISPLAY_SIZE: Mutex<(i32, i32)> = Mutex::new((1920, 1080));
-    static ref TUNNEL_PENDING: Mutex<HashMap<String, (Instant, TcpStream)>> = Mutex::new(HashMap::new());
+    static ref TUNNEL_PENDING: Mutex<HashMap<String, (Instant, TcpStream, bool)>> = Mutex::new(HashMap::new());
     static ref TUNNEL_ACTIVE: Mutex<HashMap<String, ActiveTunnel>> = Mutex::new(HashMap::new());
 }
 
@@ -288,7 +288,11 @@ async fn handle_http_conn(
     }
     if method == "GET" && path.starts_with("/t/") && path.ends_with("/down.avi") {
         let sid = path.trim_start_matches("/t/").trim_end_matches("/down.avi");
-        return handle_tunnel_down_sid(stream, sid).await;
+        return handle_tunnel_down_sid(stream, sid, false).await;
+    }
+    if method == "GET" && path.starts_with("/t/") && path.ends_with("/live.avi") {
+        let sid = path.trim_start_matches("/t/").trim_end_matches("/live.avi");
+        return handle_tunnel_down_sid(stream, sid, true).await;
     }
     if method == "POST" && path == "/tunnel/up.avi" {
         let prefix = buf[header_end..].to_vec();
@@ -380,10 +384,14 @@ async fn handle_http_conn(
 
 async fn handle_tunnel_down(stream: TcpStream, query: &str) -> std::io::Result<()> {
     let sid = parse_query_param(query, "sid").unwrap_or("");
-    handle_tunnel_down_sid(stream, sid).await
+    handle_tunnel_down_sid(stream, sid, false).await
 }
 
-async fn handle_tunnel_down_sid(mut stream: TcpStream, sid: &str) -> std::io::Result<()> {
+async fn handle_tunnel_down_sid(
+    mut stream: TcpStream,
+    sid: &str,
+    framed: bool,
+) -> std::io::Result<()> {
     if sid.len() < 8 || sid.len() > 64 {
         return send_http_response(&mut stream, "400 Bad Request", "text/plain", b"Bad sid").await;
     }
@@ -392,17 +400,20 @@ async fn handle_tunnel_down_sid(mut stream: TcpStream, sid: &str) -> std::io::Re
         "Content-Type: video/x-msvideo\r\n",
         "Content-Length: 2147483647\r\n",
         "Accept-Ranges: bytes\r\n",
-        "Cache-Control: no-store\r\n",
+        "Cache-Control: no-cache, no-store, must-revalidate\r\n",
         "Connection: close\r\n\r\n"
     );
     stream.write_all(header.as_bytes()).await?;
     stream.write_all(AVI_MAGIC_HEADER).await?;
+    if framed {
+        stream.write_all(b"LIST\xff\xff\xff\x7fmovi").await?;
+    }
     stream.flush().await?;
 
     let mut map = TUNNEL_PENDING.lock().unwrap();
     let now = Instant::now();
-    map.retain(|_, (t, _)| now.duration_since(*t) < Duration::from_secs(15));
-    map.insert(sid.to_owned(), (now, stream));
+    map.retain(|_, (t, _, _)| now.duration_since(*t) < Duration::from_secs(15));
+    map.insert(sid.to_owned(), (now, stream, framed));
     Ok(())
 }
 
@@ -560,18 +571,18 @@ async fn handle_tunnel_up_keepalive(
         return Ok(());
     }
 
-    let mut down_stream = None;
+    let mut down_entry = None;
     for _ in 0..150 {
         {
             let mut map = TUNNEL_PENDING.lock().unwrap();
-            if let Some((_, s)) = map.remove(&sid) {
-                down_stream = Some(s);
+            if let Some((_, s, framed)) = map.remove(&sid) {
+                down_entry = Some((s, framed));
                 break;
             }
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let Some(mut down_stream) = down_stream else {
+    let Some((mut down_stream, framed)) = down_entry else {
         return send_http_response(&mut up_stream, "408 Request Timeout", "text/plain", b"No down.avi")
             .await;
     };
@@ -587,11 +598,20 @@ async fn handle_tunnel_up_keepalive(
         },
     );
 
-    // Pump downlink bytes to down.avi stream
+    // Pump downlink bytes to down.avi / live.avi stream
     let sid_down = sid.clone();
     tokio::spawn(async move {
         while let Some(chunk) = rx_out.recv().await {
-            if let Err(e) = down_stream.write_all(&chunk).await {
+            let res = if framed {
+                let mut pkt = Vec::with_capacity(8 + chunk.len());
+                pkt.extend_from_slice(b"00dc");
+                pkt.extend_from_slice(&(chunk.len() as u32).to_le_bytes());
+                pkt.extend_from_slice(&chunk);
+                down_stream.write_all(&pkt).await
+            } else {
+                down_stream.write_all(&chunk).await
+            };
+            if let Err(e) = res {
                 log::warn!("AVI tunnel down.avi write closed (sid={}): {}", sid_down, e);
                 break;
             }
@@ -641,7 +661,7 @@ async fn handle_tunnel_up_sid(
     for _ in 0..150 {
         {
             let mut map = TUNNEL_PENDING.lock().unwrap();
-            if let Some((_, s)) = map.remove(sid) {
+            if let Some((_, s, _)) = map.remove(sid) {
                 down_stream = Some(s);
                 break;
             }
