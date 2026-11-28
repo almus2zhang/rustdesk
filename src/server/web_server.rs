@@ -288,9 +288,24 @@ async fn handle_http_conn(
         return handle_tunnel_up(server, stream, peer, query, prefix).await;
     }
     if method == "POST" && path.starts_with("/t/") && path.ends_with("/up.avi") {
-        let sid = path.trim_start_matches("/t/").trim_end_matches("/up.avi");
-        let prefix = buf[header_end..].to_vec();
-        return handle_tunnel_up_sid(server, stream, peer, sid, prefix).await;
+        let sid = path.trim_start_matches("/t/").trim_end_matches("/up.avi").to_owned();
+        let mut content_length: usize = 0;
+        for line in lines {
+            if let Some((k, v)) = line.split_once(':') {
+                if k.trim().eq_ignore_ascii_case("content-length") {
+                    content_length = v.trim().parse().unwrap_or(0);
+                }
+            }
+        }
+        return handle_tunnel_up_keepalive(
+            server,
+            stream,
+            peer,
+            sid,
+            buf[header_end..].to_vec(),
+            content_length,
+        )
+        .await;
     }
 
     let mut content_length: usize = 0;
@@ -381,6 +396,107 @@ async fn handle_tunnel_up(
 ) -> std::io::Result<()> {
     let sid = parse_query_param(query, "sid").unwrap_or("");
     handle_tunnel_up_sid(server, up_stream, peer, sid, prefix).await
+}
+
+async fn handle_tunnel_up_keepalive(
+    server: crate::server::ServerPtr,
+    mut up_stream: TcpStream,
+    peer: SocketAddr,
+    sid: String,
+    mut first_buf: Vec<u8>,
+    first_content_len: usize,
+) -> std::io::Result<()> {
+    if sid.len() < 8 || sid.len() > 64 {
+        return send_http_response(&mut up_stream, "400 Bad Request", "text/plain", b"Bad sid")
+            .await;
+    }
+
+    let mut down_stream = None;
+    for _ in 0..150 {
+        {
+            let mut map = TUNNEL_PENDING.lock().unwrap();
+            if let Some((_, s)) = map.remove(&sid) {
+                down_stream = Some(s);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let Some(mut down_stream) = down_stream else {
+        return send_http_response(&mut up_stream, "408 Request Timeout", "text/plain", b"No down.avi")
+            .await;
+    };
+
+    let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(128);
+    let (tx_out, mut rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+
+    // Pump downlink bytes to down.avi stream
+    tokio::spawn(async move {
+        while let Some(chunk) = rx_out.recv().await {
+            if down_stream.write_all(&chunk).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Pump keep-alive POST /t/<sid>/up.avi requests into tx_in
+    let sid_log = sid.clone();
+    tokio::spawn(async move {
+        let mut tmp = [0u8; 4096];
+        let mut cur_len = first_content_len;
+        let mut pending = first_buf;
+        loop {
+            if cur_len > 0 {
+                while pending.len() < cur_len {
+                    match up_stream.read(&mut tmp).await {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => pending.extend_from_slice(&tmp[..n]),
+                    }
+                }
+                let payload = pending[..cur_len].to_vec();
+                pending.drain(..cur_len);
+                if tx_in.send(payload).await.is_err() {
+                    return;
+                }
+                let ok_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
+                if up_stream.write_all(ok_resp).await.is_err() {
+                    return;
+                }
+            }
+            // Read next keep-alive POST header
+            let header_end = loop {
+                if let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break pos + 4;
+                }
+                if pending.len() > 16384 {
+                    return;
+                }
+                match up_stream.read(&mut tmp).await {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => pending.extend_from_slice(&tmp[..n]),
+                }
+            };
+            let hdr = String::from_utf8_lossy(&pending[..header_end]);
+            cur_len = 0;
+            for line in hdr.lines() {
+                if let Some((k, v)) = line.split_once(':') {
+                    if k.trim().eq_ignore_ascii_case("content-length") {
+                        cur_len = v.trim().parse().unwrap_or(0);
+                    }
+                }
+            }
+            pending.drain(..header_end);
+        }
+    });
+
+    let channel_stream = crate::common::AviChannelStream::new(Vec::new(), rx_in, tx_out);
+    let rustdesk_stream =
+        hbb_common::Stream::Tcp(hbb_common::tcp::FramedStream::from(channel_stream, peer));
+    log::info!("AVI HTTP tunnel established for {} (sid={})", peer, sid_log);
+    hbb_common::allow_err!(
+        crate::server::create_tcp_connection(server, rustdesk_stream, peer, false, None).await
+    );
+    Ok(())
 }
 
 async fn handle_tunnel_up_sid(

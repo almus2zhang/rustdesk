@@ -2638,6 +2638,98 @@ pub fn get_control_permission(
     }
 }
 
+/// Full-duplex stream adapter combining an `mpsc::Receiver<Vec<u8>>` for reads
+/// and an `mpsc::Sender<Vec<u8>>` for writes, usable with `FramedStream`.
+pub struct AviChannelStream {
+    prefix: Vec<u8>,
+    pos: usize,
+    rx: hbb_common::tokio::sync::mpsc::Receiver<Vec<u8>>,
+    tx: hbb_common::tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+}
+
+impl AviChannelStream {
+    pub fn new(
+        prefix: Vec<u8>,
+        rx: hbb_common::tokio::sync::mpsc::Receiver<Vec<u8>>,
+        tx: hbb_common::tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    ) -> Self {
+        Self {
+            prefix,
+            pos: 0,
+            rx,
+            tx,
+        }
+    }
+}
+
+impl hbb_common::tokio::io::AsyncRead for AviChannelStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut hbb_common::tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        loop {
+            if self.pos < self.prefix.len() {
+                let avail = &self.prefix[self.pos..];
+                let n = avail.len().min(buf.remaining());
+                buf.put_slice(&avail[..n]);
+                self.pos += n;
+                if self.pos >= self.prefix.len() {
+                    self.prefix.clear();
+                    self.pos = 0;
+                }
+                return std::task::Poll::Ready(Ok(()));
+            }
+            match self.rx.poll_recv(cx) {
+                std::task::Poll::Ready(Some(chunk)) => {
+                    if chunk.is_empty() {
+                        continue;
+                    }
+                    self.prefix = chunk;
+                    self.pos = 0;
+                }
+                std::task::Poll::Ready(None) => {
+                    return std::task::Poll::Ready(Ok(()));
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
+    }
+}
+
+impl hbb_common::tokio::io::AsyncWrite for AviChannelStream {
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        if buf.is_empty() {
+            return std::task::Poll::Ready(Ok(0));
+        }
+        match self.tx.send(buf.to_vec()) {
+            Ok(()) => std::task::Poll::Ready(Ok(buf.len())),
+            Err(_) => std::task::Poll::Ready(Err(std::io::Error::new(
+                std::io::ErrorKind::BrokenPipe,
+                "avi channel closed",
+            ))),
+        }
+    }
+
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+}
+
 /// Full-duplex stream adapter combining an HTTP `.avi` read half (with optional
 /// already-buffered prefix bytes) and an HTTP write half for `FramedStream`.
 pub struct AviDuplexStream {

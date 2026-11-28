@@ -4589,18 +4589,74 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         .await?
         .with_context(|| format!("Failed to connect up.avi to {}", addr))?;
     let _ = up_stream.set_nodelay(true);
-    let post_req = format!(
-        "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: 2147483647\r\nConnection: close\r\n\r\n",
-        sid, target
-    );
-    up_stream.write_all(post_req.as_bytes()).await?;
-    up_stream.flush().await?;
 
-    let (down_read, _down_write) = down_stream.into_split();
-    let (_up_read, up_write) = up_stream.into_split();
-    let duplex = crate::common::AviDuplexStream::new(prefix, down_read, up_write);
+    let (tx_in, rx_in) = hbb_common::tokio::sync::mpsc::channel::<Vec<u8>>(128);
+    let (tx_out, mut rx_out) = hbb_common::tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+
+    // Pump down.avi bytes into rx_in
+    let (mut down_read, _down_write) = down_stream.into_split();
+    hbb_common::tokio::spawn(async move {
+        let mut buf = vec![0u8; 32768];
+        loop {
+            match down_read.read(&mut buf).await {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if tx_in.send(buf[..n].to_vec()).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+
+    // Pump tx_out bytes as standard HTTP/1.1 Keep-Alive POST /t/<sid>/up.avi
+    let target_hdr = target.to_owned();
+    hbb_common::tokio::spawn(async move {
+        let mut resp_buf = Vec::with_capacity(512);
+        let mut tmp = [0u8; 512];
+        while let Some(mut chunk) = rx_out.recv().await {
+            while let Ok(more) = rx_out.try_recv() {
+                chunk.extend_from_slice(&more);
+                if chunk.len() >= 65536 {
+                    break;
+                }
+            }
+            let req_hdr = format!(
+                "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+                sid,
+                target_hdr,
+                chunk.len()
+            );
+            if up_stream.write_all(req_hdr.as_bytes()).await.is_err() {
+                break;
+            }
+            if up_stream.write_all(&chunk).await.is_err() {
+                break;
+            }
+            if up_stream.flush().await.is_err() {
+                break;
+            }
+            // Wait for 200 OK header
+            loop {
+                if let Some(pos) = resp_buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    resp_buf.drain(..pos + 4);
+                    break;
+                }
+                if resp_buf.len() > 8192 {
+                    return;
+                }
+                match up_stream.read(&mut tmp).await {
+                    Ok(0) | Err(_) => return,
+                    Ok(n) => resp_buf.extend_from_slice(&tmp[..n]),
+                }
+            }
+        }
+    });
+
+    let channel_stream = crate::common::AviChannelStream::new(prefix, rx_in, tx_out);
     Ok(Stream::Tcp(hbb_common::tcp::FramedStream::from(
-        duplex, addr,
+        channel_stream,
+        addr,
     )))
 }
 
