@@ -458,10 +458,10 @@ async fn handle_tunnel_up_keepalive(
                 if tx_in.send(payload).await.is_err() {
                     return;
                 }
-                let ok_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
-                if up_stream.write_all(ok_resp).await.is_err() {
-                    return;
-                }
+            }
+            let ok_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
+            if up_stream.write_all(ok_resp).await.is_err() {
+                return;
             }
             // Read next keep-alive POST header
             let header_end = loop {

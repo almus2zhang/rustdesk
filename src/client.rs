@@ -4590,6 +4590,37 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         .with_context(|| format!("Failed to connect up.avi to {}", addr))?;
     let _ = up_stream.set_nodelay(true);
 
+    // Send initial 0-byte handshake POST so server pairs down.avi and starts sending SignedId
+    let init_req = format!(
+        "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
+        sid, target
+    );
+    timeout(ms_timeout, up_stream.write_all(init_req.as_bytes())).await??;
+    timeout(ms_timeout, up_stream.flush()).await??;
+    let mut resp_buf = Vec::with_capacity(512);
+    let mut tmp = [0u8; 512];
+    loop {
+        if let Some(pos) = resp_buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let hdr = String::from_utf8_lossy(&resp_buf[..pos]);
+            if !hdr.starts_with("HTTP/1.1 200") && !hdr.starts_with("HTTP/1.0 200") {
+                bail!(
+                    "AVI up.avi handshake rejected: {}",
+                    hdr.lines().next().unwrap_or("")
+                );
+            }
+            resp_buf.drain(..pos + 4);
+            break;
+        }
+        if resp_buf.len() > 8192 {
+            bail!("AVI up.avi handshake header too large");
+        }
+        let n = timeout(ms_timeout, up_stream.read(&mut tmp)).await??;
+        if n == 0 {
+            bail!("AVI up.avi handshake closed");
+        }
+        resp_buf.extend_from_slice(&tmp[..n]);
+    }
+
     let (tx_in, rx_in) = hbb_common::tokio::sync::mpsc::channel::<Vec<u8>>(128);
     let (tx_out, mut rx_out) = hbb_common::tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
@@ -4612,7 +4643,6 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
     // Pump tx_out bytes as standard HTTP/1.1 Keep-Alive POST /t/<sid>/up.avi
     let target_hdr = target.to_owned();
     hbb_common::tokio::spawn(async move {
-        let mut resp_buf = Vec::with_capacity(512);
         let mut tmp = [0u8; 512];
         while let Some(mut chunk) = rx_out.recv().await {
             while let Ok(more) = rx_out.try_recv() {
