@@ -2638,6 +2638,76 @@ pub fn get_control_permission(
     }
 }
 
+/// Full-duplex stream adapter combining an HTTP `.avi` read half (with optional
+/// already-buffered prefix bytes) and an HTTP write half for `FramedStream`.
+pub struct AviDuplexStream {
+    prefix: Vec<u8>,
+    pos: usize,
+    reader: hbb_common::tokio::net::tcp::OwnedReadHalf,
+    writer: hbb_common::tokio::net::tcp::OwnedWriteHalf,
+}
+
+impl AviDuplexStream {
+    pub fn new(
+        prefix: Vec<u8>,
+        reader: hbb_common::tokio::net::tcp::OwnedReadHalf,
+        writer: hbb_common::tokio::net::tcp::OwnedWriteHalf,
+    ) -> Self {
+        Self {
+            prefix,
+            pos: 0,
+            reader,
+            writer,
+        }
+    }
+}
+
+impl hbb_common::tokio::io::AsyncRead for AviDuplexStream {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut hbb_common::tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        if self.pos < self.prefix.len() {
+            let avail = &self.prefix[self.pos..];
+            let n = avail.len().min(buf.remaining());
+            buf.put_slice(&avail[..n]);
+            self.pos += n;
+            if self.pos >= self.prefix.len() {
+                self.prefix.clear();
+                self.prefix.shrink_to_fit();
+                self.pos = 0;
+            }
+            return std::task::Poll::Ready(Ok(()));
+        }
+        std::pin::Pin::new(&mut self.reader).poll_read(cx, buf)
+    }
+}
+
+impl hbb_common::tokio::io::AsyncWrite for AviDuplexStream {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.writer).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.writer).poll_shutdown(cx)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

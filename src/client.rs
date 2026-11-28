@@ -255,6 +255,36 @@ impl Client {
         if config::is_incoming_only() {
             bail!("Incoming only mode");
         }
+        if is_avi_address(peer)
+            || (Config::get_option("avi-tunnel") == "Y"
+                && (is_302_address(peer)
+                    || is_txt_address(peer)
+                    || hbb_common::is_ip_str(peer)
+                    || hbb_common::is_domain_port_str(peer)
+                    || is_possible_domain_name(peer)))
+        {
+            let inner = strip_avi_prefix(peer);
+            let raw_target = if is_302_address(inner) {
+                fetch_302_address(inner).await?
+            } else if is_txt_address(inner) || is_possible_domain_name(inner) {
+                fetch_txt_address(inner).await?
+            } else {
+                inner.to_owned()
+            };
+            let target = check_port(&raw_target, 21120);
+            interface.get_lch().write().unwrap().resolved_addr = Some(target.clone());
+            return Ok((
+                (
+                    connect_avi_tunnel(&target, CONNECT_TIMEOUT).await?,
+                    true,
+                    None,
+                    None,
+                    "AVI-HTTP",
+                ),
+                (0, "".to_owned()),
+                false,
+            ));
+        }
         if is_302_address(peer) {
             let real_peer = fetch_302_address(peer).await?;
             let target = check_port(&real_peer, RELAY_PORT + 1);
@@ -4471,6 +4501,109 @@ async fn udp_nat_connect(
 }
 
 #[inline]
+pub fn is_avi_address(peer: &str) -> bool {
+    let lower = peer.to_lowercase();
+    lower.starts_with("avi:") || lower.starts_with("avi：") || lower.starts_with("avi/")
+}
+
+fn strip_avi_prefix(peer: &str) -> &str {
+    let lower = peer.to_lowercase();
+    if lower.starts_with("avi:") || lower.starts_with("avi/") {
+        peer[4..].trim()
+    } else if lower.starts_with("avi：") {
+        peer["avi：".len()..].trim()
+    } else {
+        peer.trim()
+    }
+}
+
+async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream> {
+    use hbb_common::rand::{self, RngCore};
+    use hbb_common::tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use hbb_common::tokio::net::{lookup_host, TcpStream};
+
+    let mut addr_opt = None;
+    for a in lookup_host(target).await? {
+        addr_opt = Some(a);
+        if a.is_ipv4() {
+            break;
+        }
+    }
+    let addr = addr_opt.ok_or_else(|| anyhow!("Failed to resolve AVI target {}", target))?;
+    let dur = std::time::Duration::from_millis(ms_timeout);
+
+    let mut raw_sid = [0u8; 8];
+    rand::thread_rng().fill_bytes(&mut raw_sid);
+    let sid: String = raw_sid.iter().map(|b| format!("{:02x}", b)).collect();
+
+    let mut down_stream = timeout(ms_timeout, TcpStream::connect(addr))
+        .await?
+        .with_context(|| format!("Failed to connect down.avi to {}", addr))?;
+    let _ = down_stream.set_nodelay(true);
+    let get_req = format!(
+        "GET /tunnel/down.avi?sid={} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Lavf/60.16.100\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        sid, target
+    );
+    down_stream.write_all(get_req.as_bytes()).await?;
+    down_stream.flush().await?;
+
+    let mut buf = Vec::with_capacity(1024);
+    let mut tmp = [0u8; 1024];
+    let header_end;
+    loop {
+        let n = tokio::time::timeout(dur, down_stream.read(&mut tmp))
+            .await
+            .map_err(|_| anyhow!("AVI tunnel down.avi header timeout"))??;
+        if n == 0 {
+            bail!("AVI tunnel down.avi closed before header");
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            header_end = pos + 4;
+            break;
+        }
+        if buf.len() > 8192 {
+            bail!("AVI tunnel response header too large");
+        }
+    }
+    let status_line = String::from_utf8_lossy(&buf[..header_end])
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_owned();
+    if !status_line.contains("200") {
+        bail!("AVI tunnel rejected: {}", status_line);
+    }
+    while buf.len() < header_end + 12 {
+        let n = tokio::time::timeout(dur, down_stream.read(&mut tmp))
+            .await
+            .map_err(|_| anyhow!("AVI tunnel magic header timeout"))??;
+        if n == 0 {
+            bail!("AVI tunnel closed before AVI header");
+        }
+        buf.extend_from_slice(&tmp[..n]);
+    }
+    let prefix = buf[header_end + 12..].to_vec();
+
+    let mut up_stream = timeout(ms_timeout, TcpStream::connect(addr))
+        .await?
+        .with_context(|| format!("Failed to connect up.avi to {}", addr))?;
+    let _ = up_stream.set_nodelay(true);
+    let post_req = format!(
+        "POST /tunnel/up.avi?sid={} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+        sid, target
+    );
+    up_stream.write_all(post_req.as_bytes()).await?;
+    up_stream.flush().await?;
+
+    let (down_read, _down_write) = down_stream.into_split();
+    let (_up_read, up_write) = up_stream.into_split();
+    let duplex = crate::common::AviDuplexStream::new(prefix, down_read, up_write);
+    Ok(Stream::Tcp(hbb_common::tcp::FramedStream::from(
+        duplex, addr,
+    )))
+}
+
 pub fn is_302_address(peer: &str) -> bool {
     let lower = peer.to_lowercase();
     lower.starts_with("302:") || lower.starts_with("302：") || lower.starts_with("302/")

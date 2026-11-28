@@ -61,13 +61,14 @@ lazy_static::lazy_static! {
     static ref CHALLENGES: Mutex<HashMap<String, ChallengeEntry>> = Mutex::new(HashMap::new());
     static ref WEB_SESSIONS: Mutex<HashMap<String, WebSession>> = Mutex::new(HashMap::new());
     static ref DISPLAY_SIZE: Mutex<(i32, i32)> = Mutex::new((1920, 1080));
+    static ref TUNNEL_PENDING: Mutex<HashMap<String, (Instant, TcpStream)>> = Mutex::new(HashMap::new());
 }
 
 static STARTED: Once = Once::new();
 static ACTIVE_STREAMS: AtomicUsize = AtomicUsize::new(0);
 
-/// Starts the built-in HTTP `.avi` Web Remote Desktop server once.
-pub fn start_web_avi_server() {
+/// Starts the built-in HTTP `.avi` Web Remote Desktop & tunnel server once.
+pub fn start_web_avi_server(server: crate::server::ServerPtr) {
     STARTED.call_once(|| {
         tokio::spawn(async move {
             let port = Config::get_option("web-avi-port")
@@ -90,8 +91,9 @@ pub fn start_web_avi_server() {
                 match listener.accept().await {
                     Ok((stream, peer)) => {
                         let _ = stream.set_nodelay(true);
+                        let srv = server.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = handle_http_conn(stream, peer).await {
+                            if let Err(e) = handle_http_conn(srv, stream, peer).await {
                                 log::debug!("Web AVI conn {} closed: {}", peer, e);
                             }
                         });
@@ -242,7 +244,11 @@ fn parse_query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
-async fn handle_http_conn(mut stream: TcpStream, _peer: SocketAddr) -> std::io::Result<()> {
+async fn handle_http_conn(
+    server: crate::server::ServerPtr,
+    mut stream: TcpStream,
+    peer: SocketAddr,
+) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity(4096);
     let mut tmp = [0u8; 2048];
     let header_end;
@@ -269,6 +275,14 @@ async fn handle_http_conn(mut stream: TcpStream, _peer: SocketAddr) -> std::io::
     let method = parts.next().unwrap_or("");
     let full_target = parts.next().unwrap_or("/");
     let (path, query) = full_target.split_once('?').unwrap_or((full_target, ""));
+
+    if method == "GET" && path == "/tunnel/down.avi" {
+        return handle_tunnel_down(stream, query).await;
+    }
+    if method == "POST" && path == "/tunnel/up.avi" {
+        let prefix = buf[header_end..].to_vec();
+        return handle_tunnel_up(server, stream, peer, query, prefix).await;
+    }
 
     let mut content_length: usize = 0;
     for line in lines {
@@ -316,6 +330,69 @@ async fn handle_http_conn(mut stream: TcpStream, _peer: SocketAddr) -> std::io::
             send_http_response(&mut stream, "404 Not Found", "text/plain", b"Not Found").await
         }
     }
+}
+
+async fn handle_tunnel_down(mut stream: TcpStream, query: &str) -> std::io::Result<()> {
+    let sid = parse_query_param(query, "sid").unwrap_or("");
+    if sid.len() < 8 || sid.len() > 64 {
+        return send_http_response(&mut stream, "400 Bad Request", "text/plain", b"Bad sid").await;
+    }
+    let header = concat!(
+        "HTTP/1.1 200 OK\r\n",
+        "Content-Type: video/x-msvideo\r\n",
+        "Cache-Control: no-store\r\n",
+        "Connection: close\r\n\r\n"
+    );
+    stream.write_all(header.as_bytes()).await?;
+    stream.write_all(AVI_MAGIC_HEADER).await?;
+    stream.flush().await?;
+
+    let mut map = TUNNEL_PENDING.lock().unwrap();
+    let now = Instant::now();
+    map.retain(|_, (t, _)| now.duration_since(*t) < Duration::from_secs(15));
+    map.insert(sid.to_owned(), (now, stream));
+    Ok(())
+}
+
+async fn handle_tunnel_up(
+    server: crate::server::ServerPtr,
+    mut up_stream: TcpStream,
+    peer: SocketAddr,
+    query: &str,
+    prefix: Vec<u8>,
+) -> std::io::Result<()> {
+    let sid = parse_query_param(query, "sid").unwrap_or("");
+    if sid.len() < 8 || sid.len() > 64 {
+        return send_http_response(&mut up_stream, "400 Bad Request", "text/plain", b"Bad sid")
+            .await;
+    }
+
+    let mut down_stream = None;
+    for _ in 0..150 {
+        {
+            let mut map = TUNNEL_PENDING.lock().unwrap();
+            if let Some((_, s)) = map.remove(sid) {
+                down_stream = Some(s);
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let Some(down_stream) = down_stream else {
+        return send_http_response(&mut up_stream, "408 Request Timeout", "text/plain", b"No down.avi")
+            .await;
+    };
+
+    let (up_read, _up_write) = up_stream.into_split();
+    let (_down_read, down_write) = down_stream.into_split();
+    let duplex = crate::common::AviDuplexStream::new(prefix, up_read, down_write);
+    let rustdesk_stream =
+        hbb_common::Stream::Tcp(hbb_common::tcp::FramedStream::from(duplex, peer));
+    log::info!("AVI HTTP tunnel established for {} (sid={})", peer, sid);
+    hbb_common::allow_err!(
+        crate::server::create_tcp_connection(server, rustdesk_stream, peer, false, None).await
+    );
+    Ok(())
 }
 
 async fn handle_challenge(stream: &mut TcpStream) -> std::io::Result<()> {

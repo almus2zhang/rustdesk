@@ -62,7 +62,9 @@ String formatID(String id) {
 
 String trimID(String id) {
   var s = id.replaceAll(' ', '');
-  if (s.startsWith('302：')) {
+  if (s.toLowerCase().startsWith('avi：')) {
+    s = 'avi:${s.substring(4)}';
+  } else if (s.startsWith('302：')) {
     s = '302:${s.substring(4)}';
   } else if (s.startsWith('301：')) {
     s = '301:${s.substring(4)}';
