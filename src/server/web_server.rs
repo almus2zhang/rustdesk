@@ -15,7 +15,7 @@ use std::{
     collections::HashMap,
     net::SocketAddr,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, Once,
     },
     time::{Duration, Instant},
@@ -57,11 +57,18 @@ struct WebSession {
     last_input_seq: u32,
 }
 
+#[derive(Clone)]
+struct ActiveTunnel {
+    tx_in: mpsc::Sender<Vec<u8>>,
+    last_seq: Arc<AtomicU64>,
+}
+
 lazy_static::lazy_static! {
     static ref CHALLENGES: Mutex<HashMap<String, ChallengeEntry>> = Mutex::new(HashMap::new());
     static ref WEB_SESSIONS: Mutex<HashMap<String, WebSession>> = Mutex::new(HashMap::new());
     static ref DISPLAY_SIZE: Mutex<(i32, i32)> = Mutex::new((1920, 1080));
     static ref TUNNEL_PENDING: Mutex<HashMap<String, (Instant, TcpStream)>> = Mutex::new(HashMap::new());
+    static ref TUNNEL_ACTIVE: Mutex<HashMap<String, ActiveTunnel>> = Mutex::new(HashMap::new());
 }
 
 static STARTED: Once = Once::new();
@@ -287,8 +294,19 @@ async fn handle_http_conn(
         let prefix = buf[header_end..].to_vec();
         return handle_tunnel_up(server, stream, peer, query, prefix).await;
     }
-    if method == "POST" && path.starts_with("/t/") && path.ends_with("/up.avi") {
-        let sid = path.trim_start_matches("/t/").trim_end_matches("/up.avi").to_owned();
+    if method == "POST"
+        && (path == "/api/t_up" || (path.starts_with("/t/") && path.ends_with("/up.avi")))
+    {
+        let sid = if path == "/api/t_up" {
+            parse_query_param(query, "sid").unwrap_or("").to_owned()
+        } else {
+            path.trim_start_matches("/t/")
+                .trim_end_matches("/up.avi")
+                .to_owned()
+        };
+        let first_seq: u64 = parse_query_param(query, "seq")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         let mut content_length: usize = 0;
         for line in lines {
             if let Some((k, v)) = line.split_once(':') {
@@ -302,6 +320,7 @@ async fn handle_http_conn(
             stream,
             peer,
             sid,
+            first_seq,
             buf[header_end..].to_vec(),
             content_length,
         )
@@ -398,17 +417,146 @@ async fn handle_tunnel_up(
     handle_tunnel_up_sid(server, up_stream, peer, sid, prefix).await
 }
 
+async fn pump_tunnel_up_stream(
+    mut up_stream: TcpStream,
+    sid_up: String,
+    first_buf: Vec<u8>,
+    first_content_len: usize,
+    first_seq: u64,
+    tx_in: mpsc::Sender<Vec<u8>>,
+    last_seq: Arc<AtomicU64>,
+) {
+    let mut tmp = [0u8; 4096];
+    let mut cur_len = first_content_len;
+    let mut cur_seq = first_seq;
+    let mut pending = first_buf;
+    loop {
+        if cur_len > 0 {
+            while pending.len() < cur_len {
+                match up_stream.read(&mut tmp).await {
+                    Ok(0) => {
+                        log::warn!(
+                            "AVI tunnel up EOF reading body (sid={}, seq={}, got={}/{})",
+                            sid_up,
+                            cur_seq,
+                            pending.len(),
+                            cur_len
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "AVI tunnel up read body err (sid={}, seq={}): {}",
+                            sid_up,
+                            cur_seq,
+                            e
+                        );
+                        return;
+                    }
+                    Ok(n) => pending.extend_from_slice(&tmp[..n]),
+                }
+            }
+            let payload = pending[..cur_len].to_vec();
+            pending.drain(..cur_len);
+            let prev = last_seq.load(Ordering::Acquire);
+            if cur_seq == 0 || cur_seq > prev {
+                if tx_in.send(payload).await.is_err() {
+                    log::warn!("AVI tunnel up tx_in closed (sid={}, seq={})", sid_up, cur_seq);
+                    return;
+                }
+                if cur_seq > prev {
+                    last_seq.store(cur_seq, Ordering::Release);
+                }
+            }
+        }
+        let ok_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
+        if let Err(e) = up_stream.write_all(ok_resp).await {
+            log::warn!(
+                "AVI tunnel up write 200 OK err (sid={}, seq={}): {}",
+                sid_up,
+                cur_seq,
+                e
+            );
+            return;
+        }
+        // Read next keep-alive POST header
+        let header_end = loop {
+            if let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+            if pending.len() > 16384 {
+                log::warn!("AVI tunnel up header too large (sid={}, seq={})", sid_up, cur_seq);
+                return;
+            }
+            match up_stream.read(&mut tmp).await {
+                Ok(0) => {
+                    log::debug!(
+                        "AVI tunnel up EOF waiting next POST (sid={}, seq={}, pending={})",
+                        sid_up,
+                        cur_seq,
+                        pending.len()
+                    );
+                    return;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "AVI tunnel up err waiting next POST (sid={}, seq={}): {}",
+                        sid_up,
+                        cur_seq,
+                        e
+                    );
+                    return;
+                }
+                Ok(n) => pending.extend_from_slice(&tmp[..n]),
+            }
+        };
+        let hdr = String::from_utf8_lossy(&pending[..header_end]);
+        let mut hdr_lines = hdr.lines();
+        let req_line = hdr_lines.next().unwrap_or("");
+        let target_url = req_line.split_whitespace().nth(1).unwrap_or("");
+        let query = target_url.split_once('?').map(|(_, q)| q).unwrap_or("");
+        cur_seq = parse_query_param(query, "seq")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        cur_len = 0;
+        for line in hdr_lines {
+            if let Some((k, v)) = line.split_once(':') {
+                if k.trim().eq_ignore_ascii_case("content-length") {
+                    cur_len = v.trim().parse().unwrap_or(0);
+                }
+            }
+        }
+        pending.drain(..header_end);
+    }
+}
+
 async fn handle_tunnel_up_keepalive(
     server: crate::server::ServerPtr,
     mut up_stream: TcpStream,
     peer: SocketAddr,
     sid: String,
-    mut first_buf: Vec<u8>,
+    first_seq: u64,
+    first_buf: Vec<u8>,
     first_content_len: usize,
 ) -> std::io::Result<()> {
     if sid.len() < 8 || sid.len() > 64 {
         return send_http_response(&mut up_stream, "400 Bad Request", "text/plain", b"Bad sid")
             .await;
+    }
+
+    if let Some(active) = TUNNEL_ACTIVE.lock().unwrap().get(&sid).cloned() {
+        log::info!("AVI tunnel up reconnected for {} (sid={}, seq={})", peer, sid, first_seq);
+        pump_tunnel_up_stream(
+            up_stream,
+            sid,
+            first_buf,
+            first_content_len,
+            first_seq,
+            active.tx_in,
+            active.last_seq,
+        )
+        .await;
+        return Ok(());
     }
 
     let mut down_stream = None;
@@ -429,6 +577,14 @@ async fn handle_tunnel_up_keepalive(
 
     let (tx_in, rx_in) = mpsc::channel::<Vec<u8>>(128);
     let (tx_out, mut rx_out) = mpsc::unbounded_channel::<Vec<u8>>();
+    let last_seq = Arc::new(AtomicU64::new(0));
+    TUNNEL_ACTIVE.lock().unwrap().insert(
+        sid.clone(),
+        ActiveTunnel {
+            tx_in: tx_in.clone(),
+            last_seq: last_seq.clone(),
+        },
+    );
 
     // Pump downlink bytes to down.avi stream
     let sid_down = sid.clone();
@@ -439,85 +595,32 @@ async fn handle_tunnel_up_keepalive(
                 break;
             }
         }
+        TUNNEL_ACTIVE.lock().unwrap().remove(&sid_down);
     });
 
-    // Pump keep-alive POST /t/<sid>/up.avi requests into tx_in
-    let sid_log = sid.clone();
+    // Keep tx_in alive as long as TUNNEL_ACTIVE holds it (until down.avi exits)
     let sid_up = sid.clone();
     tokio::spawn(async move {
-        let mut tmp = [0u8; 4096];
-        let mut cur_len = first_content_len;
-        let mut pending = first_buf;
-        let mut post_seq: u64 = 0;
-        loop {
-            if cur_len > 0 {
-                while pending.len() < cur_len {
-                    match up_stream.read(&mut tmp).await {
-                        Ok(0) => {
-                            log::warn!("AVI tunnel up.avi EOF reading body (sid={}, seq={}, got={}/{})", sid_up, post_seq, pending.len(), cur_len);
-                            return;
-                        }
-                        Err(e) => {
-                            log::warn!("AVI tunnel up.avi read body err (sid={}, seq={}): {}", sid_up, post_seq, e);
-                            return;
-                        }
-                        Ok(n) => pending.extend_from_slice(&tmp[..n]),
-                    }
-                }
-                let payload = pending[..cur_len].to_vec();
-                pending.drain(..cur_len);
-                if tx_in.send(payload).await.is_err() {
-                    log::warn!("AVI tunnel up.avi tx_in closed (sid={}, seq={})", sid_up, post_seq);
-                    return;
-                }
-            }
-            let ok_resp = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n";
-            if let Err(e) = up_stream.write_all(ok_resp).await {
-                log::warn!("AVI tunnel up.avi write 200 OK err (sid={}, seq={}): {}", sid_up, post_seq, e);
-                return;
-            }
-            post_seq += 1;
-            // Read next keep-alive POST header
-            let header_end = loop {
-                if let Some(pos) = pending.windows(4).position(|w| w == b"\r\n\r\n") {
-                    break pos + 4;
-                }
-                if pending.len() > 16384 {
-                    log::warn!("AVI tunnel up.avi header too large (sid={}, seq={})", sid_up, post_seq);
-                    return;
-                }
-                match up_stream.read(&mut tmp).await {
-                    Ok(0) => {
-                        log::warn!("AVI tunnel up.avi EOF waiting next POST (sid={}, seq={}, pending={})", sid_up, post_seq, pending.len());
-                        return;
-                    }
-                    Err(e) => {
-                        log::warn!("AVI tunnel up.avi err waiting next POST (sid={}, seq={}): {}", sid_up, post_seq, e);
-                        return;
-                    }
-                    Ok(n) => pending.extend_from_slice(&tmp[..n]),
-                }
-            };
-            let hdr = String::from_utf8_lossy(&pending[..header_end]);
-            cur_len = 0;
-            for line in hdr.lines() {
-                if let Some((k, v)) = line.split_once(':') {
-                    if k.trim().eq_ignore_ascii_case("content-length") {
-                        cur_len = v.trim().parse().unwrap_or(0);
-                    }
-                }
-            }
-            pending.drain(..header_end);
-        }
+        pump_tunnel_up_stream(
+            up_stream,
+            sid_up,
+            first_buf,
+            first_content_len,
+            first_seq,
+            tx_in,
+            last_seq,
+        )
+        .await;
     });
 
     let channel_stream = crate::common::AviChannelStream::new(Vec::new(), rx_in, tx_out);
     let rustdesk_stream =
         hbb_common::Stream::Tcp(hbb_common::tcp::FramedStream::from(channel_stream, peer));
-    log::info!("AVI HTTP tunnel established for {} (sid={})", peer, sid_log);
+    log::info!("AVI HTTP tunnel established for {} (sid={})", peer, sid);
     hbb_common::allow_err!(
         crate::server::create_tcp_connection(server, rustdesk_stream, peer, false, None).await
     );
+    TUNNEL_ACTIVE.lock().unwrap().remove(&sid);
     Ok(())
 }
 
