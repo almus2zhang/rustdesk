@@ -279,9 +279,18 @@ async fn handle_http_conn(
     if method == "GET" && path == "/tunnel/down.avi" {
         return handle_tunnel_down(stream, query).await;
     }
+    if method == "GET" && path.starts_with("/t/") && path.ends_with("/down.avi") {
+        let sid = path.trim_start_matches("/t/").trim_end_matches("/down.avi");
+        return handle_tunnel_down_sid(stream, sid).await;
+    }
     if method == "POST" && path == "/tunnel/up.avi" {
         let prefix = buf[header_end..].to_vec();
         return handle_tunnel_up(server, stream, peer, query, prefix).await;
+    }
+    if method == "POST" && path.starts_with("/t/") && path.ends_with("/up.avi") {
+        let sid = path.trim_start_matches("/t/").trim_end_matches("/up.avi");
+        let prefix = buf[header_end..].to_vec();
+        return handle_tunnel_up_sid(server, stream, peer, sid, prefix).await;
     }
 
     let mut content_length: usize = 0;
@@ -325,6 +334,9 @@ async fn handle_http_conn(
         ("GET", "/api/challenge") => handle_challenge(&mut stream).await,
         ("POST", "/api/auth") => handle_auth(&mut stream, &body).await,
         ("GET", "/live.avi") => handle_live_avi(stream, query).await,
+        ("GET", p) if p.starts_with("/s/") && p.ends_with("/live.avi") => {
+            handle_live_avi_path(stream, p).await
+        }
         ("POST", "/api/input") => handle_input(&mut stream, query, &body).await,
         _ => {
             send_http_response(&mut stream, "404 Not Found", "text/plain", b"Not Found").await
@@ -332,14 +344,20 @@ async fn handle_http_conn(
     }
 }
 
-async fn handle_tunnel_down(mut stream: TcpStream, query: &str) -> std::io::Result<()> {
+async fn handle_tunnel_down(stream: TcpStream, query: &str) -> std::io::Result<()> {
     let sid = parse_query_param(query, "sid").unwrap_or("");
+    handle_tunnel_down_sid(stream, sid).await
+}
+
+async fn handle_tunnel_down_sid(mut stream: TcpStream, sid: &str) -> std::io::Result<()> {
     if sid.len() < 8 || sid.len() > 64 {
         return send_http_response(&mut stream, "400 Bad Request", "text/plain", b"Bad sid").await;
     }
     let header = concat!(
         "HTTP/1.1 200 OK\r\n",
         "Content-Type: video/x-msvideo\r\n",
+        "Content-Length: 2147483647\r\n",
+        "Accept-Ranges: bytes\r\n",
         "Cache-Control: no-store\r\n",
         "Connection: close\r\n\r\n"
     );
@@ -356,12 +374,22 @@ async fn handle_tunnel_down(mut stream: TcpStream, query: &str) -> std::io::Resu
 
 async fn handle_tunnel_up(
     server: crate::server::ServerPtr,
-    mut up_stream: TcpStream,
+    up_stream: TcpStream,
     peer: SocketAddr,
     query: &str,
     prefix: Vec<u8>,
 ) -> std::io::Result<()> {
     let sid = parse_query_param(query, "sid").unwrap_or("");
+    handle_tunnel_up_sid(server, up_stream, peer, sid, prefix).await
+}
+
+async fn handle_tunnel_up_sid(
+    server: crate::server::ServerPtr,
+    mut up_stream: TcpStream,
+    peer: SocketAddr,
+    sid: &str,
+    prefix: Vec<u8>,
+) -> std::io::Result<()> {
     if sid.len() < 8 || sid.len() > 64 {
         return send_http_response(&mut up_stream, "400 Bad Request", "text/plain", b"Bad sid")
             .await;
@@ -542,18 +570,21 @@ async fn write_http_chunk(stream: &mut TcpStream, data: &[u8]) -> std::io::Resul
     stream.write_all(b"\r\n").await
 }
 
-async fn handle_live_avi(mut stream: TcpStream, query: &str) -> std::io::Result<()> {
-    let token = parse_query_param(query, "token").unwrap_or("");
-    let Some(stream_key) = get_session_key(token) else {
-        return send_http_response(
-            &mut stream,
-            "401 Unauthorized",
-            "text/plain",
-            b"Unauthorized",
-        )
-        .await;
-    };
+async fn handle_live_avi_path(stream: TcpStream, path: &str) -> std::io::Result<()> {
+    let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
+    if segs.len() < 7 {
+        return handle_live_avi_params(stream, "", 30, 70, 0.75, true).await;
+    }
+    let token = segs[1];
+    let fps: u64 = segs[2].parse().unwrap_or(30).clamp(5, 60);
+    let quality: u8 = segs[3].parse().unwrap_or(70).clamp(25, 95);
+    let scale: f32 = segs[4].parse().unwrap_or(0.75f32).clamp(0.25, 1.0);
+    let show_cursor: bool = segs[5] != "0";
+    handle_live_avi_params(stream, token, fps, quality, scale, show_cursor).await
+}
 
+async fn handle_live_avi(stream: TcpStream, query: &str) -> std::io::Result<()> {
+    let token = parse_query_param(query, "token").unwrap_or("");
     let fps: u64 = parse_query_param(query, "fps")
         .and_then(|v| v.parse().ok())
         .unwrap_or(30)
@@ -567,16 +598,37 @@ async fn handle_live_avi(mut stream: TcpStream, query: &str) -> std::io::Result<
         .unwrap_or(0.75f32)
         .clamp(0.25, 1.0);
     let show_cursor: bool = parse_query_param(query, "cursor").unwrap_or("1") != "0";
+    handle_live_avi_params(stream, token, fps, quality, scale, show_cursor).await
+}
+
+async fn handle_live_avi_params(
+    mut stream: TcpStream,
+    token: &str,
+    fps: u64,
+    quality: u8,
+    scale: f32,
+    show_cursor: bool,
+) -> std::io::Result<()> {
+    let Some(stream_key) = get_session_key(token) else {
+        return send_http_response(
+            &mut stream,
+            "401 Unauthorized",
+            "text/plain",
+            b"Unauthorized",
+        )
+        .await;
+    };
 
     let header = concat!(
         "HTTP/1.1 200 OK\r\n",
         "Content-Type: video/x-msvideo\r\n",
+        "Content-Length: 2147483647\r\n",
+        "Accept-Ranges: bytes\r\n",
         "Cache-Control: no-cache, no-store, must-revalidate\r\n",
-        "Transfer-Encoding: chunked\r\n",
         "Connection: close\r\n\r\n"
     );
     stream.write_all(header.as_bytes()).await?;
-    write_http_chunk(&mut stream, AVI_MAGIC_HEADER).await?;
+    stream.write_all(AVI_MAGIC_HEADER).await?;
 
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(2);
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -588,14 +640,13 @@ async fn handle_live_avi(mut stream: TcpStream, query: &str) -> std::io::Result<
     });
 
     while let Some(pkt) = rx.recv().await {
-        if write_http_chunk(&mut stream, &pkt).await.is_err() {
+        if stream.write_all(&pkt).await.is_err() {
             break;
         }
     }
 
     stop_flag.store(true, Ordering::SeqCst);
     ACTIVE_STREAMS.fetch_sub(1, Ordering::SeqCst);
-    let _ = stream.write_all(b"0\r\n\r\n").await;
     Ok(())
 }
 

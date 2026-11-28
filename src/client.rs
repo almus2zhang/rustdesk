@@ -4541,7 +4541,7 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         .with_context(|| format!("Failed to connect down.avi to {}", addr))?;
     let _ = down_stream.set_nodelay(true);
     let get_req = format!(
-        "GET /tunnel/down.avi?sid={} HTTP/1.1\r\nHost: {}\r\nUser-Agent: Lavf/60.16.100\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        "GET /t/{}/down.avi HTTP/1.1\r\nHost: {}\r\nUser-Agent: Lavf/60.16.100\r\nAccept: */*\r\nConnection: close\r\n\r\n",
         sid, target
     );
     down_stream.write_all(get_req.as_bytes()).await?;
@@ -4590,7 +4590,7 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         .with_context(|| format!("Failed to connect up.avi to {}", addr))?;
     let _ = up_stream.set_nodelay(true);
     let post_req = format!(
-        "POST /tunnel/up.avi?sid={} HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+        "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
         sid, target
     );
     up_stream.write_all(post_req.as_bytes()).await?;

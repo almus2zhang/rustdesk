@@ -250,7 +250,7 @@ async function startStream() {
   const fps = document.getElementById('sel-fps').value;
   const q = document.getElementById('sel-quality').value;
   const s = document.getElementById('sel-scale').value;
-  const url = `/live.avi?token=${encodeURIComponent(sessionToken)}&fps=${fps}&q=${q}&s=${s}&cursor=${showRemoteCursor ? 1 : 0}`;
+  const url = `/s/${encodeURIComponent(sessionToken)}/${fps}/${q}/${s}/${showRemoteCursor ? 1 : 0}/live.avi`;
 
   let bytesInSec = 0, framesInSec = 0, lastStatTime = performance.now();
   try {
