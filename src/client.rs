@@ -4626,11 +4626,19 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
 
     // Pump down.avi bytes into rx_in
     let (mut down_read, _down_write) = down_stream.into_split();
+    let sid_down = sid.clone();
     hbb_common::tokio::spawn(async move {
         let mut buf = vec![0u8; 32768];
         loop {
             match down_read.read(&mut buf).await {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    log::warn!("AVI client down.avi EOF (sid={})", sid_down);
+                    break;
+                }
+                Err(e) => {
+                    log::warn!("AVI client down.avi err (sid={}): {}", sid_down, e);
+                    break;
+                }
                 Ok(n) => {
                     if tx_in.send(buf[..n].to_vec()).await.is_err() {
                         break;
@@ -4642,8 +4650,10 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
 
     // Pump tx_out bytes as standard HTTP/1.1 Keep-Alive POST /t/<sid>/up.avi
     let target_hdr = target.to_owned();
+    let sid_up = sid.clone();
     hbb_common::tokio::spawn(async move {
         let mut tmp = [0u8; 512];
+        let mut post_seq: u64 = 0;
         while let Some(mut chunk) = rx_out.recv().await {
             while let Ok(more) = rx_out.try_recv() {
                 chunk.extend_from_slice(&more);
@@ -4657,13 +4667,16 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
                 target_hdr,
                 chunk.len()
             );
-            if up_stream.write_all(req_hdr.as_bytes()).await.is_err() {
+            if let Err(e) = up_stream.write_all(req_hdr.as_bytes()).await {
+                log::warn!("AVI client up.avi write hdr err (sid={}, seq={}): {}", sid_up, post_seq, e);
                 break;
             }
-            if up_stream.write_all(&chunk).await.is_err() {
+            if let Err(e) = up_stream.write_all(&chunk).await {
+                log::warn!("AVI client up.avi write body err (sid={}, seq={}): {}", sid_up, post_seq, e);
                 break;
             }
-            if up_stream.flush().await.is_err() {
+            if let Err(e) = up_stream.flush().await {
+                log::warn!("AVI client up.avi flush err (sid={}, seq={}): {}", sid_up, post_seq, e);
                 break;
             }
             // Wait for 200 OK header
@@ -4673,14 +4686,24 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
                     break;
                 }
                 if resp_buf.len() > 8192 {
+                    log::warn!("AVI client up.avi resp too large (sid={}, seq={})", sid_up, post_seq);
                     return;
                 }
                 match up_stream.read(&mut tmp).await {
-                    Ok(0) | Err(_) => return,
+                    Ok(0) => {
+                        log::warn!("AVI client up.avi EOF waiting 200 OK (sid={}, seq={})", sid_up, post_seq);
+                        return;
+                    }
+                    Err(e) => {
+                        log::warn!("AVI client up.avi err waiting 200 OK (sid={}, seq={}): {}", sid_up, post_seq, e);
+                        return;
+                    }
                     Ok(n) => resp_buf.extend_from_slice(&tmp[..n]),
                 }
             }
+            post_seq += 1;
         }
+        log::info!("AVI client up.avi rx_out closed (sid={}, seq={})", sid_up, post_seq);
     });
 
     let channel_stream = crate::common::AviChannelStream::new(prefix, rx_in, tx_out);
