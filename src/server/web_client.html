@@ -36,6 +36,7 @@ html,body{width:100%;height:100%;background:#0f1117;color:#e6edf3;font-family:-a
     <h2>RustDesk Web</h2>
     <p>HTTP <code>.avi</code> 伪装加速通道 · 密码通过本地 HMAC-SHA256 质询验证，绝不以明文传输。</p>
     <div class="field"><input id="pwd" type="password" placeholder="请输入 RustDesk 访问密码" autocomplete="current-password"></div>
+    <div class="field" id="totp-wrap" style="display:none"><input id="totp" type="text" inputmode="numeric" maxlength="6" placeholder="请输入 6 位 2FA 动态验证码" autocomplete="one-time-code"></div>
     <button id="login-btn" class="btn">连接桌面</button>
     <div id="login-err" class="err"></div>
   </div>
@@ -195,6 +196,14 @@ const ctx = canvas.getContext('2d');
 const statEl = document.getElementById('stat');
 const kbInput = document.getElementById('kb-input');
 
+const pwdInput = document.getElementById('pwd');
+const totpWrap = document.getElementById('totp-wrap');
+const totpInput = document.getElementById('totp');
+
+fetch('/api/challenge').then(r => r.json()).then(ch => {
+  if (ch && ch.require_2fa) totpWrap.style.display = 'block';
+}).catch(() => {});
+
 async function doLogin() {
   const pwd = pwdInput.value;
   if (!pwd) { loginErr.textContent = '请输入密码'; return; }
@@ -205,6 +214,13 @@ async function doLogin() {
     if (!chRes.ok) throw new Error('获取质询失败: ' + chRes.status);
     const ch = await chRes.json();
     if (!ch.has_password) throw new Error('服务端未设置固定密码，无法 Web 登录');
+    if (ch.require_2fa) {
+      totpWrap.style.display = 'block';
+      if (!totpInput.value.trim()) {
+        totpInput.focus();
+        throw new Error('请输入 6 位 2FA 动态验证码');
+      }
+    }
     const h1Input = enc.encode(pwd + ch.salt);
     const h1 = Sha256.hash(h1Input);
     const nonceBytes = enc.encode(ch.nonce);
@@ -213,7 +229,7 @@ async function doLogin() {
     const authRes = await fetch('/api/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nonce: ch.nonce, proof })
+      body: JSON.stringify({ nonce: ch.nonce, proof, totp: totpInput.value.trim() })
     });
     const auth = await authRes.json();
     if (!authRes.ok || !auth.ok) throw new Error(auth.error || '密码错误');
@@ -235,6 +251,7 @@ async function doLogin() {
 
 loginBtn.onclick = doLogin;
 pwdInput.onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
+totpInput.onkeydown = (e) => { if (e.key === 'Enter') doLogin(); };
 
 let showRemoteCursor = true;
 const btnCursor = document.getElementById('btn-cursor');

@@ -1847,6 +1847,71 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
                   onTap: () => showOneYesSyncDialog(
                       onSyncSuccess: () => setState(() {})),
                 ),
+              if (!isWeb) divider,
+              if (!isWeb)
+                listTile(
+                  icon: Icons.web_outlined,
+                  title: '开启 Web 加速端 (不影响 avi:)',
+                  trailing: Switch(
+                    value: bind.mainGetOptionSync(key: 'enable-web-avi') != 'N',
+                    onChanged: locked
+                        ? null
+                        : (value) async {
+                            await bind.mainSetOption(
+                                key: 'enable-web-avi', value: value ? 'Y' : 'N');
+                            setState(() {});
+                          },
+                  ),
+                ),
+              if (!isWeb) divider,
+              if (!isWeb)
+                listTile(
+                  icon: Icons.settings_ethernet_outlined,
+                  title: 'Web / AVI 端口',
+                  trailing: Text(
+                    bind.mainGetOptionSync(key: 'web-avi-port').isEmpty
+                        ? '21120'
+                        : bind.mainGetOptionSync(key: 'web-avi-port'),
+                    style: TextStyle(fontSize: _kContentFontSize),
+                  ),
+                  onTap: () async {
+                    final cur = bind.mainGetOptionSync(key: 'web-avi-port');
+                    final ctrl = TextEditingController(
+                        text: cur.isEmpty ? '21120' : cur);
+                    final res = await showDialog<String>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('Web / AVI 端口'),
+                        content: TextField(
+                          controller: ctrl,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            hintText: '默认 21120',
+                          ),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx),
+                            child: Text(translate('Cancel')),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pop(ctx, ctrl.text.trim()),
+                            child: Text(translate('OK')),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (res != null) {
+                      final p = int.tryParse(res);
+                      if (p != null && p > 0 && p <= 65535) {
+                        await bind.mainSetOption(
+                            key: 'web-avi-port', value: '$p');
+                        setState(() {});
+                      }
+                    }
+                  },
+                ),
               if (!hideProxy && !hideServer) divider,
               if (!hideProxy)
                 listTile(

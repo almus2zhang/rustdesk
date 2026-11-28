@@ -375,14 +375,7 @@ impl Client {
             crate::get_rendezvous_server(1_000).await
         } else {
             if other_server == PUBLIC_SERVER {
-                (
-                    check_port(RENDEZVOUS_SERVERS[0], RENDEZVOUS_PORT),
-                    RENDEZVOUS_SERVERS[1..]
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect(),
-                    true,
-                )
+                (String::new(), Vec::new(), false)
             } else {
                 (check_port(other_server, RENDEZVOUS_PORT), Vec::new(), true)
             }

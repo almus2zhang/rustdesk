@@ -7134,9 +7134,9 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0x1A00E5FF),
+                  color: const Color(0xFFF5F7FA),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0x3300E5FF), width: 0.8),
+                  border: Border.all(color: Colors.black12, width: 0.8),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -7144,23 +7144,23 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.display_settings, size: 18, color: Colors.cyanAccent),
+                        const Icon(Icons.display_settings, size: 18, color: Colors.black87),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
                             isZh ? 'Windows 屏幕缩放 (DPI)' : 'Windows DPI Scale',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.black87),
                           ),
                         ),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.cyanAccent,
+                            color: const Color(0xFF0071FF),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             '$curDpi%',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black),
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
                           ),
                         ),
                       ],
@@ -7176,15 +7176,19 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                               decoration: BoxDecoration(
-                                color: curDpi == d ? Colors.cyanAccent : const Color(0x22FFFFFF),
+                                color: curDpi == d ? const Color(0xFF0071FF) : Colors.white,
                                 borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: curDpi == d ? const Color(0xFF0071FF) : Colors.black12,
+                                  width: 0.8,
+                                ),
                               ),
                               child: Text(
                                 '$d%',
                                 style: TextStyle(
                                   fontSize: 11,
                                   fontWeight: curDpi == d ? FontWeight.bold : FontWeight.normal,
-                                  color: curDpi == d ? Colors.black : Colors.white70,
+                                  color: curDpi == d ? Colors.white : Colors.black87,
                                 ),
                               ),
                             ),
@@ -7198,8 +7202,8 @@ TTextMenu? getResolutionMenu(BuildContext context, FFI ffi, String id) {
                       min: 100,
                       max: 250,
                       divisions: 6,
-                      activeColor: Colors.cyanAccent,
-                      inactiveColor: Colors.white24,
+                      activeColor: const Color(0xFF0071FF),
+                      inactiveColor: Colors.black12,
                       onChanged: (val) {
                         final rounded = (val / 25).round() * 25;
                         applyDpi(rounded);

@@ -108,7 +108,10 @@ impl RendezvousMediator {
                 && !crate::platform::installing_service()
             {
                 let mut futs = Vec::new();
-                let servers = Config::get_rendezvous_servers();
+                let servers: Vec<String> = Config::get_rendezvous_servers()
+                    .into_iter()
+                    .filter(|s| !s.contains("rustdesk.com"))
+                    .collect();
                 SHOULD_EXIT.store(false, Ordering::SeqCst);
                 MANUAL_RESTARTED.store(false, Ordering::SeqCst);
                 for host in servers.clone() {

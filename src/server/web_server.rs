@@ -74,40 +74,61 @@ lazy_static::lazy_static! {
 static STARTED: Once = Once::new();
 static ACTIVE_STREAMS: AtomicUsize = AtomicUsize::new(0);
 
+fn current_web_avi_port() -> u16 {
+    Config::get_option("web-avi-port")
+        .parse::<u16>()
+        .ok()
+        .filter(|&p| p > 0)
+        .unwrap_or(DEFAULT_WEB_AVI_PORT)
+}
+
+fn is_web_ui_enabled() -> bool {
+    Config::get_option("enable-web-avi") != "N"
+}
+
 /// Starts the built-in HTTP `.avi` Web Remote Desktop & tunnel server once.
 pub fn start_web_avi_server(server: crate::server::ServerPtr) {
     STARTED.call_once(|| {
         tokio::spawn(async move {
-            let port = Config::get_option("web-avi-port")
-                .parse::<u16>()
-                .ok()
-                .filter(|&p| p > 0)
-                .unwrap_or(DEFAULT_WEB_AVI_PORT);
-            let addr = SocketAddr::from(([0, 0, 0, 0], port));
-            let listener = match TcpListener::bind(addr).await {
-                Ok(l) => {
-                    log::info!("Web AVI server listening on http://0.0.0.0:{}", port);
-                    l
-                }
-                Err(e) => {
-                    log::warn!("Failed to bind Web AVI server on {}: {}", addr, e);
-                    return;
-                }
-            };
             loop {
-                match listener.accept().await {
-                    Ok((stream, peer)) => {
-                        let _ = stream.set_nodelay(true);
-                        let srv = server.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_http_conn(srv, stream, peer).await {
-                                log::debug!("Web AVI conn {} closed: {}", peer, e);
-                            }
-                        });
+                let port = current_web_avi_port();
+                let addr = SocketAddr::from(([0, 0, 0, 0], port));
+                let listener = match TcpListener::bind(addr).await {
+                    Ok(l) => {
+                        log::info!("Web AVI server listening on http://0.0.0.0:{}", port);
+                        l
                     }
                     Err(e) => {
-                        log::warn!("Web AVI accept error: {}", e);
-                        tokio::time::sleep(Duration::from_millis(200)).await;
+                        log::warn!("Failed to bind Web AVI server on {}: {}", addr, e);
+                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        continue;
+                    }
+                };
+                loop {
+                    tokio::select! {
+                        res = listener.accept() => {
+                            match res {
+                                Ok((stream, peer)) => {
+                                    let _ = stream.set_nodelay(true);
+                                    let srv = server.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = handle_http_conn(srv, stream, peer).await {
+                                            log::debug!("Web AVI conn {} closed: {}", peer, e);
+                                        }
+                                    });
+                                }
+                                Err(e) => {
+                                    log::warn!("Web AVI accept error: {}", e);
+                                    tokio::time::sleep(Duration::from_millis(200)).await;
+                                }
+                            }
+                        }
+                        _ = tokio::time::sleep(Duration::from_secs(2)) => {
+                            if current_web_avi_port() != port {
+                                log::info!("Web AVI port changed, rebinding listener");
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -358,6 +379,11 @@ async fn handle_http_conn(
         body.extend_from_slice(&tmp[..n]);
     }
     body.truncate(content_length);
+
+    if !is_web_ui_enabled() {
+        return send_http_response(&mut stream, "404 Not Found", "text/plain", b"Web disabled")
+            .await;
+    }
 
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => {
@@ -702,10 +728,12 @@ async fn handle_challenge(stream: &mut TcpStream) -> std::io::Result<()> {
         map.insert(nonce.clone(), ChallengeEntry { created_at: now });
     }
 
+    let require_2fa = crate::auth_2fa::get_2fa(None).is_some();
     let resp = serde_json::json!({
         "nonce": nonce,
         "salt": salt,
         "has_password": has_password,
+        "require_2fa": require_2fa,
     })
     .to_string();
     send_http_response(stream, "200 OK", "application/json", resp.as_bytes()).await
@@ -716,6 +744,8 @@ async fn handle_auth(stream: &mut TcpStream, body: &[u8]) -> std::io::Result<()>
     struct AuthReq {
         nonce: String,
         proof: String,
+        #[serde(default)]
+        totp: String,
     }
     let req: AuthReq = match serde_json::from_slice(body) {
         Ok(r) => r,
@@ -776,6 +806,20 @@ async fn handle_auth(stream: &mut TcpStream, body: &[u8]) -> std::io::Result<()>
             br#"{"ok":false,"error":"wrong password"}"#,
         )
         .await;
+    }
+
+    if let Some(totp) = crate::auth_2fa::get_2fa(None) {
+        let code = req.totp.trim();
+        let ok_2fa = !code.is_empty() && totp.check_current(code).unwrap_or(false);
+        if !ok_2fa {
+            return send_http_response(
+                stream,
+                "401 Unauthorized",
+                "application/json",
+                br#"{"ok":false,"error":"2FA 验证码错误或未填写"}"#,
+            )
+            .await;
+        }
     }
 
     let mut sk_hasher = Sha256::new();
