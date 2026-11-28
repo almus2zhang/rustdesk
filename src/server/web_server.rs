@@ -816,7 +816,7 @@ async fn handle_auth(stream: &mut TcpStream, body: &[u8]) -> std::io::Result<()>
                 stream,
                 "401 Unauthorized",
                 "application/json",
-                br#"{"ok":false,"error":"2FA 验证码错误或未填写"}"#,
+                r#"{"ok":false,"error":"2FA 验证码错误或未填写"}"#.as_bytes(),
             )
             .await;
         }
