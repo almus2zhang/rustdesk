@@ -4590,7 +4590,7 @@ async fn connect_avi_tunnel(target: &str, ms_timeout: u64) -> ResultType<Stream>
         .with_context(|| format!("Failed to connect up.avi to {}", addr))?;
     let _ = up_stream.set_nodelay(true);
     let post_req = format!(
-        "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
+        "POST /t/{}/up.avi HTTP/1.1\r\nHost: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: 2147483647\r\nConnection: close\r\n\r\n",
         sid, target
     );
     up_stream.write_all(post_req.as_bytes()).await?;
